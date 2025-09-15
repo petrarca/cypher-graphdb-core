@@ -1,0 +1,485 @@
+"""Apache AGE (A Graph Extension) backend implementation for PostgreSQL.
+
+This module provides the main interface for connecting to and querying PostgreSQL
+databases with the Apache AGE graph extension. AGE transforms PostgreSQL into a
+graph database that supports Cypher query language.
+
+Classes:
+    AGEGraphDB: Main backend class for Apache AGE database operations.
+"""
+
+import os
+import time
+from typing import Any
+
+import psycopg
+import psycopg.conninfo as conninfo
+from loguru import logger
+from psycopg.client_cursor import ClientCursor
+from psycopg.sql import SQL
+from psycopg.types import TypeInfo
+
+# Import directly from the main package
+from cypher_graphdb import config
+from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
+from cypher_graphdb.cypherparser import ParsedCypherQuery
+from cypher_graphdb.models import GraphObject, GraphObjectType
+from cypher_graphdb.statistics import LabelStatistics
+
+from .agerowfactories import age_row_factory
+from .agesearch import convert_to_fts_query
+from .agesqlbuilder import SQLBuilder
+from .agtype import AgTypeLoader
+
+
+class AGEGraphDB(CypherBackend):
+    """PostgreSQL Apache AGE backend for graph database operations.
+
+    This class provides a complete interface for connecting to PostgreSQL databases
+    with the Apache AGE extension, enabling graph operations using Cypher queries.
+    AGE transforms PostgreSQL into a graph database by adding graph data types
+    and query capabilities.
+
+    Attributes:
+        _id: Backend identifier set to "AGE".
+        _connection: Current database connection.
+        _graph_name: Name of the active graph.
+        autocommit: Whether to automatically commit transactions.
+
+    Example:
+        >>> from cypher_graphdb import AGEGraphDB
+        >>> db = AGEGraphDB("host=localhost dbname=postgres", "my_graph")
+        >>> result = db.execute_cypher("MATCH (n) RETURN n LIMIT 5")
+
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize AGE GraphDB backend.
+
+        Args:
+            *args: Positional arguments passed to connect().
+            **kwargs: Keyword arguments passed to connect().
+
+        """
+        super().__init__(args, **kwargs)
+
+        # required for reconnect
+        self._cinfo = None
+        self._ckwargs = None
+        self._cursor_factory = None
+        self._set_graph_if_not_exists = True
+
+        if args or kwargs:
+            self.connect(*args, **kwargs)
+
+    def connect(
+        self,
+        cinfo: str | None = None,
+        graph_name: str | None = None,
+        create_graph: bool = False,
+        cursor_factory: Any = ClientCursor,
+        check_graph_exists: bool = True,
+        **kwargs: Any,
+    ) -> "AGEGraphDB":
+        """Connect to PostgreSQL database with Apache AGE extension.
+
+        Args:
+            cinfo: Connection string or parameters. If None, loads from env.
+            graph_name: Name of the graph to use. If None, loads from env.
+            create_graph: Whether to create the graph if it doesn't exist.
+            cursor_factory: Factory class for creating database cursors.
+            check_graph_exists: Whether to verify graph existence.
+            **kwargs: Additional connection parameters.
+
+        Returns:
+            Self for method chaining.
+
+        """
+        if self._connection is not None:
+            return self
+
+        if not cinfo:
+            logger.debug("Try to load cinfo from env")
+            cinfo = os.getenv(config.CGDB_CINFO)
+
+        if not graph_name:
+            logger.debug("Try to load graph name from env")
+            graph_name = os.getenv(config.CGDB_GRAPH)
+
+        self._set_graph_if_not_exists = kwargs.pop("set_graph_if_not_exists", True)
+        self.autocommit = kwargs.pop("autocommit", self.autocommit)
+
+        logger.debug(f"{cinfo=}, {graph_name=}, {self.autocommit=}")
+
+        self._cinfo = conninfo.make_conninfo("" if cinfo is None else cinfo, **kwargs)
+        logger.debug(f"make_conninfo={self._cinfo}")
+
+        self._ckwargs = kwargs
+        self._cursor_factory = cursor_factory
+        self._graph_name = graph_name
+
+        self.connect_to_db()
+
+        if check_graph_exists and graph_name and not self.graph_exists(graph_name):
+            if create_graph:
+                self.create_graph(graph_name)
+            else:
+                logger.warning("Graph {} does not exist!", graph_name)
+
+                if not self._set_graph_if_not_exists:
+                    self._graph_name = None
+
+        return self
+
+    def execute_cypher(
+        self,
+        cypher_query: ParsedCypherQuery,
+        fetch_one: bool = False,
+        raw_data: bool = False,
+    ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
+        """Execute a Cypher query against the graph database.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            fetch_one: If True, return only the first result row.
+            raw_data: If True, return raw data without AGE processing.
+
+        Returns:
+            Tuple of (query results, execution statistics).
+
+        """
+        assert isinstance(cypher_query, ParsedCypherQuery)
+        sql = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query)
+
+        (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data)
+
+        return (result, execute_stats)
+
+    def fulltext_search(
+        self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
+    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics]:
+        """Perform full-text search on graph data.
+
+        Args:
+            cypher_query: Base Cypher query to modify for full-text search.
+            fts_query: Full-text search query string.
+            language: Language for text search (default: "english").
+
+        Returns:
+            Tuple of (search results, execution statistics).
+
+        """
+        fts_cypher_query = convert_to_fts_query(cypher_query)
+
+        # use default language if not overridden
+        language = language or "english"
+
+        sql = SQLBuilder.create_fts_sql(self._graph_name, fts_cypher_query, fts_query, language)
+
+        result, execute_stats, _ = self._execute_sql(sql, False, False)
+
+        return (result, execute_stats)
+
+    def execute_sql(
+        self,
+        sql_str: str,
+        fetch_one: bool = False,
+        raw_data: bool = False,
+    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics, SqlStatistics]:
+        """Execute raw SQL statement against the database.
+
+        Args:
+            sql_str: SQL statement to execute.
+            fetch_one: If True, return only the first result row.
+            raw_data: If True, return raw data without AGE processing.
+
+        Returns:
+            Tuple of (results, execution statistics, SQL statistics).
+
+        """
+        sql = SQL(sql_str)
+        return self._execute_sql(sql, fetch_one, raw_data)
+
+    def graphs(self) -> list[str]:
+        """Get list of all graphs in the database.
+
+        Returns:
+            List of graph names.
+
+        """
+        sql = SQLBuilder.resolve_graphs(self._graph_name)
+
+        (result,), _, _ = self._execute_sql(sql, raw_data=True)
+
+        return list(result)
+        # TODO: remove C408: return [graph_name for graph_name in result]
+
+    def labels(self) -> list[LabelStatistics]:
+        """Get statistics for all labels in the current graph.
+
+        Returns:
+            List of label statistics including counts and types.
+
+        """
+        sql = SQLBuilder.resolve_labels(self._graph_name)
+        labels = []
+
+        result, _, _ = self._execute_sql(sql, raw_data=True)
+
+        for row in result:
+            if row[0].startswith("_ag_label_"):
+                continue
+
+            (count,), _, _ = self._execute_sql(SQLBuilder.resolve_label_count(row[2]), True, True)
+
+            label_statistics = LabelStatistics(
+                graph_name=self.graph_name,
+                label_=row[0],
+                type_=GraphObjectType.NODE if row[1] == "v" else GraphObjectType.EDGE,
+                count=count,
+            )
+            labels.append(label_statistics)
+
+        return labels
+
+    def disconnect(self):
+        """Close the database connection and clear connection info."""
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+        self._cinfo = None
+        self._ckwargs = None
+
+    def reconnect(self):
+        """Reconnect to the database using stored connection info."""
+        assert self._cinfo is not None, "Can only reconnect if already successfully connected!"
+
+        logger.debug("Try to reconnect")
+        self.connect_to_db()
+
+    def commit(self):
+        """Commit the current transaction."""
+        self._require_connection()
+        self._connection.commit()
+
+    def rollback(self):
+        """Rollback the current transaction."""
+        self._require_connection()
+        self._connection.rollback()
+
+    def create_graph(self, graph_name: str | None = None) -> None:
+        """Create a new graph in the database.
+
+        Args:
+            graph_name: Name of the graph to create. Uses current graph if None.
+
+        """
+        self._require_connection()
+
+        graph_name = graph_name or self._graph_name
+
+        assert graph_name is not None, "Graph name is required"
+
+        with self._fetch_cursor() as cursor:
+            cursor.execute(SQLBuilder.create_graph(graph_name))
+            self._connection.commit()
+
+    def drop_graph(self, graph_name: str | None = None) -> None:
+        """Drop a graph from the database.
+
+        Args:
+            graph_name: Name of the graph to drop. Uses current graph if None.
+
+        """
+        self._require_connection()
+
+        graph_name = graph_name or self._graph_name
+
+        assert graph_name is not None, "Graph name is required"
+
+        with self._fetch_cursor() as cursor:
+            cursor.execute(SQLBuilder.drop_graph(graph_name))
+            self._connection.commit()
+
+        # when drop current graph
+        if graph_name == self._graph_name and not self._set_graph_if_not_exists:
+            self._graph_name = None
+
+    def graph_exists(self, graph_name: str = None) -> bool:
+        """Check if a graph exists in the database.
+
+        Args:
+            graph_name: Name of the graph to check. Uses current graph if None.
+
+        Returns:
+            True if the graph exists, False otherwise.
+
+        """
+        self._require_connection()
+
+        graph_name = graph_name or self._graph_name
+
+        with self._fetch_cursor() as cursor:
+            cursor.execute(SQLBuilder.graph_exists(graph_name))
+            return cursor.fetchone()[0] == 1
+
+    def get_capability(self, capability: BackendCapability) -> Any:
+        """Get the value of a backend capability.
+
+        Args:
+            capability: The capability to query.
+
+        Returns:
+            The capability value.
+
+        Raises:
+            ValueError: If the capability is not supported.
+        """
+        match capability:
+            case BackendCapability.LABEL_FUNCTION:
+                # Pattern to retrieve single label
+                return "label({node})"
+            case BackendCapability.SUPPORT_MULTIPLE_LABELS:
+                # AGE does not support multiple labels per node
+                return False
+            case _:
+                # Delegate unknown capabilities to superclass
+                return super().get_capability(capability)
+
+    def create_vlabel(self, graph_name: str, vlabel: Any) -> None:
+        """Create vertex label(s) in the graph.
+
+        Args:
+            graph_name: Name of the graph.
+            vlabel: Vertex label name or iterable of label names.
+
+        """
+        self._require_connection()
+
+        graph_name = graph_name or self._graph_name
+
+        vlabels = tuple(vlabel) if isinstance(vlabel, str) else vlabel
+
+        with self._fetch_cursor() as cursor:
+            for val in vlabels:
+                cursor.execute(SQLBuilder.create_vlabel(graph_name, val))
+            self._connection.commit()
+
+    def create_elabel(self, graph_name: str, elabel: str):
+        """Create edge label(s) in the graph.
+
+        Args:
+            graph_name: Name of the graph.
+            elabel: Edge label name or iterable of label names.
+
+        """
+        self._require_connection()
+
+        graph_name = graph_name or self._graph_name
+
+        elabels = tuple(elabel) if isinstance(elabel, str) else elabel
+
+        with self._fetch_cursor() as cursor:
+            for val in elabels:
+                cursor.execute(SQLBuilder.create_elabel(graph_name, val))
+            self._connection.commit()
+
+    def connect_to_db(self):
+        """Establish connection to the PostgreSQL database.
+
+        Sets up the database connection with AGE extension configuration.
+        """
+        assert self._connection is None
+
+        connection = psycopg.connect(self._cinfo, cursor_factory=self._cursor_factory, **self._ckwargs)
+        self._setup_age(connection)
+        self._connection = connection
+
+    def _execute_sql(
+        self, sql: SQL, fetch_one: bool = False, raw_data: bool = False
+    ) -> tuple[list[tuple[GraphObject]], ExecStatistics, SqlStatistics]:
+        """Execute SQL statement and return results with statistics.
+
+        Args:
+            sql: SQL statement to execute.
+            fetch_one: If True, fetch only one result row.
+            raw_data: If True, return raw data without AGE processing.
+
+        Returns:
+            Tuple of (results, execution statistics, SQL statistics).
+
+        """
+        start_time = time.perf_counter()
+        logger.debug("AGE execute:\n{}", sql)
+
+        exec_stats = ExecStatistics()
+        sql_stats = None
+
+        result = None
+
+        with self._fetch_cursor(
+            row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
+        ) as cursor:
+            try:
+                result = cursor.execute(sql).fetchone() if fetch_one else cursor.execute(sql).fetchall()
+
+                col_names = [col.name for col in cursor.description]
+                sql_stats = SqlStatistics(sql_stmt=sql.as_string(), col_names=col_names)
+
+                if self.autocommit:
+                    self._connection.commit()
+            except (psycopg.errors.ProgrammingError, psycopg.errors.DataError) as e:
+                # Handling errors like syntax errors in the statement. In that case, connection get unusable.
+                # In that case as reconnect is forced
+                self._connection.close()
+                self._connection = None
+                # TODO: Raise own exception
+                raise e
+
+        # measure executing time
+        exec_stats.exec_time = time.perf_counter() - start_time
+        logger.debug("exec_time={:.4f}s", exec_stats.exec_time)
+
+        return (result, exec_stats, sql_stats)
+
+    def _fetch_cursor(self, row_factory=None) -> psycopg.Cursor:
+        """Get a database cursor with optional row factory.
+
+        Args:
+            row_factory: Optional factory for processing row results.
+
+        Returns:
+            Database cursor instance.
+
+        """
+        # reconnect if necessary
+        self._require_connection()
+
+        return self._connection.cursor(row_factory=row_factory)
+
+    def _require_connection(self):
+        """Ensure database connection is available, reconnecting if needed."""
+        if self._connection is None and self._cinfo is not None:
+            self.reconnect()
+
+    def _setup_age(self, connection):
+        """Set up Apache AGE extension on the database connection.
+
+        Args:
+            connection: Database connection to configure.
+
+        """
+        with connection.cursor() as cursor:
+            logger.trace("AGE: Load extension")
+            cursor.execute(SQLBuilder.load_age())
+            logger.trace("AGE: Set search path")
+            cursor.execute(SQLBuilder.set_search_path())
+
+            aginfo = TypeInfo.fetch(connection, "agtype")
+            logger.trace(f"{aginfo=}")
+
+            if not aginfo:
+                raise RuntimeError("Missing agtype information!")
+
+        connection.adapters.register_loader(aginfo.oid, AgTypeLoader)
+        connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)

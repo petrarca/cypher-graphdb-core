@@ -1,0 +1,167 @@
+version: "3"
+
+dotenv: [".env", "{{.HOME}}/.env"]
+
+tasks:
+  setup:
+    desc: "Create Python virtual environment with uv"
+    cmds:
+      - test -d .venv || uv venv
+
+
+  install:
+    desc: "Install the package in editable mode"
+    cmds:
+      - uv pip install -e ".[dev,build,examples,docs]"
+    deps:
+      - setup
+
+  clean:
+    desc: "Clean the build files"
+    cmds:
+      - rm -rf build/ dist/ src/*.egg-info/ .mypy_cache/ .pytest_cache/ .coverage .scannerwork
+      - rm -rf docs/coverage/ tests/coverage.xml
+
+  clean:docs:
+    desc: "Clean generated documentation site"
+    cmds:
+      - rm -rf site
+
+  clean:venv:
+    desc: "Clean .venv"
+    cmds:
+      - rm -rf .venv
+
+  clean:caches:
+    desc: "Clean caches"
+    cmds:
+      - ruff clean
+      - find . -type d -name "__pycache__" -exec rm -rf {} +
+      - find . -type f -name "*.pyc" -delete
+      - rm -rf .ruff_cache/ **/__pycache__/ **/*.egg-info/
+
+  clean:all:
+    desc: "Clean all"
+    cmds:
+      - task: clean
+      - task: clean:caches
+      - task: clean:venv
+
+  build:all:
+    desc: "Build all artifacts"
+    cmds:
+      - task: build
+      - task: build:docs
+  build:
+    desc: "Build the package"
+    cmds:
+      - .venv/bin/python -m build
+  build:docs:
+    desc: "Build the documentation"
+    cmds:
+      - mkdir -p docs
+      - ln -sf ../../CONTRIBUTING.md docs/CONTRIBUTING.md
+      - ln -sf ../../LICENSE.md docs/LICENSE.md
+      - .venv/bin/mkdocs build
+      - rm -f docs/CONTRIBUTING.md
+      - rm -f docs/LICENSE.md
+
+  serve:docs:
+    desc: "Run MkDocs live preview server"
+    cmds:
+      - .venv/bin/mkdocs serve
+
+  format:
+    desc: "Format the code using ruff"
+    cmds:
+      - .venv/bin/ruff format src tests
+
+  check:
+    desc: "Check code by linting"
+    cmds:
+      - .venv/bin/ruff check src tests --fix
+      - .venv/bin/ruff check --select D100,D101,D104 src/ # Check for missing docstrings in public package, module and class
+
+  check:fix:
+    desc: "Check code and try to fix it"
+    cmds:
+      - .venv/bin/ruff check --fix src tests
+
+  test:
+    desc: "Run the unit tests using pytest (alias for test)"
+    cmds:
+      - task: test:unit
+
+  test:unit:
+    desc: "Run the unit tests using pytest"
+    cmds:
+      - .venv/bin/pytest tests -m unit # explicit -m unit, default marker is 'unit'
+
+  test:integration:
+    desc: "Run the integration tests using pytest"
+    cmds:
+      - .venv/bin/pytest -m integration
+
+  test:cov:
+    desc: "Run the unit tests using pytest with coverage"
+    cmds:
+      - .venv/bin/pytest -m unit --cov src --cov-report html:docs/coverage --cov-report xml:tests/coverage.xml -x
+
+  test:all:
+    desc: "Run all tests (unit and integration)"
+    cmds:
+      - .venv/bin/pytest -m ""
+      
+  pre-commit:
+    desc: "Run before commit"
+    cmds:
+      - task: format
+      - task: check
+      - task: test
+
+  pre-commit:setup:
+    desc: "Setup pre-commit hooks"
+    cmds:
+      - .venv/bin/pre-commit install
+    deps:
+      - install
+
+  pre-commit:run:
+    desc: "Run pre-commit hooks on all files"
+    cmds:
+      - .venv/bin/pre-commit run --all-files
+
+  pre-commit:run-changed:
+    desc: "Run pre-commit hooks on changed files only"
+    cmds:
+      - .venv/bin/pre-commit run
+
+  pre-commit:update:
+    desc: "Update pre-commit hooks to latest versions"
+    cmds:
+      - .venv/bin/pre-commit autoupdate
+
+  pre-commit:uninstall:
+    desc: "Uninstall pre-commit hooks"
+    cmds:
+      - .venv/bin/pre-commit uninstall
+
+  ci:
+    desc: "Run the CI pipeline"
+    cmds:
+      - task: check
+      - task: test
+    deps:
+      - install
+
+  fct:
+    desc: "Run format, check, and test tasks in sequence"
+    cmds:
+      - task: format
+      - task: check
+      - task: test
+
+  run:cli:
+    desc: "Run the cypher-graphdb CLI"
+    cmds:
+      - .venv/bin/cypher-graphdb {{.CLI_ARGS}}

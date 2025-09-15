@@ -1,0 +1,29 @@
+task: Available tasks for this project:
+* build:                        Build the package
+* check:                        Check code by linting
+* ci:                           Run the CI pipeline
+* clean:                        Clean the build files
+* fct:                          Run format, check, and test tasks in sequence
+* format:                       Format the code using ruff
+* install:                      Install the package in editable mode
+* pre-commit:                   Run before commit
+* setup:                        Create Python virtual environment with uv
+* test:                         Run the unit tests using pytest (alias for test)
+* build:all:                    Build all artifacts
+* build:docs:                   Build the documentation
+* check:fix:                    Check code and try to fix it
+* clean:all:                    Clean all
+* clean:caches:                 Clean caches
+* clean:docs:                   Clean generated documentation site
+* clean:venv:                   Clean .venv
+* pre-commit:run:               Run pre-commit hooks on all files
+* pre-commit:run-changed:       Run pre-commit hooks on changed files only
+* pre-commit:setup:             Setup pre-commit hooks
+* pre-commit:uninstall:         Uninstall pre-commit hooks
+* pre-commit:update:            Update pre-commit hooks to latest versions
+* run:cli:                      Run the cypher-graphdb CLI
+* serve:docs:                   Run MkDocs live preview server
+* test:all:                     Run all tests (unit and integration)
+* test:cov:                     Run the unit tests using pytest with coverage
+* test:integration:             Run the integration tests using pytest
+* test:unit:                    Run the unit tests using pytest

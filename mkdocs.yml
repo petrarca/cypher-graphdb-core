@@ -1,0 +1,163 @@
+site_name: "cypher-graphdb"
+site_description: "Library to work for cpyher-based graph databased, including a CLI"
+#site_url: "https://..." link to documentation
+repo_url: https://git.cgm.ag/cgm-platform/cypher-graphdb/
+repo_name: cgm-platform/cypher-graphdb
+site_dir: "site"
+watch: [mkdocs.yml, README.md, CHANGELOG.md, scripts/, src/cypher_graphdb]
+copyright: Copyright &copy; 2025 - cyphergraph-db contributors
+edit_uri: edit/main/docs/
+
+validation:
+  omitted_files: ignore
+  absolute_links: warn
+  unrecognized_links: warn
+
+nav:
+- Home:
+  - Overview: index.md
+  - Changelog: changelog.md
+  - License: LICENSE.md
+- Usage:
+  - usage/index.md
+#  - Guides:
+  #  - Recipes: recipes.md
+# defer to gen-files + literate-nav
+- API reference:
+  - cypher_graphdb: reference/
+- Development:
+  - Contributing: CONTRIBUTING.md
+  - Documentation Guide: documentation_guide.md
+  - ToDo: TODO.md
+  - Coverage report: coverage.md
+
+exclude_docs: |
+  **/cypher/*.py
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/gitlab
+  #logo: logo.svg
+  #custom_dir: docs/.overrides
+  features:
+  - announce.dismiss
+  - content.action.edit
+  - content.action.view
+  - content.code.annotate
+  - content.code.copy
+  - content.tooltips
+  - navigation.footer
+  - navigation.indexes
+  - navigation.sections
+  - navigation.tabs
+  - navigation.tabs.sticky
+  - navigation.top
+  - search.highlight
+  - search.suggest
+  - toc.follow
+  palette:
+  - media: "(prefers-color-scheme)"
+    toggle:
+      icon: material/brightness-auto
+      name: Switch to light mode
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: blue
+    accent: blue
+    toggle:
+      icon: material/weather-sunny
+      name: Switch to dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: black
+    accent: lime
+    toggle:
+      icon: material/weather-night
+      name: Switch to system preference
+
+extra_css:
+- css/style.css
+- css/material.css
+- css/mkdocstrings.css
+
+markdown_extensions:
+- attr_list
+- admonition
+- callouts
+- footnotes
+- pymdownx.details
+- pymdownx.highlight:
+    pygments_lang_class: true
+- pymdownx.inlinehilite:
+    style_plain_text: python
+- pymdownx.magiclink
+- pymdownx.snippets:
+    base_path: [!relative $config_dir]
+    check_paths: true
+- pymdownx.superfences
+- pymdownx.tabbed:
+    alternate_style: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+- pymdownx.tasklist:
+    custom_checkbox: true
+- pymdownx.tilde
+- toc:
+    permalink: "¤"
+
+plugins:
+- search
+- markdown-exec
+- gen-files:
+    scripts:
+    - scripts/gen_ref_nav.py
+- literate-nav:
+    nav_file: SUMMARY.md
+- coverage:
+    html_report_dir: docs/coverage
+    page_path: coverage
+- termynal
+- mkdocstrings:
+    handlers:
+      python:
+        inventories:
+        - https://docs.python.org/3/objects.inv
+#        - https://installer.readthedocs.io/en/stable/objects.inv  # demonstration purpose in the docs
+        - https://mkdocstrings.github.io/autorefs/objects.inv
+        - https://www.mkdocs.org/objects.inv
+        - https://python-markdown.github.io/objects.inv
+        paths: [src]
+        options:
+          docstring_options:
+            ignore_init_summary: true
+          docstring_section_style: list
+          heading_level: 1
+          inherited_members: true
+          merge_init_into_class: true
+          parameter_headings: true
+          separate_signature: true
+          show_root_heading: true
+          show_root_full_path: false
+          show_signature_annotations: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          show_source: false
+          summary: true
+          filters: ["!^_"]
+    # not part of the standard mkdocstring
+#- git-committers:
+#    enabled: !ENV [DEPLOY, false]
+#    repository: mkdocstrings/mkdocstrings
+#- minify:
+#    minify_html: !ENV [DEPLOY, false]
+#- group:
+#    enabled: !ENV [MATERIAL_INSIDERS, false]
+#    plugins:
+#    - typeset
+
+
+extra:
+  generator: false
