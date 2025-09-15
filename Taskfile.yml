@@ -8,7 +8,6 @@ tasks:
     cmds:
       - test -d .venv || uv venv
 
-
   install:
     desc: "Install the package in editable mode"
     cmds:

@@ -72,7 +72,8 @@ class FileCommandReader(CommandReader):
         super().__init__(fd=None)  # type: ignore[arg-type]
 
     def __enter__(self):
-        self._file = open(self._path, encoding="utf-8")  # noqa: P201
+        # Open file with UTF-8 encoding; no special noqa needed.
+        self._file = open(self._path, encoding="utf-8")
         self._fd = self._file
         return self
 
