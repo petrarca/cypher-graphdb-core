@@ -1,8 +1,9 @@
 import sys
-from cypher_graphdb import CypherGraphDB
-from cypher_graphdb.cli.renderer import ResultRenderer
 
 from loguru import logger
+
+from cypher_graphdb import CypherGraphDB
+from cypher_graphdb.cli.renderer import ResultRenderer
 
 logger.remove()
 logger.add(sys.stderr, level="TRACE")
@@ -11,7 +12,6 @@ logger.add(sys.stderr, level="TRACE")
 renderer = ResultRenderer()
 
 with CypherGraphDB(backend="memgraph", connect_params={}) as db:
-    
     result = db.execute("""
         MATCH (p) RETURN 'nodes' AS entity, count(p) AS cnt
         UNION ALL
