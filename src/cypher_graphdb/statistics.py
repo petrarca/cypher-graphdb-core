@@ -25,6 +25,38 @@ class GraphStatistics(BaseModel):
     node_labels: dict[str, int] = {}
     edge_labels: dict[str, int] = {}
 
+    def is_empty(self) -> bool:
+        """Check if the statistics represent an empty result.
+
+        Returns:
+            True if there are no nodes, edges, paths, or values in the result.
+        """
+        return self.nodes == 0 and self.edges == 0 and self.paths == 0 and self.values == 0
+
+    def has_graph_data(self) -> bool:
+        """Check if the statistics represent graph data.
+
+        Returns:
+            True if there are nodes or edges in the result.
+        """
+        return self.nodes > 0 or self.edges > 0
+
+    def has_tabular_data(self) -> bool:
+        """Check if the statistics represent tabular data.
+
+        Returns:
+            True if there are values or paths in the result.
+        """
+        return self.values > 0 or self.paths > 0
+
+    def has_data(self) -> bool:
+        """Check if the statistics represent any data.
+
+        Returns:
+            True if there is any data in the result.
+        """
+        return not self.is_empty()
+
     @classmethod
     def create_from_graph(cls: type["GraphStatistics"], graph: Graph) -> "GraphStatistics":
         """Build statistics from an existing Graph object.
