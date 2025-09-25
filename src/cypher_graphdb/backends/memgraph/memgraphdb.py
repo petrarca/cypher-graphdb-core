@@ -423,4 +423,9 @@ class MemgraphDB(CypherBackend):
         exec_stats.exec_time = time.perf_counter() - start_time
         logger.debug(f"exec_time={exec_stats.exec_time:.4f}s")
 
+        # Calculate column count from the result
+        # If result is not empty, use the length of the first row as column count
+        if result and len(result) > 0 and isinstance(result[0], tuple):
+            exec_stats.col_count = len(result[0])
+
         return (result, exec_stats)

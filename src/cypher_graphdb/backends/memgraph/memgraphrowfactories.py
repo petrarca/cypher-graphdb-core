@@ -219,8 +219,11 @@ def memgraph_row_factory(
                     exec_stats.edges += 1
                 elif item.type_ == GraphObjectType.PATH:
                     exec_stats.paths += 1
+            else:
+                exec_stats.values += 1
 
-        # Update execution statistics
+        # Update row count statistics
+        exec_stats.row_count += 1
         return result
 
     return row_factory
