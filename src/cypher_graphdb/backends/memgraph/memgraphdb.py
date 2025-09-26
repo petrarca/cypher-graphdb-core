@@ -24,7 +24,7 @@ from tenacity import (
 from cypher_graphdb import config
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
-from cypher_graphdb.models import GraphObject, GraphObjectType
+from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import LabelStatistics
 
 
@@ -134,7 +134,7 @@ class MemgraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a Cypher query against the graph database.
 
         Args:
@@ -154,12 +154,12 @@ class MemgraphDB(CypherBackend):
 
     def fulltext_search(
         self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Perform full-text search on graph data.
 
         Args:
             cypher_query: Base Cypher query to modify for full-text search.
-            fts_query: Full-text search query string.
+             fts_query: Full-text search query string.
             language: Language for text search.
 
         Returns:

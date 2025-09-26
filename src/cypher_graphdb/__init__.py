@@ -19,7 +19,14 @@ from .dbpool import CypherGraphDBPool
 from .decorators import edge, node, relation
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 from .modelprovider import ModelProvider, model_provider
-from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath
+from .models import (
+    Graph,
+    GraphEdge,
+    GraphNode,
+    GraphObject,
+    GraphPath,
+    TabularResult,
+)
 from .statistics import GraphStatistics
 
 __all__ = [
@@ -28,6 +35,7 @@ __all__ = [
     "GraphEdge",
     "GraphPath",
     "GraphObject",
+    "TabularResult",
     "GraphJSONEncoder",
     "ModelProvider",
     "model_provider",

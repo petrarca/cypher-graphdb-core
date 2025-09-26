@@ -17,7 +17,7 @@ from .backend import CypherBackend, ExecStatistics, SqlStatistics
 from .backendprovider import backend_provider
 from .cypherbuilder import CypherBuilder
 from .cypherparser import ParsedCypherQuery
-from .models import Graph, GraphEdge, GraphNode, GraphObject
+from .models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .statistics import LabelStatistics
 
 
@@ -383,7 +383,7 @@ class CypherGraphDB:
         unnest_result: str | bool = None,
         fetch_one=False,
         raw_data=False,
-    ) -> Any | list[tuple[GraphObject, ...]]:
+    ) -> Any | TabularResult:
         """Execute a Cypher command and return results, with optional unnesting."""
         assert self._backend
 
@@ -398,7 +398,7 @@ class CypherGraphDB:
         unnest_result: str | bool = None,
         fetch_one=False,
         raw_data=False,
-    ) -> Any | list[tuple[GraphObject, ...]]:
+    ) -> Any | TabularResult:
         """Execute a raw SQL command and return results, with optional unnesting."""
         assert self._backend
 
@@ -409,7 +409,7 @@ class CypherGraphDB:
 
     def search(
         self, parsed_query: ParsedCypherQuery, fts_query: str, language: str = None, unnest_result: str | bool = None
-    ) -> Any | list[tuple[GraphObject, ...]]:
+    ) -> Any | TabularResult:
         """Perform full-text search on graph data.
 
         Args:
@@ -659,7 +659,7 @@ class CypherGraphDB:
         cypher_cmd: str | ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> list[tuple[GraphObject, ...]] | None:
+    ) -> TabularResult | None:
         if isinstance(cypher_cmd, str):
             if not (parsed_query := self._parse_cypher(cypher_cmd)):
                 return None
@@ -688,7 +688,7 @@ class CypherGraphDB:
         if isinstance(self.on_after_execute, Callable):
             self.on_after_execute(result, parsed_query)
 
-    def _execute_sql(self, sql_str: str, fetch_one: bool, raw_data: bool) -> list[tuple[GraphObject, ...]]:
+    def _execute_sql(self, sql_str: str, fetch_one: bool, raw_data: bool) -> TabularResult:
         result, self._exec_statistics, self._sql_statistics = self._backend.execute_sql(sql_str, fetch_one, raw_data)
 
         return result

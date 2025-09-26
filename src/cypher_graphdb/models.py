@@ -12,6 +12,22 @@ from pydantic import BaseModel, Field, model_serializer
 
 from . import config, utils
 
+# Type aliases for query results
+TabularResult = list[tuple[Any, ...]]
+"""Type alias for tabular query results.
+
+Represents query results in tabular format where each row is a tuple that can contain:
+- GraphObject instances (GraphNode, GraphEdge, GraphPath)
+- Scalar values (int, str, float, bool, etc.)
+- Collections (lists, dicts) with mixed content
+- Any other values returned by Cypher queries
+
+Examples:
+    - Simple scalar query: [(42,), ("hello",), (3.14,)]
+    - Mixed content: [(GraphNode(...), "name", 25), (GraphEdge(...), "type", True)]
+    - Complex data: [({"key": "value"}, [1, 2, 3], None)]
+"""
+
 
 class DictAccessMixin:
     """Mixin to provide dictionary-like access to graph objects.

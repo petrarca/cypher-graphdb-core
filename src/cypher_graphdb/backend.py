@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from . import modelprovider, utils
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .modelprovider import ModelProvider
-from .models import GraphObject
+from .models import TabularResult
 from .statistics import GraphStatistics, LabelStatistics
 
 
@@ -167,7 +167,7 @@ class CypherBackend(abc.ABC):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a parsed Cypher query and return results and execution stats."""
         pass
 
@@ -177,7 +177,7 @@ class CypherBackend(abc.ABC):
         cypher_query: ParsedCypherQuery,
         fts_query: str,
         language: str = None,
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Perform a full-text search via a Cypher query and return results and execution stats."""
         pass
 
@@ -186,7 +186,7 @@ class CypherBackend(abc.ABC):
         sql_str: str,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics, SqlStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics, SqlStatistics]:
         """Execute a SQL statement if supported, else raise an error."""
         raise RuntimeError("Backend does not support SQL execution!")
 

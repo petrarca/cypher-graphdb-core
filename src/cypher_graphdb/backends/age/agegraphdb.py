@@ -23,7 +23,7 @@ from psycopg.types import TypeInfo
 from cypher_graphdb import config
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
-from cypher_graphdb.models import GraphObject, GraphObjectType
+from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import LabelStatistics
 
 from .agerowfactories import age_row_factory
@@ -136,7 +136,7 @@ class AGEGraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a Cypher query against the graph database.
 
         Args:
@@ -157,7 +157,7 @@ class AGEGraphDB(CypherBackend):
 
     def fulltext_search(
         self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Perform full-text search on graph data.
 
         Args:
@@ -185,7 +185,7 @@ class AGEGraphDB(CypherBackend):
         sql_str: str,
         fetch_one: bool = False,
         raw_data: bool = False,
-    ) -> tuple[list[tuple[GraphObject, ...]], ExecStatistics, SqlStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics, SqlStatistics]:
         """Execute raw SQL statement against the database.
 
         Args:
