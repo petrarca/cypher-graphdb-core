@@ -45,9 +45,9 @@ class GraphStatistics(BaseModel):
         """Check if the statistics represent tabular data.
 
         Returns:
-            True if there are values or paths in the result.
+            True if there are values or paths in the result or if the edges exist without nodes.
         """
-        return self.values > 0 or self.paths > 0
+        return self.values > 0 or self.paths > 0 or (self.edges > 0 and self.nodes == 0)
 
     def has_data(self) -> bool:
         """Check if the statistics represent any data.
