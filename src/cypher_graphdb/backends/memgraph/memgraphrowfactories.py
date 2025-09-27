@@ -11,19 +11,10 @@ from loguru import logger
 
 from cypher_graphdb.backend import ExecStatistics
 from cypher_graphdb.modelprovider import ModelProvider
-from cypher_graphdb.models import (
-    GraphEdge as Edge,
-)
-from cypher_graphdb.models import (
-    GraphNode as Node,
-)
-from cypher_graphdb.models import (
-    GraphObject,
-    GraphObjectType,
-)
-from cypher_graphdb.models import (
-    GraphPath as Path,
-)
+from cypher_graphdb.models import GraphEdge as Edge
+from cypher_graphdb.models import GraphNode as Node
+from cypher_graphdb.models import GraphObject
+from cypher_graphdb.models import GraphPath as Path
 
 
 def _convert_property_value(value: Any) -> Any:
@@ -150,15 +141,16 @@ def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Pat
     return Path(nodes=nodes, edges=relationships)
 
 
-def _convert_memgraph_value(value: Any, model_provider: Any = None) -> Any:
+def _convert_memgraph_value(value: Any, exec_stats: ExecStatistics, model_provider: Any = None) -> Any:
     """Convert any Memgraph value to CypherGraphDB compatible format.
 
     This function handles all possible Memgraph types and converts them to
-    appropriate CypherGraphDB types.
+    appropriate CypherGraphDB types. Also updates execution statistics if provided.
 
     Args:
         value: Value from Memgraph to convert.
         model_provider: Optional model provider for object conversion.
+        exec_stats: Execution statistics to update during conversion.
 
     Returns:
         Converted value compatible with CypherGraphDB.
@@ -168,17 +160,21 @@ def _convert_memgraph_value(value: Any, model_provider: Any = None) -> Any:
 
     # Handle different Memgraph types
     if isinstance(value, mgclient.Node):
+        exec_stats.nodes += 1
         return _convert_node(value, model_provider)
     elif isinstance(value, mgclient.Relationship):
+        exec_stats.edges += 1
         return _convert_relationship(value, model_provider)
     elif isinstance(value, mgclient.Path):
+        exec_stats.paths += 1
         return _convert_path(value, model_provider)
     elif isinstance(value, list | tuple):
-        return [_convert_memgraph_value(v, model_provider) for v in value]
+        return [_convert_memgraph_value(v, exec_stats, model_provider) for v in value]
     elif isinstance(value, dict):
-        return {k: _convert_memgraph_value(v, model_provider) for k, v in value.items()}
+        return {k: _convert_memgraph_value(v, exec_stats, model_provider) for k, v in value.items()}
     else:
         # Return primitive values as is
+        exec_stats.values += 1
         return value
 
 
@@ -207,20 +203,8 @@ def memgraph_row_factory(
         if not row:
             return ()
 
-        # Convert each value in the row
-        result = tuple(_convert_memgraph_value(value, model_provider) for value in row)
-
-        # Update statistics
-        for item in result:
-            if isinstance(item, GraphObject):
-                if item.type_ == GraphObjectType.NODE:
-                    exec_stats.nodes += 1
-                elif item.type_ == GraphObjectType.EDGE:
-                    exec_stats.edges += 1
-                elif item.type_ == GraphObjectType.PATH:
-                    exec_stats.paths += 1
-            else:
-                exec_stats.values += 1
+        # Convert each value in the row (statistics are updated within _convert_memgraph_value)
+        result = tuple(_convert_memgraph_value(value, exec_stats, model_provider) for value in row)
 
         # Update row count statistics
         exec_stats.row_count += 1

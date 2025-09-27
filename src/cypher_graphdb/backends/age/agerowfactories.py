@@ -17,25 +17,17 @@ from cypher_graphdb.modelprovider import ModelProvider
 from cypher_graphdb.models import GraphEdge, GraphNode, GraphPath
 
 
-def _create_graph_node(value: age.models.Vertex, stats: ExecStatistics, provider: ModelProvider, update_stats: bool) -> GraphNode:
+def _create_graph_node(value: age.models.Vertex, stats: ExecStatistics, provider: ModelProvider) -> GraphNode:
     """Create a GraphNode from an AGE Vertex."""
     node = provider.create_node(value.label, value.properties, id=value.id)
-
-    # update statistics
-    if update_stats:
-        stats.track_node(node)
-
+    stats.track_node(node)
     return node
 
 
-def _create_graph_edge(value: age.models.Edge, stats: ExecStatistics, provider: ModelProvider, update_stats: bool) -> GraphEdge:
+def _create_graph_edge(value: age.models.Edge, stats: ExecStatistics, provider: ModelProvider) -> GraphEdge:
     """Create a GraphEdge from an AGE Edge."""
     edge = provider.create_edge(value.label, value.start_id, value.end_id, value.properties, id=value.id)
-
-    # update statistics
-    if update_stats:
-        stats.track_edge(edge)
-
+    stats.track_edge(edge)
     return edge
 
 
@@ -45,9 +37,13 @@ def _create_graph_path(value, stats: ExecStatistics, provider: ModelProvider) ->
 
     for entity in value.entities:
         if isinstance(entity, age.models.Vertex):
-            path.append(_create_graph_node(entity, stats, provider, False))
+            # Don't update stats here, will be updated when path stats are updated
+            node = provider.create_node(entity.label, entity.properties, id=entity.id)
+            path.append(node)
         elif isinstance(entity, age.models.Edge):
-            path.append(_create_graph_edge(entity, stats, provider, False))
+            # Don't update stats here, will be updated when path stats are updated
+            edge = provider.create_edge(entity.label, entity.start_id, entity.end_id, entity.properties, id=entity.id)
+            path.append(edge)
         else:
             path.append(entity)
 
@@ -58,9 +54,9 @@ def _create_graph_path(value, stats: ExecStatistics, provider: ModelProvider) ->
 def _map_age_value(value, stats: ExecStatistics, provider: ModelProvider):
     """Map an AGE value to the appropriate graph object type."""
     if isinstance(value, age.models.Vertex):
-        return _create_graph_node(value, stats, provider, True)
+        return _create_graph_node(value, stats, provider)
     elif isinstance(value, age.models.Edge):
-        return _create_graph_edge(value, stats, provider, True)
+        return _create_graph_edge(value, stats, provider)
     elif isinstance(value, age.models.Path):
         return _create_graph_path(value, stats, provider)
     else:
