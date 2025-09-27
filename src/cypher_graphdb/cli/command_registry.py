@@ -41,8 +41,7 @@ class CommandRegistry:
         if name is None:
             raise ValueError(
                 f"No command name available for {command_class.__name__}. "
-                "Either provide command_name parameter or set command_name "
-                "class attribute."
+                f"Either provide command_name parameter or set command_name class attribute."
             )
 
         if name in self._commands:

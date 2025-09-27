@@ -89,7 +89,7 @@ extend-exclude = ["src/cypher_graphdb/cypher"]
 line-length = 130
 
 [tool.ruff.lint]
-ignore = []
+ignore = ["SIM108"]  # Ignore ternary operator suggestions for readability
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
