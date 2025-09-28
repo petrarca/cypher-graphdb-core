@@ -85,8 +85,8 @@ def test_edges_and_nodes_collections(graph_simple):
 
 
 def test_get_node_and_edge(graph_simple):
-    assert gops.get_node(graph_simple, 1) is graph_simple[1]
-    assert gops.get_edge(graph_simple, 1001) is graph_simple[1001]
+    assert gops.get_node(graph_simple, 1) is graph_simple.nodes[1]
+    assert gops.get_edge(graph_simple, 1001) is graph_simple.edges[1001]
     assert gops.get_node(graph_simple, 9999) is None
     assert gops.get_edge(graph_simple, 9999) is None
 
@@ -108,32 +108,32 @@ def test_edges_between_nodes(graph_simple, start_id, end_id, expected_count):
     result = gops.edges_between_nodes(graph_simple, start_id, end_id)
     assert len(result) == expected_count
     if expected_count:
-        assert result[0] == graph_simple[1001]
+        assert result[0] == graph_simple.edges[1001]
 
 
 def test_incoming_nodes(graph_simple):
-    result = gops.incoming_nodes(graph_simple, graph_simple[2])
+    result = gops.incoming_nodes(graph_simple, graph_simple.nodes[2])
     assert len(result) == 1
     edge, source = result[0]
-    assert edge == graph_simple[1001]
-    assert source == graph_simple[1]
+    assert edge == graph_simple.edges[1001]
+    assert source == graph_simple.nodes[1]
 
 
 def test_outgoing_nodes(graph_simple):
-    result = gops.outgoing_nodes(graph_simple, graph_simple[1])
+    result = gops.outgoing_nodes(graph_simple, graph_simple.nodes[1])
     assert len(result) == 1
     edge, target = result[0]
-    assert edge == graph_simple[1001]
-    assert target == graph_simple[2]
+    assert edge == graph_simple.edges[1001]
+    assert target == graph_simple.nodes[2]
 
 
 def test_incoming_outgoing_label_filter(graph_tree):
     # all edges are label SCO
-    incoming = gops.incoming_nodes(graph_tree, graph_tree[1], label="SCO")
+    incoming = gops.incoming_nodes(graph_tree, graph_tree.nodes[1], label="SCO")
     assert len(incoming) == 2
-    incoming_none = gops.incoming_nodes(graph_tree, graph_tree[1], label="X")
+    incoming_none = gops.incoming_nodes(graph_tree, graph_tree.nodes[1], label="X")
     assert incoming_none == ()
-    outgoing = gops.outgoing_nodes(graph_tree, graph_tree[2], label="SCO")
+    outgoing = gops.outgoing_nodes(graph_tree, graph_tree.nodes[2], label="SCO")
     assert len(outgoing) == 1
 
 
@@ -145,21 +145,21 @@ def test_incoming_outgoing_label_filter(graph_tree):
 def test_unbound_nodes(graph_tree):
     result = gops.unbound_nodes(graph_tree)
     assert len(result) == 1
-    assert graph_tree[6] in result
+    assert graph_tree.nodes[6] in result
 
 
 def test_self_referenced_nodes(graph_tree, graph_selfref):
     # tree graph has one self edge on node 3
     result_tree = gops.self_referenced_nodes(graph_tree)
-    assert graph_tree[3] in result_tree
+    assert graph_tree.nodes[3] in result_tree
     # label filter hit
     result_tree_label = gops.self_referenced_nodes(graph_tree, label="SCO")
-    assert graph_tree[3] in result_tree_label
+    assert graph_tree.nodes[3] in result_tree_label
     # label filter miss
     assert gops.self_referenced_nodes(graph_tree, label="OTHER") == set()
     # separate selfref graph (node 1 self loop)
     result_sr = gops.self_referenced_nodes(graph_selfref)
-    assert graph_selfref[1] in result_sr
+    assert graph_selfref.nodes[1] in result_sr
 
 
 def test_missing_nodes(graph_missing):
@@ -192,28 +192,28 @@ def test_root_nodes_tree(graph_tree):
 
 
 def test_create_tree_incoming(graph_simple):
-    result = gops.create_tree(graph_simple, graph_simple[2], direction="incoming")
+    result = gops.create_tree(graph_simple, graph_simple.nodes[2], direction="incoming")
     assert len(result) == 1
     root_node, _root_edge, children = result[0]
-    assert root_node == graph_simple[2]
+    assert root_node == graph_simple.nodes[2]
     assert len(children) == 1
     child_node, edge, grand_children = children[0]
-    assert child_node == graph_simple[1]
-    assert edge == graph_simple[1001]
+    assert child_node == graph_simple.nodes[1]
+    assert edge == graph_simple.edges[1001]
     assert grand_children == ()
 
 
 def test_create_tree_outgoing(graph_simple):
-    result = gops.create_tree(graph_simple, graph_simple[1], direction="outgoing")
+    result = gops.create_tree(graph_simple, graph_simple.nodes[1], direction="outgoing")
     assert len(result[0][2]) == 1  # one child from node 1
     child_node, edge, _gc = result[0][2][0]
-    assert child_node == graph_simple[2]
-    assert edge == graph_simple[1001]
+    assert child_node == graph_simple.nodes[2]
+    assert edge == graph_simple.edges[1001]
 
 
 def test_create_tree_max_depth(graph_tree):
     # root = 1 (incoming) children are nodes 2 & 3 (depth=1), we cap at depth=1 so their children not expanded
-    tree = gops.create_tree(graph_tree, graph_tree[1], direction="incoming", max_depth=1)
+    tree = gops.create_tree(graph_tree, graph_tree.nodes[1], direction="incoming", max_depth=1)
     root_children = tree[0][2]
     assert len(root_children) == 2
     # each child tuple has an empty children expansion placeholder (since depth limit reached)
@@ -236,7 +236,9 @@ def test_build_tree(graph_tree):
 
 
 def test_graph_indexing_stability(graph_simple):
-    # indexing by edge id returns the edge
-    assert graph_simple[1001] == graph_simple[1001]
-    # retrieving a missing key returns None
-    assert graph_simple[9999] is None
+    # direct access by numeric ID returns the same object
+    assert graph_simple.edges[1001] == graph_simple.edges[1001]
+    assert graph_simple.nodes[1] == graph_simple.nodes[1]
+    # retrieving a missing key returns None for direct access
+    assert graph_simple.nodes.get(9999) is None
+    assert graph_simple.edges.get(9999) is None

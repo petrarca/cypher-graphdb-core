@@ -21,47 +21,73 @@ def density(graph: Graph) -> float:
     return m / (n * (n - 1))
 
 
-def edges(graph: Graph) -> tuple[GraphEdge]:
+def get_edges(graph: Graph) -> tuple[GraphEdge, ...]:
     """Return all edges in the graph as a tuple."""
-    return tuple(graph.edges)
+    return tuple(graph.edges.values())
 
 
 def get_edge(graph: Graph, edge_ref: str | int) -> GraphEdge | None:
     """Get an edge by reference (ID or GID), returning None if not found."""
-    result = graph[edge_ref]
+    if isinstance(edge_ref, int):
+        return graph.edges.get(edge_ref)
+    elif isinstance(edge_ref, str):
+        # GID lookup - search through edges
+        for edge in graph.edges.values():
+            if edge.gid_ == edge_ref:
+                return edge
+        return None
+    return None
 
-    return result if isinstance(result, GraphEdge) else None
+
+def get_nodes(graph: Graph) -> tuple[GraphNode, ...]:
+    """Return all nodes in the graph as a tuple."""
+    return tuple(graph.nodes.values())
 
 
 def edges_between_nodes(graph: Graph, start_ref: int, end_ref: int) -> tuple[GraphEdge]:
     """Find all edges connecting two specific nodes."""
     result = []
-    for edge in graph.edges:
+    for edge in graph.edges.values():
         if edge.start_id_ == start_ref and edge.end_id_ == end_ref:
             result.append(edge)
 
     return tuple(result)
 
 
-def nodes(graph: Graph) -> tuple[GraphNode]:
+def nodes(graph: Graph) -> tuple[GraphNode, ...]:
     """Return all nodes in the graph as a tuple."""
-    return tuple(graph.nodes)
+    return tuple(graph.nodes.values())
+
+
+def edges(graph: Graph) -> tuple[GraphEdge, ...]:
+    """Return all edges in the graph as a tuple."""
+    return tuple(graph.edges.values())
 
 
 def get_node(graph: Graph, node_ref: int | str) -> GraphNode | None:
     """Get a node by reference (ID or GID), returning None if not found."""
-    result = graph[node_ref]
+    if isinstance(node_ref, int):
+        return graph.nodes.get(node_ref)
+    elif isinstance(node_ref, str):
+        # GID lookup - search through nodes
+        for node in graph.nodes.values():
+            if node.gid_ == node_ref:
+                return node
+        return None
+    return None
 
-    return result if isinstance(result, GraphNode) else None
 
-
-def root_nodes(graph: Graph, direction: str = "incoming", with_unbound_nodes: bool = False) -> tuple[GraphNode]:
-    """Find root nodes based on edge direction.
+def root_nodes(
+    graph: Graph,
+    direction: str = "incoming",
+    with_unbound_nodes: bool = False,
+) -> tuple[GraphNode, ...]:
+    """Find root nodes in graph based on edge direction.
 
     Args:
         graph: The graph to analyze.
-        direction: 'incoming' or 'outgoing' edge direction.
-        with_unbound_nodes: Whether to include nodes with no edges.
+        direction: Direction to consider ("incoming" or "outgoing").
+        with_unbound_nodes: Include nodes with no connections.
 
     Returns:
         Tuple of nodes that are roots in the specified direction.
@@ -75,7 +101,7 @@ def root_nodes(graph: Graph, direction: str = "incoming", with_unbound_nodes: bo
 
     result = []
 
-    for node in graph.nodes:
+    for node in graph.nodes.values():
         r1 = proc1(graph, node)
         r2 = proc2(graph, node)
 
@@ -90,43 +116,45 @@ def root_nodes(graph: Graph, direction: str = "incoming", with_unbound_nodes: bo
     return tuple(result)
 
 
-def unbound_nodes(graph: Graph) -> tuple[GraphNode]:
+def unbound_nodes(graph: Graph) -> tuple[GraphNode, ...]:
     """Return nodes that are not connected to any edges."""
-    all_nodes = set(graph.nodes)
+    all_nodes = set(graph.nodes.values())
     ref_nodes = set()
 
-    for edge in graph.edges:
-        ref_nodes.add(graph[edge.start_id_])
-        ref_nodes.add(graph[edge.end_id_])
+    for edge in graph.edges.values():
+        if edge.start_id_ in graph.nodes:
+            ref_nodes.add(graph.nodes[edge.start_id_])
+        if edge.end_id_ in graph.nodes:
+            ref_nodes.add(graph.nodes[edge.end_id_])
 
-    return all_nodes - ref_nodes
+    return tuple(all_nodes - ref_nodes)
 
 
 def missing_nodes(graph: Graph) -> set[int]:
     """Find node IDs referenced by edges but missing from the graph."""
     result = set()
 
-    for edge in graph.edges:
-        if graph[edge.start_id_] is None:
+    for edge in graph.edges.values():
+        if edge.start_id_ not in graph.nodes:
             result.add(edge.start_id_)
-        if edge.end_id_ != edge.start_id_ and graph[edge.end_id_] is None:
+        if edge.end_id_ != edge.start_id_ and edge.end_id_ not in graph.nodes:
             result.add(edge.end_id_)
 
     return result
 
 
-def self_referenced_nodes(graph: Graph, label: str = None) -> set[GraphNode]:
+def self_referenced_nodes(graph: Graph, label: str | None = None) -> set[GraphNode]:
     """Find nodes with self-referencing edges, optionally filtered by edge label."""
     result = set()
 
-    for edge in graph.edges:
-        if edge.start_id_ == edge.end_id_ and (not label or edge.label_ == label):
-            result.add(graph[edge.start_id_])
+    for edge in graph.edges.values():
+        if edge.start_id_ == edge.end_id_ and (not label or edge.label_ == label) and edge.start_id_ in graph.nodes:
+            result.add(graph.nodes[edge.start_id_])
 
     return result
 
 
-def incoming_nodes(graph: Graph, node: GraphNode, label: str = None) -> tuple[tuple[GraphEdge, GraphNode]]:
+def incoming_nodes(graph: Graph, node: GraphNode, label: str | None = None) -> tuple[tuple[GraphEdge, GraphNode], ...]:
     """Find nodes connected to the given node via incoming edges.
 
     Args:
@@ -139,19 +167,18 @@ def incoming_nodes(graph: Graph, node: GraphNode, label: str = None) -> tuple[tu
 
     """
     result = []
-    for edge in graph.edges:
+    for edge in graph.edges.values():
         # skip over self references
         if edge.start_id_ == edge.end_id_:
             continue
 
-        if edge.end_id_ == node.id_ and (not label or edge.label_ == label):
-            # TODO: remove C409 result.append(tuple((edge, graph[edge.start_id_])))
-            result.append((edge, graph[edge.start_id_]))
+        if edge.end_id_ == node.id_ and (not label or edge.label_ == label) and edge.start_id_ in graph.nodes:
+            result.append((edge, graph.nodes[edge.start_id_]))
 
     return tuple(result)
 
 
-def outgoing_nodes(graph: Graph, node: GraphNode, label: str = None) -> tuple[tuple[GraphEdge, GraphNode]]:
+def outgoing_nodes(graph: Graph, node: GraphNode, label: str | None = None) -> tuple[tuple[GraphEdge, GraphNode], ...]:
     """Find nodes connected to the given node via outgoing edges.
 
     Args:
@@ -164,13 +191,13 @@ def outgoing_nodes(graph: Graph, node: GraphNode, label: str = None) -> tuple[tu
 
     """
     result = []
-    for edge in graph.edges:
+    for edge in graph.edges.values():
         # skip over self references
         if edge.start_id_ == edge.end_id_:
             continue
 
-        if edge.start_id_ == node.id_ and (not label or edge.label_ == label):
-            result.append((edge, graph[edge.end_id_]))
+        if edge.start_id_ == node.id_ and (not label or edge.label_ == label) and edge.end_id_ in graph.nodes:
+            result.append((edge, graph.nodes[edge.end_id_]))
 
     return tuple(result)
 
@@ -178,9 +205,9 @@ def outgoing_nodes(graph: Graph, node: GraphNode, label: str = None) -> tuple[tu
 # TODO: Type annotation fo result (recursive tuples)
 def create_tree(
     graph: Graph,
-    roots: GraphNode | tuple[GraphNode],
+    roots: GraphNode | tuple[GraphNode, ...],
     direction: str = config.DEFAULT_TREE_DIRECTION,
-    label: str = None,
+    label: str | None = None,
     max_depth: int = -1,
 ):
     """Create a tree structure from graph starting at specified root nodes.

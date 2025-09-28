@@ -8,6 +8,6 @@ def test_graph_includes_node_with_id_zero():
 
     g.merge([n0, n1])
 
-    ids = {n.id_ for n in g.nodes}
+    ids = {n.id_ for n in g.nodes.values()}
     assert 0 in ids and 1 in ids
     assert len(ids) == 2

@@ -422,10 +422,8 @@ class GraphPath(GraphObject):
 class Graph(GraphObject):
     """Container for nodes and edges with indexing and merging capabilities."""
 
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
-
-    _id_to_obj: dict[int, GraphNode | GraphEdge] = {}
+    nodes: dict[int, GraphNode] = {}
+    edges: dict[int, GraphEdge] = {}
 
     @property
     def type_(self):
@@ -441,7 +439,31 @@ class Graph(GraphObject):
         """Remove all nodes and edges from the graph."""
         self.nodes.clear()
         self.edges.clear()
-        self._id_to_obj.clear()
+
+    def __getitem__(self, key: str) -> GraphNode | GraphEdge:
+        """Get a node or edge by GID (Global ID) for subscriptable access.
+
+        Only supports string GIDs, not numeric IDs.
+        Use graph.nodes[id] or graph.edges[id] for numeric ID lookups.
+        """
+        if not isinstance(key, str):
+            raise TypeError(
+                f"Graph subscriptable access only supports string GIDs, "
+                f"not {type(key).__name__}. "
+                "Use graph.nodes[id] or graph.edges[id] for numeric access."
+            )
+
+        # Search nodes first
+        for node in self.nodes.values():
+            if node.gid_ == key:
+                return node
+
+        # Search edges
+        for edge in self.edges.values():
+            if edge.gid_ == key:
+                return edge
+
+        raise KeyError(f"No node or edge found with GID '{key}'")
 
     def merge(self, value, clear_before_merge: bool = False) -> None:
         """Merge another graph object or collection into this graph."""
@@ -456,11 +478,12 @@ class Graph(GraphObject):
             self._merge_into_graph(value)
 
     @model_serializer
-    def serialize_model(self, info) -> dict[str, Any]:
+    def serialize_model(self, info) -> dict[str, Any] | list[dict[str, Any]]:
         with_type = info.context.get("with_type", False) if info.context else False
 
-        _nodes = [n.model_dump(context={"with_type": not with_type}) for n in self.nodes]
-        _edges = [e.model_dump(context={"with_type": not with_type}) for e in self.edges]
+        # Convert dictionary values to lists for serialization
+        _nodes = [n.model_dump(context={"with_type": not with_type}) for n in self.nodes.values()]
+        _edges = [e.model_dump(context={"with_type": not with_type}) for e in self.edges.values()]
 
         if with_type:
             return {"nodes": _nodes, "edges": _edges}
@@ -468,13 +491,15 @@ class Graph(GraphObject):
             return _nodes + _edges
 
     def to_result(self) -> list[tuple[GraphObject | GraphEdge, ...]]:
-        return [tuple(v) for v in self.nodes + self.edges]
+        # Combine nodes and edges into a single list
+        all_entities = list(self.nodes.values()) + list(self.edges.values())
+        return [(v,) for v in all_entities]
 
     def grouped_nodes(self):
-        return self._group_by_label(self.nodes)
+        return self._group_by_label(list(self.nodes.values()))
 
     def grouped_edges(self):
-        return self._group_by_label(self.edges)
+        return self._group_by_label(list(self.edges.values()))
 
     def grouped_entities(self):
         # combine the two dictionaries nodes and edge labels do not intersect
@@ -484,7 +509,7 @@ class Graph(GraphObject):
 
         return result
 
-    def _group_by_label(self, entities: list[GraphObject]) -> list[tuple[str, list[GraphObject]]]:
+    def _group_by_label(self, entities: list[GraphObject]) -> dict[str, list[GraphObject]]:
         result = {}
 
         for entity in entities.copy():
@@ -507,38 +532,25 @@ class Graph(GraphObject):
             pass
 
     def _append_node(self, value: GraphNode):
-        if self._add_to_graph(value):
-            self.nodes.append(value)
+        if self._can_add_node(value):
+            # Type checker: _can_add_node ensures value.id_ is not None
+            assert value.id_ is not None
+            self.nodes[value.id_] = value
 
     def _append_edge(self, value: GraphEdge):
-        if self._add_to_graph(value):
-            self.edges.append(value)
+        if self._can_add_edge(value):
+            # Type checker: _can_add_edge ensures value.id_ is not None
+            assert value.id_ is not None
+            self.edges[value.id_] = value
 
     def _append_path(self, value: GraphPath):
         for entity in value.entities:
             self._merge_into_graph(entity)
 
-    def _add_to_graph(self, value: GraphNode | GraphEdge) -> bool:
-        # Accept id == 0 as valid; only skip if id_ is None or already present
-        if value.id_ is None or value.id_ in self._id_to_obj:
-            return False
+    def _can_add_node(self, value: GraphNode) -> bool:
+        """Check if node can be added (has ID and not duplicate)."""
+        return value.id_ is not None and value.id_ not in self.nodes
 
-        self._id_to_obj[value.id_] = value
-        return True
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self._id_to_obj.get(key, None)
-
-        if isinstance(key, str):
-            for entity in self._id_to_obj:
-                if entity.label_ == key:
-                    return entity
-
-        return None
-
-    def __iter__(self):
-        return iter(self._id_to_obj.values())
-
-    def __len__(self):
-        return len(self._id_to_obj)
+    def _can_add_edge(self, value: GraphEdge) -> bool:
+        """Check if edge can be added (has ID and not duplicate)."""
+        return value.id_ is not None and value.id_ not in self.edges
