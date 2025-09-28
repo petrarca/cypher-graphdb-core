@@ -27,19 +27,8 @@ from .connection_utils import (
     sanitize_connection_string_for_logging,
     validate_protocol,
 )
-from .conversion_utils import (
-    isnan,
-    resolve_properties,
-    to_collection,
-    type_to_default_value,
-)
-from .core_utils import (
-    SCALAR_TYPES,
-    generate_unique_string_id,
-    is_scalar_type,
-    resolve_fileformat,
-    split_path,
-)
+from .conversion_utils import isnan, resolve_properties, to_collection, type_to_default_value
+from .core_utils import SCALAR_TYPES, generate_unique_string_id, is_scalar_type, resolve_fileformat, split_path
 from .string_utils import (
     StringMatch,
     args_to_dict,
@@ -52,7 +41,7 @@ from .string_utils import (
     resolve_to_type,
     split_into_args_kwargs,
     split_str,
-    startswith,
+    starts_with,
     str_to_collection,
     try_literal_eval,
 )
@@ -92,7 +81,7 @@ __all__ = [
     "split_into_args_kwargs",
     "args_to_dict",
     "try_literal_eval",
-    "startswith",
+    "starts_with",
     "str_to_collection",
     # Conversion utilities
     "type_to_default_value",

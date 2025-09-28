@@ -281,7 +281,7 @@ class PromptParser:
 
     def _parse_cmd_with_map(self, cmd_map, command):
         def match_cmd(tokens, split_args):
-            pos = utils.startswith(command, tokens)
+            pos = utils.starts_with(command, tokens)
 
             if pos > 0:
                 options = command[pos:].strip()

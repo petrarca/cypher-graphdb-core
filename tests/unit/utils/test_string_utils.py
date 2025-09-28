@@ -163,9 +163,9 @@ def test_resolve_to_type():
     assert utils.resolve_to_type("42abc") is type(None)
 
 
-def test_startswith():
-    """Test startswith function."""
-    assert utils.startswith("hello world", "hello") == 1
-    assert utils.startswith("hello world", "world") == -1
+def test_starts_with():
+    """Test starts_with function."""
+    assert utils.starts_with("hello world", "hello") == 1
+    assert utils.starts_with("hello world", "world") == -1
     # Edge case: empty prefix returns -1
-    assert utils.startswith("hello", "") == -1
+    assert utils.starts_with("hello", "") == -1

@@ -604,7 +604,7 @@ def try_literal_eval(literal) -> tuple[Any, bool]:
     return value, is_literal
 
 
-def startswith(s, tokens) -> int:
+def starts_with(s, tokens) -> int:
     """Check if string starts with any of the given tokens.
 
     Checks if a string starts with any token from a collection and returns
@@ -618,10 +618,10 @@ def startswith(s, tokens) -> int:
         Length of matched token, or -1 if no match found.
 
     Examples:
-        >>> startswith("hello world", ["hello", "hi"])
+        >>> starts_with("hello world", ["hello", "hi"])
         5
 
-        >>> startswith("testing", ["test", "temp"])
+        >>> starts_with("testing", ["test", "temp"])
         4
 
         >>> startswith("nomatch", ["yes", "no"])
