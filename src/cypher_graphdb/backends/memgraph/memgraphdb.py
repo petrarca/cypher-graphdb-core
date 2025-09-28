@@ -21,6 +21,7 @@ from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatist
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import LabelStatistics
+from cypher_graphdb.utils import parse_connection_uri, validate_protocol
 
 
 class MemgraphDB(CypherBackend):
@@ -99,7 +100,9 @@ class MemgraphDB(CypherBackend):
         self._ckwargs = kwargs
         self._graph_name = "memgraph"
 
-        logger.debug(f"{host=}, {port=}, {username=}, {self.autocommit=}")
+        logger.debug(
+            "host=%s, port=%s, username_masked=%s, autocommit=%s", host, port, "***MASKED***" if username else "", self.autocommit
+        )
 
         try:
             # Connect to Memgraph with retry logic
@@ -125,60 +128,19 @@ class MemgraphDB(CypherBackend):
 
         Returns:
             Dictionary of parsed connection parameters
+
+        Raises:
+            ValueError: If protocol is not 'bolt' or parsing fails
         """
         if not cinfo:
             return {}
 
-        if cinfo.startswith("bolt://"):
-            return self._parse_bolt_uri(cinfo)
-        else:
-            return self._parse_key_value_format(cinfo)
+        # Parse using the common utility
+        params = parse_connection_uri(cinfo)
 
-    def _parse_bolt_uri(self, cinfo: str) -> dict[str, Any]:
-        """Parse bolt:// URI format connection string."""
-        params = {}
-        uri = cinfo[7:]  # Remove 'bolt://'
-
-        # Extract auth if present
-        if "@" in uri:
-            auth_part, host_part = uri.rsplit("@", 1)
-            if ":" in auth_part:
-                params["username"], params["password"] = auth_part.split(":", 1)
-            else:
-                params["username"] = auth_part
-        else:
-            host_part = uri
-
-        # Extract host and port
-        if ":" in host_part:
-            params["host"], port_str = host_part.split(":", 1)
-            try:
-                params["port"] = int(port_str)
-            except ValueError as exc:
-                raise ValueError(f"Invalid port in bolt URI: {port_str}. Port must be a valid integer.") from exc
-        else:
-            params["host"] = host_part
-
-        return params
-
-    def _parse_key_value_format(self, cinfo: str) -> dict[str, Any]:
-        """Parse key=value format connection string."""
-        params = {}
-
-        for pair in cinfo.split():
-            if "=" in pair:
-                key, value = pair.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-
-                # Convert port to int
-                if key == "port":
-                    try:
-                        params[key] = int(value)
-                    except ValueError as exc:
-                        raise ValueError(f"Invalid port value: {value}. Port must be a valid integer.") from exc
-                else:
-                    params[key] = value
+        # Validate protocol if specified (only bolt is supported for Memgraph)
+        if "protocol" in params:
+            validate_protocol(params, ["bolt"])
 
         return params
 
@@ -497,4 +459,5 @@ class MemgraphDB(CypherBackend):
         if result and len(result) > 0 and isinstance(result[0], tuple):
             exec_stats.col_count = len(result[0])
 
+        return (result, exec_stats)
         return (result, exec_stats)

@@ -25,6 +25,7 @@ from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatist
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import LabelStatistics
+from cypher_graphdb.utils import sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
 
 from .agerowfactories import age_row_factory
 from .agesearch import convert_to_fts_query
@@ -109,10 +110,18 @@ class AGEGraphDB(CypherBackend):
         self._set_graph_if_not_exists = kwargs.pop("set_graph_if_not_exists", True)
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
 
-        logger.debug(f"{cinfo=}, {graph_name=}, {self.autocommit=}")
+        logger.debug(
+            "cinfo=%s, graph_name=%s, autocommit=%s",
+            sanitize_connection_string_for_logging("" if cinfo is None else cinfo),
+            graph_name,
+            self.autocommit,
+        )
 
         self._cinfo = conninfo.make_conninfo("" if cinfo is None else cinfo, **kwargs)
-        logger.debug(f"make_conninfo={self._cinfo}")
+        logger.debug(
+            "make_conninfo (sensitive values masked)=%s",
+            sanitize_connection_params_for_logging(dict(conninfo.conninfo_to_dict(self._cinfo))),
+        )
 
         self._ckwargs = kwargs
         self._cursor_factory = cursor_factory
