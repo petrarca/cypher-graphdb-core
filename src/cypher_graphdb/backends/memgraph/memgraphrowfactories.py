@@ -7,6 +7,7 @@ compatible data structures, handling the conversion of nodes, relationships, and
 from collections.abc import Callable
 from typing import Any
 
+import mgclient
 from loguru import logger
 
 from cypher_graphdb.backend import ExecStatistics
@@ -133,30 +134,40 @@ def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Pat
     if path is None:
         return None
 
-    # Convert nodes and relationships
-    nodes = [_convert_node(node, model_provider) for node in path.nodes]
-    relationships = [_convert_relationship(rel, model_provider) for rel in path.relationships]
+    # Validate path structure: nodes must equal relationships + 1
+    assert len(path.nodes) == len(path.relationships) + 1, (
+        f"Invalid path structure: {len(path.nodes)} nodes != {len(path.relationships)} relationships + 1"
+    )
+
+    # Build the entity sequence directly: node -> rel -> node -> rel -> node
+    # In a path, entities alternate between nodes and relationships
+    entities = []
+    for i, node in enumerate(path.nodes):
+        entities.append(_convert_node(node, model_provider))
+        if i < len(path.relationships):  # Add relationship if it exists
+            rel = path.relationships[i]
+            entities.append(_convert_relationship(rel, model_provider))
 
     # Create the path
-    return Path(nodes=nodes, edges=relationships)
+    return Path(entities=entities)
 
 
-def _convert_memgraph_value(value: Any, exec_stats: ExecStatistics, model_provider: Any = None) -> Any:
+def _convert_memgraph_value(value: Any, exec_stats: ExecStatistics, model_provider: Any) -> Any:
     """Convert any Memgraph value to CypherGraphDB compatible format.
 
     This function handles all possible Memgraph types and converts them to
-    appropriate CypherGraphDB types. Also updates execution statistics if provided.
+    appropriate CypherGraphDB types. Also updates execution statistics if
+    provided.
 
     Args:
         value: Value from Memgraph to convert.
         model_provider: Optional model provider for object conversion.
         exec_stats: Execution statistics to update during conversion.
+        update_stats: Whether to update execution statistics for nodes/edges.
 
     Returns:
         Converted value compatible with CypherGraphDB.
     """
-    # Import here to avoid circular imports
-    import mgclient
 
     # Handle different Memgraph types
     if isinstance(value, mgclient.Node):
