@@ -492,3 +492,4 @@ class AGEGraphDB(CypherBackend):
 
         connection.adapters.register_loader(aginfo.oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
+        connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)

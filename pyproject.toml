@@ -87,6 +87,7 @@ version = { attr = "cypher_graphdb.__about__.__version__" }
 [tool.ruff]
 extend-exclude = ["src/cypher_graphdb/cypher"]
 line-length = 130
+unsafe-fixes = true
 
 [tool.ruff.lint]
 ignore = ["SIM108"]  # Ignore ternary operator suggestions for readability

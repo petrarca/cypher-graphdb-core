@@ -461,3 +461,4 @@ class MemgraphDB(CypherBackend):
 
         return (result, exec_stats)
         return (result, exec_stats)
+        return (result, exec_stats)
