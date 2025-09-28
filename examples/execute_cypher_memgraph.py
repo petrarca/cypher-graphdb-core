@@ -30,5 +30,14 @@ pprint(result)
 print("\nExecution statistics:")
 pprint(cdb.exec_statistics())
 
-# Clean up test data
-cdb.execute("MATCH (n) DETACH DELETE n")
+# Clean up test data - only delete the nodes we created
+cleanup_query = """
+    MATCH (p:Product {name: 'Test Product'})
+    -[b:BELONGS_TO]->
+    (c:Category {name: 'Test Category'})
+    DETACH DELETE p, c
+    RETURN COUNT(p) AS deleted_products, COUNT(c) AS deleted_categories
+"""
+result = cdb.execute(cleanup_query)
+pprint("Cleanup results:")
+pprint(result)
