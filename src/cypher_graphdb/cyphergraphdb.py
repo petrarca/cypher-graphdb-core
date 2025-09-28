@@ -137,7 +137,13 @@ class CypherGraphDB:
     Provides methods to connect, fetch, create, merge, delete, and execute queries.
     """
 
-    def __init__(self, backend: CypherBackend | str, load_dotenv: bool = False, connect_params: dict | None = None):
+    def __init__(
+        self,
+        backend: CypherBackend | str,
+        load_dotenv: bool = False,
+        connect_url: str | None = None,
+        connect_params: dict | None = None,
+    ):
         backend = backend_provider.check_and_resolve(backend, True)
         assert backend
 
@@ -164,7 +170,7 @@ class CypherGraphDB:
         utils.log_env(config.CGDB_GRAPH)
 
         # Auto-connect if connection parameters are provided
-        self._auto_connect_if_params(connect_params)
+        self._auto_connect_if_params(connect_url, connect_params)
 
     @property
     def id(self) -> str:
@@ -227,10 +233,14 @@ class CypherGraphDB:
             self.disconnect()
         return False  # Don't suppress exceptions
 
-    def connect(self, *args, **kwargs):
+    def connect(self, connect_url: str | None = None, *args, **kwargs):
         """Establish a connection to the configured graph database."""
         assert self._backend
-        self._backend.connect(*args, **kwargs)
+
+        if connect_url is not None:
+            self._backend.connect(cinfo=connect_url, **kwargs)
+        else:
+            self._backend.connect(*args, **kwargs)
 
         return self
 
@@ -499,9 +509,12 @@ class CypherGraphDB:
 
         return missing_nodes
 
-    def _auto_connect_if_params(self, connect_params: dict | None):
+    def _auto_connect_if_params(self, connect_url: str | None, connect_params: dict | None):
         """Auto-connect if connection parameters are provided."""
-        if connect_params is not None:
+        if connect_url is not None:
+            logger.debug(f"Auto-connecting with URL={connect_url}, params={connect_params}")
+            self.connect(connect_url=connect_url, **(connect_params or {}))
+        elif connect_params is not None:
             logger.debug(f"Auto-connecting with params={connect_params}")
             self.connect(**connect_params)
 

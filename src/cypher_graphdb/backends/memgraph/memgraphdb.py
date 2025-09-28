@@ -13,12 +13,7 @@ from typing import Any
 
 import mgclient
 from loguru import logger
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Import directly from the main package
 from cypher_graphdb import config
@@ -88,11 +83,16 @@ class MemgraphDB(CypherBackend):
 
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
 
-        # Parse connection info
-        host = kwargs.get("host", "127.0.0.1")
-        port = kwargs.get("port", 7687)
-        username = kwargs.get("username", "")
-        password = kwargs.get("password", "")
+        # Parse connection info from cinfo string and merge with kwargs
+        cinfo_params = {}
+        if cinfo:
+            cinfo_params = self._parse_cinfo(cinfo)
+
+        # Merge parameters: kwargs take precedence over cinfo
+        host = kwargs.get("host") or cinfo_params.get("host", "127.0.0.1")
+        port = kwargs.get("port") or cinfo_params.get("port", 7687)
+        username = kwargs.get("username") or cinfo_params.get("username", "")
+        password = kwargs.get("password") or cinfo_params.get("password", "")
 
         # Store connection parameters for reconnect
         self._cinfo = cinfo
@@ -112,6 +112,75 @@ class MemgraphDB(CypherBackend):
             raise
 
         return self
+
+    def _parse_cinfo(self, cinfo: str) -> dict[str, Any]:
+        """Parse Memgraph connection info string.
+
+        Supports formats:
+        - "host=localhost port=7687 username=user password=pass"
+        - "bolt://username:password@localhost:7687"
+
+        Args:
+            cinfo: Connection info string to parse
+
+        Returns:
+            Dictionary of parsed connection parameters
+        """
+        if not cinfo:
+            return {}
+
+        if cinfo.startswith("bolt://"):
+            return self._parse_bolt_uri(cinfo)
+        else:
+            return self._parse_key_value_format(cinfo)
+
+    def _parse_bolt_uri(self, cinfo: str) -> dict[str, Any]:
+        """Parse bolt:// URI format connection string."""
+        params = {}
+        uri = cinfo[7:]  # Remove 'bolt://'
+
+        # Extract auth if present
+        if "@" in uri:
+            auth_part, host_part = uri.rsplit("@", 1)
+            if ":" in auth_part:
+                params["username"], params["password"] = auth_part.split(":", 1)
+            else:
+                params["username"] = auth_part
+        else:
+            host_part = uri
+
+        # Extract host and port
+        if ":" in host_part:
+            params["host"], port_str = host_part.split(":", 1)
+            try:
+                params["port"] = int(port_str)
+            except ValueError as exc:
+                raise ValueError(f"Invalid port in bolt URI: {port_str}. Port must be a valid integer.") from exc
+        else:
+            params["host"] = host_part
+
+        return params
+
+    def _parse_key_value_format(self, cinfo: str) -> dict[str, Any]:
+        """Parse key=value format connection string."""
+        params = {}
+
+        for pair in cinfo.split():
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+
+                # Convert port to int
+                if key == "port":
+                    try:
+                        params[key] = int(value)
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid port value: {value}. Port must be a valid integer.") from exc
+                else:
+                    params[key] = value
+
+        return params
 
     @retry(
         stop=stop_after_attempt(5),

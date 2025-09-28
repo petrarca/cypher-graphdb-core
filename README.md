@@ -18,7 +18,6 @@ Core ideas:
 - age (Apache AGE extension on PostgreSQL)
 - memgraph (Memgraph database via Bolt)
 
-
 ## Prerequisites
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv) (dependency & venv manager)
@@ -28,8 +27,8 @@ Core ideas:
 ## Quick Start
 ```bash
 git clone <repo-url>
-cd cypher-graphdb
-# create venv + install extras
+cd cypher-graphdb/lib
+# create venv + install library
 task install
 # run unit tests
 task test:unit
@@ -42,28 +41,113 @@ Activate environment manually if needed:
 source .venv/bin/activate
 ```
 
+## Backend Configuration
+
+### Apache AGE Backend (backend="age")
+
+Apache AGE runs as an extension on PostgreSQL, so connection strings use PostgreSQL format.
+
+**Key Parameters:**
+- `host`: PostgreSQL server hostname (default: localhost)
+- `port`: PostgreSQL server port (default: 5432)  
+- `dbname`: Database name (required)
+- `user`: Username for authentication
+- `password`: Password for authentication
+- `graph_name`: AGE graph name to use/create
+
+**CLI Usage:**
+```bash
+# Using CINFO parameter
+cypher-graphdb --backend age --cinfo "host=localhost port=5432 dbname=postgres"
+
+# Using environment variable
+export CGDB_CINFO="postgresql://postgres:secret@localhost:5432/postgres"
+cypher-graphdb --backend age
+
+# Interactive CLI
+> connect age host=localhost port=5432 dbname=postgres user=postgres
+```
+
+### Memgraph Backend (backend="memgraph")
+
+Memgraph uses the Bolt protocol for connections.
+
+**Key Parameters:**
+- `host`: Memgraph server hostname (default: 127.0.0.1)
+- `port`: Memgraph Bolt port (default: 7687)
+- `username`: Username for authentication (default: empty)
+- `password`: Password for authentication (default: empty)
+
+**Supported CINFO Formats:**
+- Key=value: `"host=localhost port=7687 username=user password=secret"`
+- Bolt URI: `"bolt://[username:password@]hostname:port"`
+- Partial: `"port=1234"` or `"host=192.168.1.100"`
+
+**CLI Usage:**
+```bash
+# Using CINFO parameter
+cypher-graphdb --backend memgraph --cinfo "host=localhost port=7687"
+
+# Using Bolt URI
+cypher-graphdb --backend memgraph --cinfo "bolt://localhost:7687"
+
+# Using environment variable  
+export CGDB_CINFO="bolt://user:pass@localhost:7687"
+cypher-graphdb --backend memgraph
+
+# Interactive CLI
+> connect memgraph host=localhost port=7687
+```
+
 ## Using the Library
+
+### Connection Methods
+
+CypherGraphDB supports multiple connection methods. The recommended approach is using `connect_url` for simplicity:
+
+```python
+from cypher_graphdb import CypherGraphDB
+
+# Memgraph - Recommended connection method
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
+
+# Memgraph - With authentication
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://user:pass@localhost:7687")
+
+# Apache AGE - PostgreSQL URL
+db = CypherGraphDB(backend="age", connect_url="postgresql://postgres:secret@localhost:5432/postgres")
+
+# All alternative connection methods (still supported):
+# 1. Manual connect: db = CypherGraphDB(backend="memgraph"); db.connect("bolt://localhost:7687")
+# 2. CINFO parameter: db.connect(cinfo="bolt://localhost:7687") 
+# 3. Individual params: db.connect(host="localhost", port=7687)
+# 4. Connect params: CypherGraphDB(backend="memgraph", connect_params={"cinfo": "bolt://..."})
+# 5. Environment var: export CGDB_CINFO="bolt://localhost:7687"; db.connect()
+```
+
 ### Basic Connection (Context Manager)
 ```python
 from cypher_graphdb import CypherGraphDB
 
-# Connect to Memgraph (test/integration style)
-connect_params = {"host": "localhost", "port": 7687}
-with CypherGraphDB(backend="memgraph", connect_params=connect_params) as db:
-
+# Memgraph with context manager
+with CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687") as db:
    result = db.execute("RETURN 1 AS value", unnest_result=True)
+   print(result)  # 1
+
+# Apache AGE with context manager
+with CypherGraphDB(backend="age", connect_url="postgresql://postgres:secret@localhost:5432/postgres") as db:
+   result = db.execute("RETURN 1 AS value", unnest_result=True) 
    print(result)  # 1
 ```
 
-### Manual Connect & Simple Query
+### Simple Query Example
 ```python
 from cypher_graphdb import CypherGraphDB
 
-db = CypherGraphDB(backend="memgraph")
-db.connect(host="localhost", port=7687)
+# Connect and execute queries
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
 rows = db.execute("MATCH (n) RETURN n LIMIT 5")
 for row in rows:
-    # each row is a tuple of GraphObjects / primitives
     print(row)
 ```
 
@@ -71,7 +155,8 @@ for row in rows:
 ```python
 from cypher_graphdb import CypherGraphDB, GraphNode, GraphEdge
 
-db = CypherGraphDB(backend="memgraph", connect_params={"host": "localhost", "port": 7687})
+# Using direct connection
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
 
 person = GraphNode(label_="Person", properties_={"name": "Alice", "age": 30})
 db.create_or_merge(person)  # assigns id_
@@ -89,59 +174,46 @@ for (p, r, c) in fetched:
     print(p.label_, p.properties_["name"], r.label_, c.properties_["name"])
 ```
 
-### Create / Merge with Typed Models
-```python
-# sample_model.py (ensure it's imported before using typed resolution)
-from cypher_graphdb import CypherGraphDB
-from examples.sample_model import Product, Category, BelongsTo  # adjust path as needed
+## CLI (Interactive Graph Exploration)
 
-# Connect (Memgraph example)
-db = CypherGraphDB(backend="memgraph", connect_params={"host": "localhost", "port": 7687})
+CypherGraphDB includes an interactive CLI for exploring graph databases:
 
-# Create typed nodes
-p = Product(product_key="P-001", product_family="Widgets", name="Widget Pro")  # extra props resolved
-c = Category(category_key="C-TOOLS", name="Tools")
+### Running the CLI
+```bash
+# Using task automation
+task run:cli
 
-db.create_or_merge(p)
-db.create_or_merge(c)
+# Direct execution (with activated venv)
+cypher-graphdb
 
-# Create a typed edge via build helper (accepts instances or IDs)
-rel = BelongsTo.build(p, c, val="primary")
-db.create_or_merge(rel)
-
-# Fetch back using criteria
-from cypher_graphdb import MatchNodeCriteria, MatchEdgeCriteria
-fetched_product = db.fetch_nodes({"label_": "Product", "product_key": "P-001"}, unnest_result=True)
-print(fetched_product.product_family, fetched_product.properties_["product_key"])  # Widget info
-
-edges = db.fetch(MatchEdgeCriteria(label_="BELONGS_TO", fetch_nodes_=True))
-for (edge,) in edges:
-    print(edge.label_, edge.val, edge.start_id_, edge.end_id_)
-```
-Key points:
-- Decorators register classes at import time through the global ModelProvider
-- Typed fields become first-class attributes (e.g. `product_family`) while remaining in `properties_` when flattened
-- `build` resolves node IDs automatically when passing instances
-
-### Result Unnesting
-`unnest_result` simplifies common patterns:
-```python
-value = db.execute("RETURN 1 AS x", unnest_result=True)  # returns 1 (not [(1,)])
-row = db.execute("RETURN 1 AS x, 2 AS y", fetch_one=True, unnest_result=True)  # (1, 2)
+# Without activation
+.venv/bin/cypher-graphdb
 ```
 
-### Integration-Test Style Data Setup
-From `tests/integration/test_example.py`:
-```python
-memgraph_db.execute("""
-    CREATE (p1:Person {name: 'Alice', age: 30, email: 'alice@example.com'})
-    CREATE (p2:Person {name: 'Bob', age: 25, email: 'bob@example.com'})
-    CREATE (c:Company {name: 'TechCorp', founded: 2010})
-    CREATE (p1)-[:WORKS_FOR {since: 2020, role: 'Engineer'}]->(c)
-    CREATE (p2)-[:WORKS_FOR {since: 2021, role: 'Designer'}]->(c)
-    CREATE (p1)-[:KNOWS {since: 2019}]->(p2)
-""")
+### Key CLI Commands
+```bash
+# Connect to databases
+> connect memgraph bolt://localhost:7687
+> connect age postgresql://postgres:secret@localhost:5432/postgres
+
+# Execute Cypher queries
+> MATCH (n) RETURN n LIMIT 5;
+> CREATE (p:Person {name: 'Alice', age: 30});
+
+# CLI utilities
+> :help               # Show available commands  
+> :stats              # Show last query statistics
+> :exit               # Exit CLI
 ```
+
+### CLI Features
+- **Interactive Cypher execution** with syntax highlighting
+- **Connection management** for multiple backends
+- **Query result formatting** with tabular display
+- **Command history** and auto-completion
+- **Built-in help system** and error handling
+
+## Advanced Usage
 
 ### Typed Models via Decorators
 ```python
@@ -164,28 +236,27 @@ class BelongsTo(GraphEdge):
     val: str | None = None
 ```
 
-Registering happens automatically on import; instances are created through queries or via `ModelProvider` implicitly used in row factories.
-
-## CLI Usage
-Run interactive CLI:
-```bash
-task run:cli
-```
-Inside CLI:
-```
-> connect memgraph host=localhost port=7687
-> MATCH (n) RETURN n LIMIT 3;
-> :stats            # (if implemented) show last execution stats
-> :help
+### Result Unnesting
+`unnest_result` simplifies common patterns:
+```python
+value = db.execute("RETURN 1 AS x", unnest_result=True)  # returns 1 (not [(1,)])
+row = db.execute("RETURN 1 AS x, 2 AS y", fetch_one=True, unnest_result=True)  # (1, 2)
 ```
 
-Direct binary (activated venv):
-```bash
-cypher-graphdb
-```
-Or without activation:
-```bash
-.venv/bin/cypher-graphdb
+### Bulk Data Setup
+```python
+from cypher_graphdb import CypherGraphDB
+
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
+
+db.execute("""
+    CREATE (p1:Person {name: 'Alice', age: 30, email: 'alice@example.com'})
+    CREATE (p2:Person {name: 'Bob', age: 25, email: 'bob@example.com'})
+    CREATE (c:Company {name: 'TechCorp', founded: 2010})
+    CREATE (p1)-[:WORKS_FOR {since: 2020, role: 'Engineer'}]->(c)
+    CREATE (p2)-[:WORKS_FOR {since: 2021, role: 'Designer'}]->(c)
+    CREATE (p1)-[:KNOWS {since: 2019}]->(p2)
+""")
 ```
 
 ## Project Structure (Simplified)
@@ -211,58 +282,20 @@ cypher-graphdb/
 └── README.md
 ```
 
-## Task Automation Reference
+## Development
+
+### Key Tasks
 ```bash
-# Environment & install
-task setup                # Create venv (.venv)
-task install              # Install (editable) with extras
-
-# Formatting & linting
-task format               # Ruff format
-task check                # Ruff lint + docstring checks
-task check:fix            # Auto-fix
-
-# Testing
-task test:unit            # Unit tests
+task install              # Install library with dependencies
+task test:unit            # Run unit tests 
 task test:integration     # Integration tests (requires Docker)
-task test:cov             # Unit tests w/ coverage (HTML + XML)
-task test:all             # All tests
-
-# Build & docs
-task build                # Build wheel & sdist
-task build:docs           # mkdocs build
-task build:all            # build + docs
-
-# Docs live server
-task serve:docs           # mkdocs serve (implied)
-
-# Composite
-task fct                  # format + check + test
-
-# Cleanup
-task clean                # build artifacts
-task clean:docs           # site/ docs build
-task clean:venv           # remove .venv
-task clean:caches         # py & ruff caches
-task clean:all            # everything
-
-# Pre-commit hooks
-task pre-commit:setup
-task pre-commit:run
-
-# CLI
+task format               # Format code with Ruff
+task check                # Lint and check code quality
 task run:cli              # Run interactive CLI
 ```
 
-## Testing Strategy
-- Unit tests focus on query building, models, and utilities
-- Integration tests spin up Memgraph via `testcontainers` to validate backend execution & row factories
-- Coverage report is generated into `docs/coverage` via `task test:cov`
-
-## Deployment (Summary)
-Tag-based release pipeline (GitLab CI expected) builds & publishes to Artifactory. Ensure the following CI variables exist:
-- `ARTIFACTORY_USER`
-- `ARTIFACTORY_PASSWORD`
+## Deployment
+Tag-based CI/CD pipeline publishes releases to Artifactory. See `Taskfile.yml` for development commands.
 
 Example tag:
 ```bash
