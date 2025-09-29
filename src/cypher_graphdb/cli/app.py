@@ -19,15 +19,12 @@ from cypher_graphdb.cli.config import CLIConfig
 from cypher_graphdb.cli.graphdata import CLIGraphData
 from cypher_graphdb.cli.graphdb import CLIGraphDB
 from cypher_graphdb.cli.prompt import CommandLinePrompt
-from cypher_graphdb.cli.promptparser import (
-    PromptParser,
-    PromptParserCmd,
-    PromptParserResult,
-)
+from cypher_graphdb.cli.promptparser import PromptParser, PromptParserCmd, PromptParserResult
 from cypher_graphdb.cli.provider import CLIProviders
 from cypher_graphdb.cli.renderer import ResultRenderer
 from cypher_graphdb.cli.runtime import CLIRuntime
 from cypher_graphdb.command_reader import CommandReader, FileCommandReader
+from cypher_graphdb.settings import get_settings
 
 
 class CypherGraphCLI(CLIRuntime):
@@ -137,7 +134,7 @@ class CypherGraphCLI(CLIRuntime):
         if self._with_prompt and self.show_banner:
             self.banner()
 
-        if not self._graphdb.connect(options):
+        if not self._graphdb.connect():
             return
 
         # inject db also in graph data
@@ -266,6 +263,26 @@ class CypherGraphCLI(CLIRuntime):
 
         if options.get("table"):
             self._config.set_properties({"output_format": "table"})
+
+        # Update settings with CLI options (CLI args override environment variables)
+        self._update_settings_with_cli_options(options)
+
+    def _update_settings_with_cli_options(self, options):
+        """Update settings with CLI options (CLI args override defaults).
+
+        Note: This updates the singleton settings instance that is shared
+        across all modules (e.g., graphdb.py). All modules must use
+        consistent import paths to access the same settings singleton.
+        """
+        settings = get_settings()
+
+        # Simply override settings attributes when CLI args exist
+        if backend := options.get("backend"):
+            settings.backend = backend
+        if cinfo := options.get("cinfo"):
+            settings.cinfo = cinfo  # Auto-sanitized via @computed_field
+        if graph := options.get("graph"):
+            settings.graph = graph
 
     def _pipe_to_shell_cmd(self, parse_result: PromptParserResult):
         process = subprocess.Popen(

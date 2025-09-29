@@ -10,7 +10,7 @@ Environment variables: ``CGDB_BACKEND``, ``CGDB_CINFO``, ``CGDB_GRAPH``.
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, computed_field, field_serializer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +39,38 @@ class Settings(BaseSettings):
         description="Default graph name",
         validation_alias="CGDB_GRAPH",
     )
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def cinfo_sanitized(self) -> str | None:
+        """Get sanitized connection info safe for logging."""
+        return self._sanitize_cinfo(self.cinfo)
+
+    def _sanitize_cinfo(self, cinfo: str | None) -> str | None:
+        """Sanitize connection info for safe logging."""
+        if not cinfo:
+            return None
+
+        from .utils.connection_utils import sanitize_connection_string_for_logging
+
+        return sanitize_connection_string_for_logging(cinfo)
+
+    @field_serializer("cinfo")
+    def serialize_cinfo(self, _value: str | None) -> str | None:
+        """Serialize cinfo as sanitized version for safe output."""
+        return self.cinfo_sanitized
+
+    def __repr__(self) -> str:
+        """String representation with sanitized cinfo."""
+        from .utils.settings_repr import safe_settings_repr
+
+        return safe_settings_repr(self, field_sanitizers={"cinfo": lambda _: self.cinfo_sanitized})
+
+    def __str__(self) -> str:
+        """String representation with sanitized cinfo."""
+        from .utils.settings_repr import safe_settings_str
+
+        return safe_settings_str(self, field_sanitizers={"cinfo": lambda _: self.cinfo_sanitized})
 
     model_config = SettingsConfigDict(
         case_sensitive=False,

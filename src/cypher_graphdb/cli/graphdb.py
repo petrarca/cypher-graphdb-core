@@ -57,14 +57,14 @@ class CLIGraphDB(GraphDBProvider):
     def get_graphs(self) -> tuple[str]:
         return self.db.graphs()
 
-    def connect(self, options, from_prompt: bool = False) -> bool:
-        # Get settings and override with CLI options if provided
+    def connect(self, from_prompt: bool = False) -> bool:
+        # Get settings (CLI options have already been merged into settings by CLI app)
         settings = get_settings()
 
-        # CLI args take precedence over settings
-        backend_type = options.get("backend") or settings.backend
-        graph_name = options.get("graph") or settings.graph
-        cinfo = options.get("cinfo") or settings.cinfo
+        # Use settings values (already contains CLI overrides if provided)
+        backend_type = settings.backend
+        graph_name = settings.graph
+        cinfo = settings.cinfo
 
         if not backend_type:
             rich.print("[red]Please specify a backend to connect to!", file=sys.stderr)
@@ -78,7 +78,7 @@ class CLIGraphDB(GraphDBProvider):
             self.disconnect()
             self.db = None
 
-        # Settings are already loaded from .env file
+        # we use explicit configuration over overriding settings
         self.db = CypherGraphDB(backend=backend)
 
         # TODO: exception handling
