@@ -69,6 +69,7 @@ from .cypherbuilder import CypherBuilder
 from .cypherparser import ParsedCypherQuery
 from .models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .statistics import LabelStatistics
+from .utils.connection_utils import sanitize_connection_string_for_logging
 
 
 class MatchCriteria(BaseModel):
@@ -302,9 +303,6 @@ class CypherGraphDB:
 
         # Log current settings values for debugging
         settings = self.get_settings()
-        from .utils.connection_utils import (
-            sanitize_connection_string_for_logging,
-        )
 
         sanitized_cinfo = sanitize_connection_string_for_logging(settings.cinfo) if settings.cinfo else None
         logger.debug(f"Current settings: backend={settings.backend} cinfo={sanitized_cinfo} graph={settings.graph}")
