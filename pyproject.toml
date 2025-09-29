@@ -27,6 +27,7 @@ dependencies = [
     "openpyxl",
     "numpy",
     "pydantic",
+    "pydantic-settings>=2.2.1",
     "loguru",
     "psycopg >= 3.2.1",
     "pymgclient",

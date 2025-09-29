@@ -12,7 +12,7 @@ logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 logger.enable(cypher_graphdb.__name__)
 
-cdb = CypherGraphDB(backend="AGE", load_dotenv=True).connect()
+cdb = CypherGraphDB().connect()
 
 p = cdb.fetch_nodes(4711)
 p = cdb.fetch_nodes({"label_": "Product"}, unnest_result="c")

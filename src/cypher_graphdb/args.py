@@ -40,15 +40,28 @@ def create_main_app() -> typer.Typer:
         ] = None,
         file: Annotated[str | None, typer.Option("--file", "-f", help="Execute commands by given file.")] = None,
         backend: Annotated[
-            str | None, typer.Option("--backend", "-b", help="Select backend type. Can also be set with env var CGDB_BACKEND.")
+            str | None,
+            typer.Option(
+                "--backend",
+                "-b",
+                help="Backend type. Precedence: CLI args > .env > defaults.",
+            ),
         ] = None,
         cinfo: Annotated[
             str | None,
-            typer.Option("--cinfo", "-c", help="Backend specific connection string. Can also be set with env var CGDB_CINFO."),
+            typer.Option(
+                "--cinfo",
+                "-c",
+                help="Connection string. CLI args > .env > defaults.",
+            ),
         ] = None,
         graph: Annotated[
             str | None,
-            typer.Option("--graph", "-g", help="Backend specific graph name. Can also be set with env var CGDB_GRAPH."),
+            typer.Option(
+                "--graph",
+                "-g",
+                help="Graph name. CLI args > .env > defaults.",
+            ),
         ] = None,
         log_level: Annotated[
             str | None, typer.Option("--log-level", "-l", help="Log level (INFO, DEBUG, TRACE, ...) [default: INFO]")

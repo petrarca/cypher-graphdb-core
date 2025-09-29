@@ -11,7 +11,7 @@ logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 logger.enable(cypher_graphdb.__name__)
 
-cdb = CypherGraphDB(backend="AGE", load_dotenv=True).connect()
+cdb = CypherGraphDB().connect()
 
 result = cdb.execute(
     """

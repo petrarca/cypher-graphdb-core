@@ -8,7 +8,6 @@ Classes:
 """
 
 import contextlib
-import os
 from typing import Any
 
 import mgclient
@@ -16,7 +15,6 @@ from loguru import logger
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Import directly from the main package
-from cypher_graphdb import config
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
@@ -78,9 +76,8 @@ class MemgraphDB(CypherBackend):
         if self._connection is not None:
             return self
 
-        if not cinfo:
-            logger.debug("Try to load cinfo from env")
-            cinfo = os.getenv(config.CGDB_CINFO)
+        # Values now come from CypherGraphDB settings via connect() parameters
+        # No need to check environment variables directly
 
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
 

@@ -7,7 +7,6 @@ with parsed options from the argument parser.
 import sys
 from typing import Any
 
-import dotenv
 from loguru import logger
 
 import cypher_graphdb
@@ -23,8 +22,6 @@ def main(show_banner: bool = True, parsed_options: dict[str, Any] | None = None)
         show_banner (bool): If True, display the banner at the start of the CLI.
         parsed_options (dict[str, Any]): Pre-parsed options from the CLI argument parser.
     """
-    # Load environment variables from .env file
-    dotenv.load_dotenv()
 
     # Use the provided parsed options
     options = parsed_options or {}

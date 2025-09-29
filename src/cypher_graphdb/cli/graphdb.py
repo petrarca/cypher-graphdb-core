@@ -4,7 +4,6 @@ Provides CLIGraphDB class for managing graph database connections and operations
 through the command-line interface.
 """
 
-import os
 import sys
 from typing import Any
 
@@ -15,6 +14,7 @@ import cypher_graphdb.config as config
 import cypher_graphdb.utils as utils
 from cypher_graphdb import CypherGraphDB, GraphEdge, GraphNode, MatchEdgeCriteria, MatchNodeCriteria, backend_provider
 from cypher_graphdb.cli.renderer import ResultRenderer
+from cypher_graphdb.settings import get_settings
 
 from .provider import GraphDBProvider
 
@@ -58,14 +58,13 @@ class CLIGraphDB(GraphDBProvider):
         return self.db.graphs()
 
     def connect(self, options, from_prompt: bool = False) -> bool:
-        # like AGE
-        backend_type = options.get("backend") or os.getenv(config.CGDB_BACKEND)
+        # Get settings and override with CLI options if provided
+        settings = get_settings()
 
-        # backend specific
-        graph_name = options.get("graph") or os.getenv(config.CGDB_GRAPH)
-
-        # backend specific connection information, key/value pairs like 'host=localhost'
-        cinfo = options.get("cinfo") or os.getenv(config.CGDB_CINFO)
+        # CLI args take precedence over settings
+        backend_type = options.get("backend") or settings.backend
+        graph_name = options.get("graph") or settings.graph
+        cinfo = options.get("cinfo") or settings.cinfo
 
         if not backend_type:
             rich.print("[red]Please specify a backend to connect to!", file=sys.stderr)
@@ -79,8 +78,8 @@ class CLIGraphDB(GraphDBProvider):
             self.disconnect()
             self.db = None
 
-        # .env already loaded
-        self.db = CypherGraphDB(backend=backend, load_dotenv=False)
+        # Settings are already loaded from .env file
+        self.db = CypherGraphDB(backend=backend)
 
         # TODO: exception handling
         # set_graph_if_not_exists: prevent from changing current graph to non existing one for the prompt

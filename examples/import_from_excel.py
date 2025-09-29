@@ -12,7 +12,7 @@ logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 logger.enable(cypher_graphdb.__name__)
 
-cdb = CypherGraphDB(backend="AGE", load_dotenv=True).connect()
+cdb = CypherGraphDB().connect()
 
 # if (
 #    input(f"{db.backend.graph_name} will be recreated. Are you sure [yN]? ").lower()

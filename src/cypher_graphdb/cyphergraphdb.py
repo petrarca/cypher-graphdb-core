@@ -58,7 +58,6 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-import dotenv
 from loguru import logger
 from pydantic import BaseModel
 
@@ -204,8 +203,9 @@ class CypherGraphDB:
         # Import the model classes defined above or from your own module
         from my_models import Product, Technology, UsesTechnology
 
-        # Approach 1: Direct connection (remember to disconnect when done)
-        cdb = CypherGraphDB("memgraph", load_dotenv=True).connect()
+        # Connection parameters can be resolved from multiple sources, here we use the
+        # Approach 1: Direct connection (remember to disconnect when done).
+        cdb = CypherGraphDB().connect()
         try:
             # Execute raw Cypher
             result = cdb.execute("MATCH (n) RETURN count(n)")
@@ -220,23 +220,23 @@ class CypherGraphDB:
             # Always disconnect when done
             cdb.disconnect()
 
-        # Approach 2: Context manager (automatically disconnects when exiting context)
-        with CypherGraphDB("memgraph", load_dotenv=True) as db:
+        # Approach 2: Context manager (recommended - automatically disconnects)
+        with CypherGraphDB() as cdb:
             # Connect to database
-            db.connect()
+            cdb.connect()
 
             # Execute operations
-            result = db.execute("MATCH (n) RETURN count(n)")
+            result = cdb.execute("MATCH (n) RETURN count(n)")
             product = Product(name="CypherGraph", version="1.0")
-            db.create_or_merge(product)
+            cdb.create_or_merge(product)
 
-            # No need to call disconnect() - it's handled automatically when exiting the context
+            # No need to call disconnect() - handled automatically
         ```
 
     Args:
-        backend: Backend type ("memgraph", "neo4j", "AGE") or
-            CypherBackend instance
-        load_dotenv: Whether to load environment variables from .env file
+        backend: Backend type (supported: "memgraph", "age") or CypherBackend instance.
+            If not provided, will use CGDB_BACKEND environment variable or .env file.
+            Examples: CypherGraphDB("memgraph"), CypherGraphDB("age"), CypherGraphDB()
         connect_url: Optional connection URL for auto-connection
         connect_params: Optional connection parameters for auto-connection
 
@@ -247,14 +247,43 @@ class CypherGraphDB:
             (for logging/monitoring)
     """
 
+    def _resolve_backend(self, backend: CypherBackend | str | None) -> CypherBackend:
+        """Resolve backend from parameter or settings.
+
+        Args:
+            backend: Backend parameter (can be None)
+
+        Returns:
+            Resolved CypherBackend instance
+
+        Raises:
+            RuntimeError: If no backend can be resolved
+        """
+        # If backend is explicitly provided, use it
+        if backend is not None:
+            return backend_provider.check_and_resolve(backend, True)
+
+        # Try to get backend from settings
+        settings_backend = self.settings.backend
+        if settings_backend:
+            logger.debug("Using backend from settings: %s", settings_backend)
+            return backend_provider.check_and_resolve(settings_backend, True)
+
+        # No backend available - raise error with helpful message
+        raise RuntimeError(
+            "No backend specified! Please provide either:\n"
+            "1. backend parameter: CypherGraphDB('memgraph')\n"
+            "2. CGDB_BACKEND environment variable\n"
+            "3. .env file with CGDB_BACKEND=<backend_name>"
+        )
+
     def __init__(
         self,
-        backend: CypherBackend | str,
-        load_dotenv: bool = False,
+        backend: CypherBackend | str | None = None,
         connect_url: str | None = None,
         connect_params: dict | None = None,
     ):
-        backend = backend_provider.check_and_resolve(backend, True)
+        backend = self._resolve_backend(backend)
         assert backend
 
         self._backend = backend
@@ -266,18 +295,18 @@ class CypherGraphDB:
         self._sql_statistics = SqlStatistics()
         self._last_parsed_query = None
 
-        if load_dotenv:
-            logger.debug("Load dotenv")
-            dotenv.load_dotenv()
-
         # will be called before executing the query for e.g. security checks
         self.on_before_execute: Callable = lambda parsed_query: True
         # will be called after executing the query
         self.on_after_execute: Callable = lambda result, parsed_query: None
 
-        utils.log_env(config.CGDB_BACKEND)
-        utils.log_env(config.CGDB_CINFO)
-        utils.log_env(config.CGDB_GRAPH)
+        # Log current settings values for debugging
+        logger.debug(
+            "Current settings: backend=%s cinfo=%s graph=%s",
+            self.settings.backend,
+            self.settings.cinfo and "[REDACTED]" or None,
+            self.settings.graph,
+        )
 
         # Auto-connect if connection parameters are provided
         self._auto_connect_if_params(connect_url, connect_params)
@@ -333,6 +362,17 @@ class CypherGraphDB:
         """
         return self._model_provider
 
+    @property
+    def settings(self):
+        """Get the singleton settings instance.
+
+        Returns:
+            Settings: The cached settings instance with environment variables.
+        """
+        from .settings import get_settings
+
+        return get_settings()
+
     def __enter__(self):
         """Enter the context manager for automatic connection management.
 
@@ -348,15 +388,15 @@ class CypherGraphDB:
         Example:
             ```python
             # Basic context manager usage (recommended approach)
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
-                result = db.execute("MATCH (n) RETURN count(n)")
+            with CypherGraphDB() as cdb:
+                cdb.connect()
+                result = cdb.execute("MATCH (n) RETURN count(n)")
                 # No need to call disconnect() - handled automatically
 
             # Auto-connection with parameters
-            with CypherGraphDB("memgraph", connect_url="bolt://localhost:7687") as db:
+            with CypherGraphDB(connect_url="bolt://localhost:7687") as cdb:
                 # No need to call connect() - already connected
-                result = db.execute("MATCH (n) RETURN count(n)")
+                result = cdb.execute("MATCH (n) RETURN count(n)")
                 # No need to call disconnect() - handled automatically
             ```
         """
@@ -409,16 +449,12 @@ class CypherGraphDB:
             )
             # Remember to call db.disconnect() when done
 
-            # Approach 3: Direct connection using environment variables
-            db = CypherGraphDB("memgraph", load_dotenv=True).connect()
-            # Remember to call db.disconnect() when done
-
-            # Approach 4: Context manager (recommended)
+            # Approach 3: Context manager (recommended)
             # Automatically disconnects when exiting the context
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
                 # Perform operations here
-                result = db.execute("MATCH (n) RETURN count(n)")
+                result = cdb.execute("MATCH (n) RETURN count(n)")
                 # No need to call disconnect() - handled automatically
             ```
         """
@@ -427,7 +463,19 @@ class CypherGraphDB:
         if connect_url is not None:
             self._backend.connect(cinfo=connect_url, **kwargs)
         else:
-            self._backend.connect(*args, **kwargs)
+            # Pass settings as fallbacks - explicit params take precedence
+            merged_kwargs = {}
+
+            # Add settings as defaults if not already provided
+            if "cinfo" not in kwargs and self.settings.cinfo:
+                merged_kwargs["cinfo"] = self.settings.cinfo
+            if "graph_name" not in kwargs and self.settings.graph:
+                merged_kwargs["graph_name"] = self.settings.graph
+
+            # Explicit kwargs override settings
+            merged_kwargs.update(kwargs)
+
+            self._backend.connect(*args, **merged_kwargs)
 
         return self
 
@@ -452,10 +500,10 @@ class CypherGraphDB:
                 db.disconnect()  # Explicit cleanup required
 
             # Approach 2: Context manager (recommended, automatic disconnect)
-            with CypherGraphDB("memgraph") as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
                 # ... database operations
-                result = db.execute("MATCH (n) RETURN count(n)")
+                result = cdb.execute("MATCH (n) RETURN count(n)")
                 # No need to call disconnect() - handled automatically
             ```
         """
@@ -475,14 +523,14 @@ class CypherGraphDB:
             from my_models import Product, Technology, UsesTechnology
 
             # Using context manager (recommended approach)
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
                 # Create product and technology
                 product = Product(name="CypherGraph", version="1.0")
                 technology = Technology(name="Python", category="Programming Language")
-                db.create_or_merge(product)
-                db.create_or_merge(technology)
+                cdb.create_or_merge(product)
+                cdb.create_or_merge(technology)
 
                 # Create the relationship
                 uses = UsesTechnology(
@@ -513,20 +561,20 @@ class CypherGraphDB:
             from my_models import Product
 
             # Using context manager (recommended approach)
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
                 try:
                     # Perform operations that might fail
                     product = Product(name="CypherGraph", version="1.0-beta")
-                    db.create_or_merge(product)
+                    cdb.create_or_merge(product)
 
                     # Risky operation that might fail
-                    db.execute("MATCH (p:Product) SET p.validated = true")
-                    db.commit()
+                    cdb.execute("MATCH (p:Product) SET p.validated = true")
+                    cdb.commit()
                 except Exception:
                     # Something went wrong, discard changes
-                    db.rollback()
+                    cdb.rollback()
                     raise
                 # Disconnect happens automatically when exiting the context
             ```
@@ -557,15 +605,15 @@ class CypherGraphDB:
             ```python
             from cypher_graphdb import MatchNodeCriteria, MatchEdgeCriteria
 
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
                 # Fetch products (automatically routes to fetch_nodes)
                 product_criteria = MatchNodeCriteria(
                     label_="Product",
                     properties_={"name": "CypherGraph"}
                 )
-                products = db.fetch(product_criteria)
+                products = cdb.fetch(product_criteria)
 
                 # Fetch technology relationships (automatically routes to fetch_edges)
                 edge_criteria = MatchEdgeCriteria(
@@ -577,7 +625,7 @@ class CypherGraphDB:
                     ),
                     fetch_nodes_=True
                 )
-                relations = db.fetch(edge_criteria)
+                relations = cdb.fetch(edge_criteria)
             ```
         """
         assert self._backend
@@ -616,19 +664,20 @@ class CypherGraphDB:
             ```python
             from cypher_graphdb import MatchNodeCriteria
 
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Fetch by database ID
-            node = cdb.fetch_nodes(12345, unnest_result=True)
-            # Returns: Product(id_=12345, name='CypherGraph', ...)
+                # Fetch by database ID
+                node = cdb.fetch_nodes(12345, unnest_result=True)
+                # Returns: Product(id_=12345, name='CypherGraph', ...)
 
-            # Fetch by GID (string identifier)
-            node = cdb.fetch_nodes("6f628f1e7tFZHfis", unnest_result=True)
-            # Returns: Product with name='CypherGraph'
+                # Fetch by GID (string identifier)
+                node = cdb.fetch_nodes("6f628f1e7tFZHfis", unnest_result=True)
+                # Returns: Product with name='CypherGraph'
 
-            # Fetch by simple properties
-            products = cdb.fetch_nodes({"label_": "Product", "name": "CypherGraph"})
+                # Fetch by simple properties
+                products = cdb.fetch_nodes({"label_": "Product", "name": "CypherGraph"})
             # Returns: [Product(...), ...]
 
             # Advanced criteria with labels and projections
@@ -702,17 +751,18 @@ class CypherGraphDB:
             ```python
             from cypher_graphdb import MatchEdgeCriteria, MatchNodeCriteria
 
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Fetch by database ID
-            edge = cdb.fetch_edges(67890, unnest_result=True)
+                # Fetch by database ID
+                edge = cdb.fetch_edges(67890, unnest_result=True)
 
-            # Fetch by edge properties
-            tech_relations = cdb.fetch_edges({
-                "label_": "USES_TECHNOLOGY",
-                "since": 2023
-            })
+                # Fetch by edge properties
+                tech_relations = cdb.fetch_edges({
+                    "label_": "USES_TECHNOLOGY",
+                    "since": 2023
+                })
 
             # Advanced criteria with start/end node filtering
             criteria = MatchEdgeCriteria(
@@ -807,16 +857,17 @@ class CypherGraphDB:
             # Import the model classes defined above or from your own module
             from my_models import Product, Technology, UsesTechnology
 
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Create/merge individual nodes
-            product = Product(name="CypherGraph", version="1.0", description="Graph database client")
-            product = cdb.create_or_merge(product)  # Returns product with ID assigned
-            print(f"Product ID: {product.id_}")
+                # Create/merge individual nodes
+                product = Product(name="CypherGraph", version="1.0", description="Graph database client")
+                product = cdb.create_or_merge(product)  # Returns product with ID assigned
+                print(f"Product ID: {product.id_}")
 
-            technology = Technology(name="Python", category="Programming Language")
-            technology = cdb.create_or_merge(technology, strategy="merge")
+                technology = Technology(name="Python", category="Programming Language")
+                technology = cdb.create_or_merge(technology, strategy="merge")
 
             # Create/merge edges between nodes
             uses = UsesTechnology(
@@ -869,16 +920,17 @@ class CypherGraphDB:
             ```python
             from cypher_graphdb import MatchNodeCriteria, MatchEdgeCriteria
 
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Delete specific node by object (must have ID)
-            product = cdb.fetch_nodes({"label_": "Product", "name": "CypherGraph"}, fetch_one=True)
-            cdb.delete(product, detach=True)  # Detach all relationships first
+                # Delete specific node by object (must have ID)
+                product = cdb.fetch_nodes({"label_": "Product", "name": "CypherGraph"}, fetch_one=True)
+                cdb.delete(product, detach=True)  # Detach all relationships first
 
-            # Delete specific edge by object
-            edge = cdb.fetch_edges({"label_": "USES_TECHNOLOGY"}, fetch_one=True)
-            cdb.delete(edge)
+                # Delete specific edge by object
+                edge = cdb.fetch_edges({"label_": "USES_TECHNOLOGY"}, fetch_one=True)
+                cdb.delete(edge)
 
             # Bulk delete nodes by criteria
             criteria = MatchNodeCriteria(
@@ -931,12 +983,12 @@ class CypherGraphDB:
 
         Examples:
             ```python
-            with CypherGraphDB("memgraph", load_dotenv=True) as db:
-                db.connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
                 # Parse a query for analysis
                 query = "MATCH (p:Product {name: $name}) RETURN p"
-                parsed = db.parse(query)
+                parsed = cdb.parse(query)
 
                 # Access parsing results
                 print(f"Query type: {parsed.query_type}")
@@ -986,25 +1038,26 @@ class CypherGraphDB:
             Query results formatted according to unnest_result parameter
 
         Examples:
-            ```python
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+                ```python
+                # Using context manager (recommended approach)
+                with CypherGraphDB() as cdb:
+                    cdb.connect()
 
-            # Basic query execution
-            result = cdb.execute("MATCH (n:Product) RETURN n.name, n.gid_ LIMIT 3")
-            # Returns: [('CypherGraph', '6f628f1e7tFZHfis'), ('PostgreSQL', '940652f10K2xQobe'), ...]
+                    # Basic query execution
+                    result = cdb.execute("MATCH (n:Product) RETURN n.name, n.gid_ LIMIT 3")
+                    # Returns: [('CypherGraph', '6f628f1e7tFZHfis'), ('PostgreSQL', '940652f10K2xQobe'), ...]
 
-            # Get single result
-            count = cdb.execute(
-                "MATCH (n:Product) RETURN count(n)",
-                unnest_result="rc"  # single row, single column -> scalar
-            )
-            # Returns: 265 (just the count number)
+                    # Get single result
+                    count = cdb.execute(
+                        "MATCH (n:Product) RETURN count(n)",
+                        unnest_result="rc"  # single row, single column -> scalar
+                    )
+                    # Returns: 265 (just the count number)
 
-            # Get first column only
-            names = cdb.execute(
-                "MATCH (n:Technology) RETURN n.name, n.gid_ ORDER BY n.name LIMIT 3",
-                unnest_result="c"
+                    # Get first column only
+                    names = cdb.execute(
+                        "MATCH (n:Technology) RETURN n.name, n.gid_ ORDER BY n.name LIMIT 3",
+                        unnest_result="c"
             )
             # Returns: ['Python', 'PostgreSQL', 'Memgraph'] (just names)
 
@@ -1076,11 +1129,12 @@ class CypherGraphDB:
 
         Examples:
             ```python
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Basic text search in product descriptions
-            context_query = cdb.parse("MATCH (p:Product) RETURN p")
+                # Basic text search in product descriptions
+                context_query = cdb.parse("MATCH (p:Product) RETURN p")
             results = cdb.search(
                 context_query,
                 "graph database client",
@@ -1109,56 +1163,71 @@ class CypherGraphDB:
             ```
 
         Note:
-            Full-text search requires proper indexing configuration on the backend.
-            Search capabilities and syntax vary by database backend (Neo4j, Memgraph, etc.).
+            Full-text search requires proper indexing configuration on the
+            backend. Search capabilities and syntax vary by database backend
+            (Neo4j, Memgraph, etc.).
         """
         assert self._backend
-        logger.debug(f"Search {fts_query=} {unnest_result=} \ncypher_query={parsed_query.submitted_query}")
+        logger.debug(
+            "Search fts_query=%s unnest_result=%s\ncypher_query=%s",
+            fts_query,
+            unnest_result,
+            parsed_query.submitted_query,
+        )
 
-        result, self._exec_statistics = self._backend.fulltext_search(parsed_query, fts_query, language)
+        result, self._exec_statistics = self._backend.fulltext_search(
+            parsed_query,
+            fts_query,
+            language,
+        )
 
         return utils.unnest_result(result, unnest_result)
 
     def exec_statistics(self) -> ExecStatistics:
         """Get execution statistics from the most recent database operation.
 
-        Provides detailed metrics about the last executed query including timing,
-        resource usage, and result statistics. Useful for performance monitoring
-        and query optimization.
+        Provides detailed metrics about the last executed query including
+        timing, resource usage, and result statistics. Useful for performance
+        monitoring
+            and query optimization.
 
-        Returns:
-            ExecStatistics object with comprehensive operation metrics
+            Returns:
+                ExecStatistics object with comprehensive operation metrics
 
-        Examples:
-            ```python
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            Examples:
+                ```python
+                # Using context manager (recommended)
+                with CypherGraphDB() as cdb:
+                    cdb.connect()
 
-            # Execute a query
-            result = cdb.execute("MATCH (n:Product) RETURN count(n)")
+                    # Execute a query
+                    result = cdb.execute("MATCH (n:Product) RETURN count(n)")
 
-            # Get execution statistics
-            stats = cdb.exec_statistics()
-            print(f"Execution time: {stats.execution_time_ms}ms")
-            print(f"Nodes examined: {stats.nodes_examined}")
-            print(f"Relationships examined: {stats.relationships_examined}")
-            print(f"Records produced: {stats.records_produced}")
-            print(f"Memory usage: {stats.memory_used_bytes} bytes")
+                    # Get execution statistics
+                    stats = cdb.exec_statistics()
+                    print(f"Execution time: {stats.execution_time_ms}ms")
+                    print(f"Nodes examined: {stats.nodes_examined}")
+                    print(
+                        "Relationships examined: "
+                        f"{stats.relationships_examined}"
+                    )
+                    print(f"Records produced: {stats.records_produced}")
+                    print(f"Memory usage: {stats.memory_used_bytes} bytes")
 
-            # Monitor complex query performance
-            complex_result = cdb.execute('''
-                MATCH (p:Product)-[:USES_TECHNOLOGY*1..2]->(t:Technology)
-                WHERE t.name = "Python"
-                RETURN p.name, t.name
-                ORDER BY p.name
-                LIMIT 100
-            ''')
+                    # Monitor complex query performance
+                    complex_result = cdb.execute('''
+                        MATCH (p:Product)-[:USES_TECHNOLOGY*1..2]->(t:Technology)
+                        WHERE t.name = "Python"
+                        RETURN p.name, t.name
+                        ORDER BY p.name
+                        LIMIT 100
+                    ''')
 
-            perf_stats = cdb.exec_statistics()
-            if perf_stats.execution_time_ms > 1000:  # Slow query
-                print(f"Query took {perf_stats.execution_time_ms}ms")
-                print(f"Consider adding indexes or optimizing")
-            ```
+                    perf_stats = cdb.exec_statistics()
+                    if perf_stats.execution_time_ms > 1000:  # Slow query
+                        print(f"Query took {perf_stats.execution_time_ms}ms")
+                        print(f"Consider adding indexes or optimizing")
+                ```
         """
         return self._exec_statistics
 
@@ -1173,28 +1242,29 @@ class CypherGraphDB:
     def graphs(self) -> tuple[str]:
         """Get list of available graphs in the database backend.
 
-        Returns all graph databases available on the connected backend instance.
-        Useful for multi-tenant applications or database exploration.
+        Returns all graph databases available on the connected backend
+        instance.
+            Useful for multi-tenant applications or database exploration.
 
-        Returns:
-            Sorted tuple of graph database names
+            Returns:
+                Sorted tuple of graph database names
 
-        Examples:
-            ```python
-            db = CypherGraphDB("memgraph").connect()
+            Examples:
+                ```python
+                db = CypherGraphDB("memgraph").connect()
 
-            # List all available graphs
-            available_graphs = db.graphs()
-            print(f"Available graphs: {available_graphs}")
-            # Output: ('main', 'analytics', 'test_graph')
+                # List all available graphs
+                available_graphs = db.graphs()
+                print(f"Available graphs: {available_graphs}")
+                # Output: ('main', 'analytics', 'test_graph')
 
-            # Switch to a different graph if backend supports it
-            if "analytics" in available_graphs:
-                # Reconnect to different graph
-                db.disconnect()
-                db.backend.graph_name = "analytics"
-                db.connect()
-            ```
+                # Switch to a different graph if backend supports it
+                if "analytics" in available_graphs:
+                    # Reconnect to different graph
+                    db.disconnect()
+                    db.backend.graph_name = "analytics"
+                    db.connect()
+                ```
         """
         assert self._backend
         result = self._backend.graphs()
@@ -1202,49 +1272,59 @@ class CypherGraphDB:
         return sorted(result)
 
     def labels(self) -> list[LabelStatistics]:
-        """Get statistics for all labels (node types and relationship types) in the current graph.
+        """Get statistics for all labels (node types and relationship types)
+        in the current graph.
 
-        Provides comprehensive metadata about the graph schema including node and edge
-        label usage statistics. Useful for schema discovery and data profiling.
+        Provides comprehensive metadata about the graph schema including node
+        and edge label usage statistics. Useful for schema discovery and data
+        profiling.
 
         Returns:
-            List of LabelStatistics objects sorted by type (nodes first) then by name
+            List of LabelStatistics objects sorted by type (nodes first) then
+            by name
 
         Examples:
             ```python
-            # Connect to database - simplest approach
-            cdb = CypherGraphDB(backend="memgraph", load_dotenv=True).connect()
+            # Using context manager (recommended)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Get all label statistics
-            label_stats = cdb.labels()
+                # Get all label statistics
+                label_stats = cdb.labels()
 
-            for label_stat in label_stats:
-                print(f"Label: {label_stat.label_}")
-                print(f"Type: {label_stat.type_}")  # 'node' or 'relationship'
-                print(f"Count: {label_stat.count_}")
-                print(f"Properties: {label_stat.property_names}")
-                print("---")
+                for label_stat in label_stats:
+                    print(f"Label: {label_stat.label_}")
+                    print(f"Type: {label_stat.type_}")  # node or relationship
+                    print(f"Count: {label_stat.count_}")
+                    print(f"Properties: {label_stat.property_names}")
+                    print("---")
 
-            # Filter for just node labels
-            node_labels = [
-                stat for stat in label_stats
-                if stat.type_.value == "node"
-            ]
-            print(f"Node types: {[stat.label_ for stat in node_labels]}")
+                # Filter for just node labels
+                node_labels = [
+                    stat for stat in label_stats
+                    if stat.type_.value == "node"
+                ]
+                print(f"Node types: {[stat.label_ for stat in node_labels]}")
 
-            # Filter for specific node types
-            product_tech_labels = [
-                stat for stat in label_stats
-                if stat.label_ in ["Product", "Technology"]
-            ]
-            for stat in product_tech_labels:
-                print(f"{stat.label_}: {stat.count_} instances")
+                # Filter for specific node types
+                product_tech_labels = [
+                    stat for stat in label_stats
+                    if stat.label_ in ["Product", "Technology"]
+                ]
+                for stat in product_tech_labels:
+                    print(f"{stat.label_}: {stat.count_} instances")
 
             # Find the most common relationship type
-            rel_labels = [stat for stat in label_stats if stat.type_.value == "relationship"]
+            rel_labels = [
+                stat for stat in label_stats
+                if stat.type_.value == "relationship"
+            ]
             if rel_labels:
                 most_common_rel = max(rel_labels, key=lambda x: x.count_)
-                print(f"Most common relationship: {most_common_rel.label_} with {most_common_rel.count_} instances")
+                print(
+                    "Most common relationship: "
+                    f"{most_common_rel.label_} with {most_common_rel.count_} instances"
+                )
 
             # Get schema overview for Product and Technology
             schema = {}
@@ -1266,41 +1346,46 @@ class CypherGraphDB:
         return sorted(result, key=lambda x: (x.type_.value, x.label_))
 
     def nest_result(self, result: Any) -> Any:
-        """Convert query results to consistent nested tuple format for internal processing.
+        """Convert query results to consistent nested tuple format for
+        internal processing.
 
-        Normalizes different result formats into a consistent list-of-tuples structure
-        used internally by the library. Primarily used by result processing utilities.
+        Normalizes different result formats into a consistent list-of-tuples
+        structure used internally by the library. Primarily used by result
+        processing utilities.
 
         Args:
-            result: Query result in any format (single value, tuple, list, etc.)
+            result: Query result in any format (single value, tuple, list,
+                etc.)
 
         Returns:
             Normalized result as list of tuples, or None if input is None
 
         Examples:
             ```python
-            db = CypherGraphDB("memgraph").connect()
+            with CypherGraphDB() as cdb:
+                cdb.connect()
 
-            # Single value -> [(value,)]
-            nested = db.nest_result(42)
-            # Returns: [(42,)]
+                # Single value -> [(value,)]
+                nested = cdb.nest_result(42)
+                # Returns: [(42,)]
 
-            # Tuple -> [tuple]
-            nested = db.nest_result(("Alice", 30))
-            # Returns: [("Alice", 30)]
+                # Tuple -> [tuple]
+                nested = cdb.nest_result(("Alice", 30))
+                # Returns: [("Alice", 30)]
 
-            # List is returned as-is
-            nested = db.nest_result([("Alice", 30), ("Bob", 25)])
-            # Returns: [("Alice", 30), ("Bob", 25)]
+                # List is returned as-is
+                nested = cdb.nest_result([("Alice", 30), ("Bob", 25)])
+                # Returns: [("Alice", 30), ("Bob", 25)]
 
-            # None -> None
-            nested = db.nest_result(None)
-            # Returns: None
+                # None -> None
+                nested = cdb.nest_result(None)
+                # Returns: None
             ```
 
         Note:
-            This method is primarily for internal use by result processing utilities.
-            Most users should use the unnest_result parameter in execute/fetch methods instead.
+            This method is primarily for internal use by result processing
+            utilities. Most users should use the unnest_result parameter in
+            execute/fetch methods instead.
         """
         if result is None:
             return None

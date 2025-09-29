@@ -46,7 +46,7 @@ class UsesTechnology(GraphEdge):
 def test_basic_connection():
     """Test basic connection to the database."""
     print("Testing basic connection...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
         result = db.execute("MATCH (n) RETURN count(n)")
         print(f"Node count: {result}")
@@ -56,7 +56,7 @@ def test_basic_connection():
 def test_fetch_nodes_untyped():
     """Test fetching nodes with different criteria using untyped approach."""
     print("Testing fetch_nodes (untyped approach)...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         # Fetch by label
@@ -80,7 +80,7 @@ def test_fetch_nodes_untyped():
 def test_fetch_nodes_typed():
     """Test fetching nodes with different criteria using typed approach."""
     print("Testing fetch_nodes (typed approach)...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         # Fetch by label using model class
@@ -105,7 +105,7 @@ def test_fetch_nodes_typed():
 def test_fetch_edges_untyped():
     """Test fetching edges with different criteria using untyped approach."""
     print("Testing fetch_edges (untyped approach)...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         # Fetch by edge type
@@ -133,7 +133,7 @@ def test_fetch_edges_untyped():
 def test_fetch_edges_typed():
     """Test fetching edges with different criteria using typed approach."""
     print("Testing fetch_edges (typed approach)...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         # Fetch by edge type using model class
@@ -168,7 +168,7 @@ def test_fetch_edges_typed():
 def test_execute():
     """Test execute with different result formatting."""
     print("Testing execute...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         # Basic query execution
@@ -201,7 +201,7 @@ def test_execute():
 def test_model_comparison():
     """Compare untyped and typed approaches."""
     print("Testing model comparison...")
-    with CypherGraphDB("memgraph", load_dotenv=True) as db:
+    with CypherGraphDB() as db:
         db.connect()
 
         print("\nUntyped approach:")

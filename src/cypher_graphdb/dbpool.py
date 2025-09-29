@@ -343,7 +343,6 @@ class CypherGraphDBPool:
 
         db = CypherGraphDB(
             self._backend,
-            load_dotenv=False,
             connect_params=None,
         )
         if self._auto_connect and self._connect_params:

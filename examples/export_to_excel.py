@@ -12,14 +12,14 @@ logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 logger.enable(cypher_graphdb.__name__)
 
-cdb = CypherGraphDB(backend="AGE", load_dotenv=True).connect()
+cdb = CypherGraphDB().connect()
 
 # Load all nodes in the graph
 ALL_NODES_AND_EDGES = """
-    MATCH (a)
-    MATCH (b)
-    MATCH (a)-[e]->(b)
-    RETURN a, b, e
+    MATCH (p)
+    MATCH (e)
+    MATCH (p)-[e]->(t)
+    RETURN p, e, t
     """
 
 path = os.path.basename(os.getcwd())

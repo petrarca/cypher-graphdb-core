@@ -8,7 +8,6 @@ Classes:
     AGEGraphDB: Main backend class for Apache AGE database operations.
 """
 
-import os
 import time
 from typing import Any
 
@@ -20,7 +19,6 @@ from psycopg.sql import SQL
 from psycopg.types import TypeInfo
 
 # Import directly from the main package
-from cypher_graphdb import config
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
@@ -99,13 +97,8 @@ class AGEGraphDB(CypherBackend):
         if self._connection is not None:
             return self
 
-        if not cinfo:
-            logger.debug("Try to load cinfo from env")
-            cinfo = os.getenv(config.CGDB_CINFO)
-
-        if not graph_name:
-            logger.debug("Try to load graph name from env")
-            graph_name = os.getenv(config.CGDB_GRAPH)
+        # Values now come from CypherGraphDB settings via connect() parameters
+        # No need to check environment variables directly
 
         self._set_graph_if_not_exists = kwargs.pop("set_graph_if_not_exists", True)
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
