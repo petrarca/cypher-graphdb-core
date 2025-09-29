@@ -9,8 +9,8 @@ from cypher_graphdb import CypherGraphDB
 @pytest.fixture(scope="session")
 def memgraph_container(request):
     """Provide a Memgraph container for integration tests."""
-    # Use the Memgraph platform image
-    container = DockerContainer("memgraph/memgraph-platform:latest")
+    # Use the Memgraph mage image
+    container = DockerContainer("memgraph/memgraph-mage:latest")
     container.with_exposed_ports(7687)  # Bolt port
     container.start()
 

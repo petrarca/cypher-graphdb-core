@@ -264,9 +264,9 @@ class CypherGraphDB:
             return backend_provider.check_and_resolve(backend, True)
 
         # Try to get backend from settings
-        settings_backend = self.settings.backend
+        settings_backend = self.get_settings().backend
         if settings_backend:
-            logger.debug("Using backend from settings: %s", settings_backend)
+            logger.debug(f"Using backend from settings: {settings_backend}")
             return backend_provider.check_and_resolve(settings_backend, True)
 
         # No backend available - raise error with helpful message
@@ -301,12 +301,13 @@ class CypherGraphDB:
         self.on_after_execute: Callable = lambda result, parsed_query: None
 
         # Log current settings values for debugging
-        logger.debug(
-            "Current settings: backend=%s cinfo=%s graph=%s",
-            self.settings.backend,
-            self.settings.cinfo and "[REDACTED]" or None,
-            self.settings.graph,
+        settings = self.get_settings()
+        from .utils.connection_utils import (
+            sanitize_connection_string_for_logging,
         )
+
+        sanitized_cinfo = sanitize_connection_string_for_logging(settings.cinfo) if settings.cinfo else None
+        logger.debug(f"Current settings: backend={settings.backend} cinfo={sanitized_cinfo} graph={settings.graph}")
 
         # Auto-connect if connection parameters are provided
         self._auto_connect_if_params(connect_url, connect_params)
@@ -362,8 +363,8 @@ class CypherGraphDB:
         """
         return self._model_provider
 
-    @property
-    def settings(self):
+    @staticmethod
+    def get_settings():
         """Get the singleton settings instance.
 
         Returns:
@@ -372,6 +373,9 @@ class CypherGraphDB:
         from .settings import get_settings
 
         return get_settings()
+
+    # Property for convenience access
+    settings = property(lambda self: self.get_settings())
 
     def __enter__(self):
         """Enter the context manager for automatic connection management.
@@ -1168,12 +1172,7 @@ class CypherGraphDB:
             (Neo4j, Memgraph, etc.).
         """
         assert self._backend
-        logger.debug(
-            "Search fts_query=%s unnest_result=%s\ncypher_query=%s",
-            fts_query,
-            unnest_result,
-            parsed_query.submitted_query,
-        )
+        logger.debug(f"Search fts_query={fts_query} unnest_result={unnest_result}\ncypher_query={parsed_query.submitted_query}")
 
         result, self._exec_statistics = self._backend.fulltext_search(
             parsed_query,
