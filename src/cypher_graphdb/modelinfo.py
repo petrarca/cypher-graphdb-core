@@ -69,6 +69,7 @@ class GraphModelInfo(BaseModel):
 
     @property
     def fields(self) -> dict[str, dict[str, Any]]:
+        """Expose model fields excluding reserved core GraphDB attributes."""
         if self.graph_model is None:
             return ()
 
@@ -78,6 +79,7 @@ class GraphModelInfo(BaseModel):
 
     @model_serializer
     def serialize_model(self, info) -> dict[str, Any]:
+        """Serialize metadata, schema, and optional field details for the model."""
         graph_model = self.graph_model
 
         _fields = self._serialize_fields(info.context if info else None)

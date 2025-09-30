@@ -31,7 +31,17 @@ def build_json_schema(
     base_schema: dict[str, Any] | None = None,
     context: GraphSchemaContext | None = None,
 ) -> dict[str, Any]:
-    """Build JSON schema for a graph model with optional metadata extensions."""
+    """Generate a JSON schema and optionally enrich it with graph metadata.
+
+    Args:
+        graph_model: Model class used to derive the base schema when `base_schema` is not provided.
+        base_schema: Precomputed schema to reuse instead of deriving from the model.
+        context: Optional metadata describing label, relations, and graph type to embed under
+            the `x-cypher-graphdb` key in the resulting schema.
+
+    Returns:
+        A JSON schema dictionary enriched with graph metadata when `context` is supplied.
+    """
 
     if base_schema is not None:
         schema_source = base_schema
@@ -79,7 +89,7 @@ def build_json_schema(
 
 
 class GraphObjectSchema(BaseModel):
-    """Manages JSON schema generation for graph model classes."""
+    """Manage JSON schema generation for graph model classes with optional enrichment."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -88,10 +98,11 @@ class GraphObjectSchema(BaseModel):
     context_provider: Callable[[], GraphSchemaContext | None] | None = None
 
     def _resolve_context(self) -> GraphSchemaContext | None:
+        """Fetch context on demand using the configured provider, if any."""
         if self.context_provider is not None:
             return self.context_provider()
 
-        return self.context
+        return None
 
     @property
     def json_schema(self) -> dict[str, Any] | None:
