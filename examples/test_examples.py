@@ -7,11 +7,11 @@
 #   "python-dotenv"
 # ]
 # ///
-
 """Test script for validating CypherGraphDB examples."""
 
-from cypher_graphdb import CypherGraphDB, MatchEdgeCriteria, MatchNodeCriteria, edge, node, relation
-from cypher_graphdb.models import GraphEdge, GraphNode
+import json
+
+from cypher_graphdb import CypherGraphDB, GraphEdge, GraphNode, MatchEdgeCriteria, MatchNodeCriteria, edge, node, relation
 
 
 # Define model classes for our examples - Typed approach
@@ -230,19 +230,46 @@ def test_model_comparison():
     print("Model comparison completed.\n")
 
 
+def test_model_info():
+    """Test model information."""
+    with CypherGraphDB() as cdb:
+        cdb.connect()
+
+        result = list(cdb.model_provider.model_dump(context={"with_detailed_fields": True}).values())
+        print(json.dumps(result, indent=2))
+
+
+def test_model_json_schema():
+    """Show how to access JSON Schema for registered models."""
+    print("Generating JSON schema for registered models...")
+    with CypherGraphDB() as cdb:
+        cdb.connect()
+
+        for label in cdb.model_provider:
+            model_info = cdb.model_provider.get(label)
+            if not model_info:
+                continue
+
+            schema = model_info.graph_schema.json_schema or {}
+
+            print(f"\nSchema for {label}:")
+            print(json.dumps(schema, indent=2))
+
+
 def main():
-    """Run all tests."""
-    print("Starting example tests...\n")
+    # print("Starting example tests...\n")
 
-    test_basic_connection()
-    test_fetch_nodes_untyped()
-    test_fetch_nodes_typed()
-    test_fetch_edges_untyped()
-    test_fetch_edges_typed()
-    test_execute()
-    test_model_comparison()
+    # test_basic_connection()
+    # test_fetch_nodes_untyped()
+    # test_fetch_nodes_typed()
+    # test_fetch_edges_untyped()
+    # test_fetch_edges_typed()
+    # test_execute()
+    # test_model_comparison()
 
-    print("\nAll tests completed.")
+    # print("\nAll tests completed.")
+    # test_model_info()
+    test_model_json_schema()
 
 
 if __name__ == "__main__":

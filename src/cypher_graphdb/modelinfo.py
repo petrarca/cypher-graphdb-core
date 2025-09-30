@@ -7,16 +7,15 @@ and relationship data for graph model classes (nodes and edges).
 from typing import Any
 
 from pydantic import BaseModel, model_serializer
+from pydantic.fields import FieldInfo, PydanticUndefined
 
 from . import config, utils
 from .models import GraphEdge, GraphNode, GraphObjectType
-from .schema import GraphObjectSchema
+from .schema import GraphObjectSchema, GraphSchemaContext
 
 
 class GraphModelInfo(BaseModel):
     """Base class for graph model metadata and schema information.
-
-    Stores metadata, schema, and type information for graph model classes.
 
     Attributes:
         label_: Graph label for the model.
@@ -28,11 +27,36 @@ class GraphModelInfo(BaseModel):
     label_: str
     metadata: dict[str, Any] = {}
     graph_model: type[GraphNode | GraphEdge]
-    graph_schema: GraphObjectSchema = None
+    graph_schema: GraphObjectSchema | None = None
 
-    def model_post_init(self, _):
+    def model_post_init(self, __context: Any) -> None:
         """Initialize schema after model creation."""
-        self.graph_schema = GraphObjectSchema(graph_model=self.graph_model)
+        super().model_post_init(__context)
+        self._ensure_graph_schema()
+
+    def _ensure_graph_schema(self) -> None:
+        """Guarantee `graph_schema` exists and points at the current model."""
+        if self.graph_schema is None:
+            self.graph_schema = GraphObjectSchema(graph_model=self.graph_model, context_provider=self._build_schema_context)
+            return
+
+        self.graph_schema.graph_model = self.graph_model
+        self.graph_schema.context_provider = self._build_schema_context
+
+    def _build_schema_context(self) -> GraphSchemaContext:
+        """Assemble schema context metadata used by `GraphObjectSchema`."""
+        relations = getattr(self, "relations", None)
+        graph_model_ref = None
+        if self.graph_model is not None:
+            graph_model_ref = f"{self.graph_model.__module__}.{self.graph_model.__name__}"
+
+        return GraphSchemaContext(
+            label=self.label_,
+            metadata=self.metadata,
+            graph_type=self.type_,
+            relations=list(relations or []),
+            graph_model_ref=graph_model_ref,
+        )
 
     @property
     def type_(self) -> str:
@@ -56,16 +80,72 @@ class GraphModelInfo(BaseModel):
     def serialize_model(self, info) -> dict[str, Any]:
         graph_model = self.graph_model
 
-        _fields = self.fields if info.context and info.context.get("with_detailed_fields", False) else list(self.fields.keys())
+        _fields = self._serialize_fields(info.context if info else None)
 
         return {
             "type_": self.type_,
             "label_": self.label_,
             "metadata": utils.to_collection(self.metadata),
             "graph_model": f"{graph_model.__module__}.{graph_model.__name__}" if graph_model else None,
-            "has_schema": self.graph_schema.has_schema,
             "fields": _fields,
         }
+
+    def _serialize_fields(self, context: Any) -> list[str] | dict[str, Any]:
+        fields = self.fields
+
+        if not context or not context.get("with_detailed_fields", False):
+            return list(fields.keys()) if isinstance(fields, dict) else list(fields)
+
+        return {name: self._serialize_field_details(field) for name, field in fields.items()}
+
+    @staticmethod
+    def _serialize_field_details(field: FieldInfo) -> dict[str, Any]:
+        required = GraphModelInfo._is_field_required(field)
+        serialized: dict[str, Any] = {
+            "annotation": GraphModelInfo._stringify_annotation(field.annotation),
+            "required": required,
+        }
+
+        default = getattr(field, "default", PydanticUndefined)
+        default_factory = getattr(field, "default_factory", PydanticUndefined)
+
+        if default is not PydanticUndefined:
+            serialized["default"] = utils.to_collection(default)
+        elif default_factory is not PydanticUndefined:
+            serialized["default_factory"] = GraphModelInfo._describe_callable(default_factory)
+
+        json_schema_extra = getattr(field, "json_schema_extra", None)
+        if json_schema_extra:
+            serialized["json_schema_extra"] = utils.to_collection(json_schema_extra)
+
+        return serialized
+
+    @staticmethod
+    def _describe_callable(factory: Any) -> str:
+        qualname = getattr(factory, "__qualname__", None)
+        module = getattr(factory, "__module__", None)
+        if qualname:
+            return f"{module}.{qualname}" if module else qualname
+        return repr(factory)
+
+    @staticmethod
+    def _is_field_required(field: FieldInfo) -> bool:
+        if hasattr(field, "is_required"):
+            return field.is_required()  # type: ignore[call-arg]
+
+        default = getattr(field, "default", PydanticUndefined)
+        default_factory = getattr(field, "default_factory", PydanticUndefined)
+        return default is PydanticUndefined and default_factory is PydanticUndefined
+
+    @staticmethod
+    def _stringify_annotation(annotation: Any) -> str | None:
+        if annotation is None:
+            return None
+
+        if isinstance(annotation, type):
+            return annotation.__name__
+
+        return str(annotation)
 
     def __hash__(self):
         """Get hash value based on label."""

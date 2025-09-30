@@ -1,10 +1,6 @@
-from cypher_graphdb.modelinfo import (
-    GraphEdgeInfo,
-    GraphModelInfo,
-    GraphNodeInfo,
-    GraphRelationInfo,
-)
+from cypher_graphdb.modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from cypher_graphdb.models import GraphEdge, GraphNode, GraphObjectType
+from cypher_graphdb.schema import GraphSchemaContext, build_json_schema
 
 
 def test_graph_model_info_basic_fields_filtering():
@@ -23,7 +19,26 @@ def test_graph_model_info_serialization_compact_vs_detailed():
     assert isinstance(compact["fields"], list)
     detailed = info.model_dump(context={"with_detailed_fields": True})
     assert isinstance(detailed["fields"], dict)
-    assert detailed["has_schema"] is False  # no custom schema set
+
+
+def test_graph_model_info_detailed_fields_content():
+    class SampleNode(GraphNode):
+        required: str
+        optional: str | None = None
+
+    info = GraphModelInfo(label_="Sample", graph_model=SampleNode, metadata={})
+
+    detailed = info.model_dump(context={"with_detailed_fields": True})
+    fields = detailed["fields"]
+
+    assert fields["required"]["annotation"] == "str"
+    assert fields["required"]["required"] is True
+    assert "default" not in fields["required"]
+
+    optional_annotation = fields["optional"]["annotation"]
+    assert optional_annotation in {"str | None", "typing.Optional[str]"}
+    assert fields["optional"]["required"] is False
+    assert fields["optional"]["default"] is None
 
 
 def test_graph_node_info_relations_serialization():
@@ -61,4 +76,39 @@ def test_schema_flag_custom_assignment():
     info.graph_schema.json_schema = custom
     assert info.graph_schema.has_schema is True
     dumped = info.model_dump()
-    assert dumped["has_schema"] is True
+    assert "has_schema" not in dumped
+
+
+def test_graph_model_info_json_schema_without_extensions():
+    info = GraphModelInfo(label_="Doc", graph_model=GraphNode, metadata={})
+
+    schema = build_json_schema(info.graph_model)
+
+    assert "x-cypher-graph" not in schema
+    assert schema["title"] == "GraphNode"
+
+
+def test_graph_node_info_json_schema_with_extensions():
+    rels = [GraphRelationInfo(rel_type_name="KNOWS", to_type_name="Person")]
+    info = GraphNodeInfo(label_="Person", graph_model=GraphNode, metadata={"team": "core"}, relations=rels)
+
+    graph_model_ref = f"{info.graph_model.__module__}.{info.graph_model.__name__}"
+    context = GraphSchemaContext(
+        label=info.label_,
+        metadata=info.metadata,
+        graph_type=GraphObjectType.NODE,
+        relations=info.relations,
+        graph_model_ref=graph_model_ref,
+    )
+    schema = build_json_schema(info.graph_model, context=context)
+
+    assert "x-cypher-graphdb" in schema
+    extension = schema["x-cypher-graphdb"]
+    assert extension["type"] == GraphObjectType.NODE.name
+    assert extension["label"] == "Person"
+    assert extension["metadata"] == {"team": "core"}
+    assert extension["graph_model"].endswith("GraphNode")
+    assert extension["relations"][0] == rels[0].model_dump()
+
+    schema_from_property = info.graph_schema.json_schema
+    assert schema_from_property["x-cypher-graphdb"] == extension

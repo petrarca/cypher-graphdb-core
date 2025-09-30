@@ -4,27 +4,104 @@ Provides GraphObjectSchema for generating and managing JSON schemas
 from GraphNode and GraphEdge model classes.
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, ConfigDict, model_serializer
 
 from . import utils
-from .models import GraphEdge, GraphNode
+from .models import GraphEdge, GraphNode, GraphObjectType
+
+
+@dataclass
+class GraphSchemaContext:
+    """Context metadata used when enriching graph model schemas."""
+
+    label: str
+    metadata: dict[str, Any]
+    graph_type: GraphObjectType
+    relations: list[Any]
+    graph_model_ref: str | None = None
+
+
+def build_json_schema(
+    graph_model: type[GraphNode | GraphEdge] | None,
+    *,
+    base_schema: dict[str, Any] | None = None,
+    context: GraphSchemaContext | None = None,
+) -> dict[str, Any]:
+    """Build JSON schema for a graph model with optional metadata extensions."""
+
+    if base_schema is not None:
+        schema_source = base_schema
+    elif graph_model is not None:
+        schema_source = graph_model.model_json_schema()
+    else:
+        schema_source = {}
+
+    schema = utils.to_collection(schema_source) or {}
+
+    if not isinstance(schema, dict):
+        schema = {"schema": schema}
+
+    if context is None:
+        return schema
+
+    label = context.label
+    metadata = context.metadata
+    graph_type = context.graph_type.name if hasattr(context.graph_type, "name") else context.graph_type
+    relations = context.relations
+    graph_model_ref = context.graph_model_ref
+
+    extension: dict[str, Any] = {
+        "type": graph_type,
+        "label": label,
+        "metadata": utils.to_collection(metadata or {}),
+    }
+
+    if graph_model_ref is not None:
+        extension["graph_model"] = graph_model_ref
+
+    if relations:
+        normalized_relations: list[Any] = []
+        for relation in relations:
+            if hasattr(relation, "model_dump"):
+                normalized_relations.append(relation.model_dump())
+            else:
+                normalized_relations.append(utils.to_collection(relation))
+        extension["relations"] = normalized_relations
+
+    enriched_schema = dict(schema)
+    enriched_schema["x-cypher-graphdb"] = extension
+
+    return enriched_schema
 
 
 class GraphObjectSchema(BaseModel):
     """Manages JSON schema generation for graph model classes."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     graph_model: type[GraphNode | GraphEdge]
     _json_schema: dict[str, Any] | None = None
+    context_provider: Callable[[], GraphSchemaContext | None] | None = None
+
+    def _resolve_context(self) -> GraphSchemaContext | None:
+        if self.context_provider is not None:
+            return self.context_provider()
+
+        return self.context
 
     @property
     def json_schema(self) -> dict[str, Any] | None:
         """Get the JSON schema, generating it from the model if not cached."""
-        if self._json_schema is not None:
-            return self._json_schema
-        else:
-            return self.graph_model.model_json_schema() if self.graph_model else None
+        if self.graph_model is None and self._json_schema is None:
+            return None
+
+        context = self._resolve_context()
+
+        return build_json_schema(self.graph_model, base_schema=self._json_schema, context=context)
 
     @json_schema.setter
     def json_schema(self, value: dict[str, Any] | None):
