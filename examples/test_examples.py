@@ -241,7 +241,6 @@ def test_model_info():
 
 def test_model_json_schema():
     """Show how to access JSON Schema for registered models."""
-    print("Generating JSON schema for registered models...")
     with CypherGraphDB() as cdb:
         cdb.connect()
 
@@ -252,7 +251,6 @@ def test_model_json_schema():
 
             schema = model_info.graph_schema.json_schema or {}
 
-            print(f"\nSchema for {label}:")
             print(json.dumps(schema, indent=2))
 
 

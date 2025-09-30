@@ -25,6 +25,38 @@ class GraphSchemaContext:
     graph_model_ref: str | None = None
 
 
+def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext | None) -> dict[str, Any]:
+    """Remove internal graph database fields from the schema properties.
+
+    Args:
+        schema: The JSON schema dictionary to filter.
+        context: Graph schema context containing type information.
+
+    Returns:
+        Filtered schema with internal fields removed.
+    """
+    from . import config
+
+    if not isinstance(schema, dict) or "properties" not in schema:
+        return schema
+
+    # Determine which fields to exclude based on type
+    if context and context.graph_type == GraphObjectType.EDGE:
+        fields_to_remove = set(config.EDGE_FIELDS)
+    else:
+        fields_to_remove = set(config.NODE_FIELDS)
+
+    # Filter properties
+    filtered_schema = dict(schema)
+    filtered_schema["properties"] = {k: v for k, v in schema["properties"].items() if k not in fields_to_remove}
+
+    # Filter required array if present
+    if "required" in filtered_schema:
+        filtered_schema["required"] = [field for field in filtered_schema["required"] if field not in fields_to_remove]
+
+    return filtered_schema
+
+
 def build_json_schema(
     graph_model: type[GraphNode | GraphEdge] | None,
     *,
@@ -47,6 +79,8 @@ def build_json_schema(
         schema_source = base_schema
     elif graph_model is not None:
         schema_source = graph_model.model_json_schema()
+        # Filter internal fields from properties
+        schema_source = _filter_internal_fields(schema_source, context)
     else:
         schema_source = {}
 
@@ -85,7 +119,10 @@ def build_json_schema(
     enriched_schema = dict(schema)
     enriched_schema["x-cypher-graphdb"] = extension
 
-    return enriched_schema
+    # Order schema keys according to JSON Schema conventions
+    ordered_schema = utils.order_dict(enriched_schema, ("title", "type", "properties", "required"))
+
+    return ordered_schema
 
 
 class GraphObjectSchema(BaseModel):
@@ -128,5 +165,8 @@ class GraphObjectSchema(BaseModel):
 
     @model_serializer
     def serialize_model(self, _) -> dict[str, Any]:
-        """Serialize the schema with ordered keys (title, type first)."""
-        return utils.order_dict(utils.to_collection(self.json_schema), ("title", "type"))
+        """Serialize the schema with ordered keys (title, type, properties, required first)."""
+        return utils.order_dict(
+            utils.to_collection(self.json_schema),
+            ("title", "type", "properties", "required"),
+        )

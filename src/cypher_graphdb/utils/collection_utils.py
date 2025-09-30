@@ -128,35 +128,40 @@ def concat_dict(*d: dict[Any, Any]) -> dict[Any, Any]:
     return result
 
 
-def order_dict(d: dict, keys: set[Any]) -> dict[Any, Any]:
+def order_dict(d: dict, keys: set[Any] | tuple[Any, ...] | list[Any]) -> dict[Any, Any]:
     """Reorder dictionary with specified keys first.
 
     Remaining keys follow in their original order.
 
     Creates a new dictionary where the specified keys appear first
-    (in order they appear in the keys set), followed by the remaining
-    keys from the original dictionary.
+    (in the order provided if using tuple/list, or in arbitrary order if using set),
+    followed by the remaining keys from the original dictionary.
 
     Args:
         d: Dictionary to reorder.
-        keys: Set of keys to place at the beginning.
+        keys: Collection of keys to place at the beginning. Use tuple or list to preserve order.
 
     Returns:
         A new dictionary with the specified keys first, then remaining keys.
 
     Examples:
         >>> data = {"c": 3, "a": 1, "b": 2, "d": 4}
-        >>> order_dict(data, {"a", "b"})
+        >>> order_dict(data, ("a", "b"))  # Order preserved with tuple
         {"a": 1, "b": 2, "c": 3, "d": 4}
 
-        >>> order_dict({"x": 1, "y": 2}, {"y"})
+        >>> order_dict({"x": 1, "y": 2}, ("y",))
         {"y": 2, "x": 1}
 
         >>> order_dict({"a": 1, "b": 2}, {"nonexistent"})
         {"a": 1, "b": 2}
+
+        >>> order_dict({"z": 1, "a": 2}, ["a"])  # Order preserved with list
+        {"a": 2, "z": 1}
     """
-    ordered_keys = {key: d[key] for key in set(keys) if key in d}
-    remaining_keys = {key: d[key] for key in (set(d.keys()) - set(keys))}
+    # Preserve order by iterating keys in the order provided (not as set)
+    ordered_keys = {key: d[key] for key in keys if key in d}
+    keys_set = set(keys)
+    remaining_keys = {key: d[key] for key in d if key not in keys_set}
     return concat_dict(ordered_keys, remaining_keys)
 
 
