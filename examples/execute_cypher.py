@@ -15,8 +15,9 @@ cdb = CypherGraphDB().connect()
 
 result = cdb.execute(
     """
-    MATCH (p:Product)-[b:BELONGS_TO]->(c:Category)
-    RETURN p,b,c,id(p),label(b)
+    MATCH (p:Product)-[r:USES_TECHNOLOGY]->(t:Technology)
+    RETURN p, r, t, id(p) AS product_id, r.version AS tech_version
+    LIMIT 5
     """
 )
 

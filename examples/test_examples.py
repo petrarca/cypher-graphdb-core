@@ -10,37 +10,15 @@
 """Test script for validating CypherGraphDB examples."""
 
 import json
+from importlib import import_module
 
-from cypher_graphdb import CypherGraphDB, GraphEdge, GraphNode, MatchEdgeCriteria, MatchNodeCriteria, edge, node, relation
+from cypher_graphdb import CypherGraphDB, MatchEdgeCriteria, MatchNodeCriteria
 
-
-# Define model classes for our examples - Typed approach
-@node(metadata={"category": "software"})
-@relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
-class Product(GraphNode):
-    name: str
-    version: str | None = None
-    description: str | None = None
-
-    def is_stable(self) -> bool:
-        """Check if product is stable."""
-        return self.version and not self.version.endswith("-beta")
-
-
-@node(label="Technology")
-class Technology(GraphNode):
-    name: str
-    category: str | None = None
-
-    def is_database(self) -> bool:
-        """Check if this is a database technology."""
-        return self.category == "Database"
-
-
-@edge(label="USES_TECHNOLOGY")
-class UsesTechnology(GraphEdge):
-    since: int | None = None
-    version: str | None = None
+module_prefix = f"{__package__}." if __package__ else ""
+sample_model = import_module(f"{module_prefix}sample_model")
+Product = sample_model.Product
+Technology = sample_model.Technology
+UsesTechnology = sample_model.UsesTechnology
 
 
 def test_basic_connection():
@@ -92,11 +70,11 @@ def test_fetch_nodes_typed():
         if product:
             # With typed approach, we can access properties directly as attributes
             print(f"Found product: {product.name}")
-            if hasattr(product, "is_stable"):
-                print(f"Is stable: {product.is_stable()}")
+            if hasattr(product, "multi_tenancy"):
+                print(f"Supports multi-tenancy: {product.multi_tenancy}")
 
         # Advanced criteria with model class
-        criteria = MatchNodeCriteria(label_=Technology, projection_=["n.name", "n.category", "id(n)"])
+        criteria = MatchNodeCriteria(label_=Technology, projection_=["n.name", "id(n)"])
         technologies = db.fetch_nodes(criteria)
         print(f"Found {len(technologies)} technologies")
     print("Fetch nodes typed test completed.\n")
@@ -157,11 +135,6 @@ def test_fetch_edges_typed():
                     # With typed approach, we can access properties directly
                     tech_name = rel.end_node.name if hasattr(rel.end_node, "name") else rel.end_node.properties_.get("name")
                     print(f"- CypherGraph uses {tech_name}")
-
-                    # We can also access custom methods if the object is properly typed
-                    if hasattr(rel.end_node, "is_database"):
-                        is_db = rel.end_node.is_database()
-                        print(f"  Is database technology: {is_db}")
     print("Fetch edges typed test completed.\n")
 
 
@@ -221,9 +194,9 @@ def test_model_comparison():
                 print(f"- Product name: {typed_product.name}")
                 print("- Direct attribute access available")
 
-            # Custom methods
-            if hasattr(typed_product, "is_stable"):
-                print(f"- Custom method available: is_stable() = {typed_product.is_stable()}")
+            # Domain-specific attributes
+            if hasattr(typed_product, "multi_tenancy"):
+                print(f"- Multi-tenancy flag available: {typed_product.multi_tenancy}")
 
             # Type validation
             print("- Type validation through Pydantic models")
@@ -255,19 +228,19 @@ def test_model_json_schema():
 
 
 def main():
-    # print("Starting example tests...\n")
+    print("Starting example tests...\n")
 
-    # test_basic_connection()
-    # test_fetch_nodes_untyped()
-    # test_fetch_nodes_typed()
-    # test_fetch_edges_untyped()
-    # test_fetch_edges_typed()
-    # test_execute()
-    # test_model_comparison()
+    test_basic_connection()
+    test_fetch_nodes_untyped()
+    test_fetch_nodes_typed()
+    test_fetch_edges_untyped()
+    test_fetch_edges_typed()
+    test_execute()
+    test_model_comparison()
 
-    # print("\nAll tests completed.")
-    # test_model_info()
+    test_model_info()
     test_model_json_schema()
+    print("\nAll tests completed.")
 
 
 if __name__ == "__main__":
