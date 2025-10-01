@@ -151,16 +151,21 @@ class GraphPropertiesMixin:
 
     def flatten_properties(self):
         """Merge model fields with dynamic properties into a single dict."""
-        # Use model_dump() instead of dict(self) to get the raw model fields
-        result = self.model_dump()
+        # Manually extract model fields to avoid recursive model_dump() call
+        result = {}
 
-        # If properties_ exists as a separate field, merge it in
-        if "properties_" in result:
-            properties = result.pop("properties_")
-            result.update(properties)
-        # Otherwise, properties are already flattened, just use model fields
-        elif hasattr(self, "properties_"):
-            # Add properties that aren't already in the result
+        # Get all model fields defined in the class (excluding internal fields)
+        for field_name in self.__class__.model_fields:
+            if not field_name.endswith("_") or field_name == config.PROP_GID:
+                value = getattr(self, field_name, None)
+                # Only include non-None values and simple types
+                # to avoid recursion
+                is_graph_type = isinstance(value, (GraphNode, GraphEdge, GraphPath, Graph))
+                if value is not None and not is_graph_type:
+                    result[field_name] = value
+
+        # Merge dynamic properties from properties_ dict
+        if hasattr(self, "properties_"):
             for key, value in self.properties_.items():
                 if key not in result:
                     result[key] = value

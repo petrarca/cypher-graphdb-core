@@ -15,4 +15,4 @@ class Technology(GraphNode):
 
 @edge(label="USES_TECHNOLOGY")
 class UsesTechnology(GraphEdge):
-    pass
+    version: str | None = None
