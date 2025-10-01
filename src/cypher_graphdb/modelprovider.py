@@ -157,7 +157,7 @@ class ModelProvider(collections.abc.Collection):
 
         return result
 
-    def _load_single_file(self, file_path: str, mod_name: str | None = None) -> bool:
+    def _load_single_file(self, file_path: str, mod_name: str | None = None) -> tuple[bool, list[str]]:
         """Load a single Python module file.
 
         Args:
@@ -166,21 +166,27 @@ class ModelProvider(collections.abc.Collection):
                       extension)
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, list_of_newly_loaded_model_labels)
         """
         if not mod_name:
             mod_name = (utils.split_path(file_path))[1]
+
+        # Track models before loading
+        before = set(self._models.keys())
 
         try:
             spec = importlib.util.spec_from_file_location(mod_name, file_path)
             if spec is None:
                 logger.debug(f"Could not find module at {file_path=}")
-                return False
+                return (False, [])
 
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             logger.debug(f"Successfully loaded module from {file_path}")
-            return True
+
+            # Get newly loaded models
+            newly_loaded = list(set(self._models.keys()) - before)
+            return (True, newly_loaded)
         # pylint: disable=W0718
         except Exception as e:
             logger.debug(f"Module could not be loaded. Reason {e}")
@@ -188,39 +194,66 @@ class ModelProvider(collections.abc.Collection):
             root_cause = tb[-1]
             logger.debug(f"File: {root_cause.filename}")
             logger.debug(f"Line: {root_cause.lineno}: {root_cause.line}")
-            return False
+            return (False, [])
 
-    def _load_from_directory(self, path: str) -> bool:
+    def _load_from_directory(self, path: str) -> tuple[bool, dict[str, list[str]]]:
         """Load all Python files from a directory.
 
         Args:
             path: Directory path to load models from
 
         Returns:
-            True if at least one file was loaded successfully, False otherwise
+            Tuple of (success, dict mapping file_path to list of model labels)
         """
         logger.debug(f"Loading all model files from directory: {path}")
         py_files = sorted([f for f in os.listdir(path) if f.endswith(".py") and not f.startswith("__")])
 
         if not py_files:
             logger.debug(f"No Python files found in directory {path}")
-            return False
+            return (False, {})
 
+        file_to_models: dict[str, list[str]] = {}
         loaded_count = 0
         for py_file in py_files:
             file_path = os.path.join(path, py_file)
             mod_name = os.path.splitext(py_file)[0]
-            if self._load_single_file(file_path, mod_name):
+            success, newly_loaded = self._load_single_file(file_path, mod_name)
+            if success:
                 loaded_count += 1
+                if newly_loaded:
+                    file_to_models[file_path] = newly_loaded
 
         if loaded_count == 0:
             logger.debug(f"No modules could be loaded from directory {path}")
-            return False
+            return (False, {})
 
         logger.debug(f"Successfully loaded {loaded_count} module(s) from {path}")
-        return True
+        return (True, file_to_models)
 
-    def try_to_load_models(self, module_name: str | None, path: str | None = None) -> tuple[list[str] | None, str]:
+    def _update_source_and_collect(self, file_to_models: dict[str, list[str]]) -> list[GraphModelInfo]:
+        """Update source property for loaded models and collect their info.
+
+        Args:
+            file_to_models: Mapping of file paths to model label lists
+
+        Returns:
+            List of GraphModelInfo objects sorted by label
+        """
+        loaded_model_infos: list[GraphModelInfo] = []
+        for file_path, model_labels in file_to_models.items():
+            file_uri = f"file://{file_path}"
+            for label in model_labels:
+                if model_info := self.get(label):
+                    model_info.source = file_uri
+                    loaded_model_infos.append(model_info)
+
+        # Sort by label names (nodes first, then edges)
+        sorted_labels = self.sort_model_names([mi.label_ for mi in loaded_model_infos])
+        sorted_infos = [next(mi for mi in loaded_model_infos if mi.label_ == label) for label in sorted_labels]
+
+        return sorted_infos
+
+    def try_to_load_models(self, module_name: str | None, path: str | None = None) -> list[GraphModelInfo] | None:
         """Attempt to load model classes from a Python file or directory.
 
         This method supports two modes:
@@ -237,7 +270,8 @@ class ModelProvider(collections.abc.Collection):
                   module_name.
 
         Returns:
-            Tuple of (newly_loaded_model_names, resolved_path).
+            List of loaded GraphModelInfo objects, or None if loading failed
+            or no path provided.
 
         Examples:
             Load a single file:
@@ -250,7 +284,7 @@ class ModelProvider(collections.abc.Collection):
             >>> provider.try_to_load_models("my.models.module")
         """
         if not module_name and not path:
-            return (None, None)
+            return None
 
         logger.debug(f"Try to load model {module_name=}, {path=}")
         logger.trace(f"cwd={os.getcwd()}")
@@ -259,27 +293,40 @@ class ModelProvider(collections.abc.Collection):
         if not path and module_name:
             path = f"./{module_name.replace('.', '/')}.py"
 
-        # Track models before loading
-        before = set(self._models.keys())
-        success = False
+        # Validate path exists
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Path does not exist: {path}")
+
+        # Validate path is file or directory
+        if not (os.path.isfile(path) or os.path.isdir(path)):
+            raise ValueError(f"Path is neither a file nor a directory: {path}")
+
+        # Resolve absolute path for source URI
+        abs_path = os.path.abspath(path)
+
+        # Track loading results
+        file_to_models: dict[str, list[str]] = {}
 
         # Check if path is a file or directory
         if os.path.isfile(path):
             logger.debug(f"Loading single model file: {path}")
             mod_name = module_name or (utils.split_path(path))[1]
-            success = self._load_single_file(path, mod_name)
+            success, newly_loaded = self._load_single_file(path, mod_name)
+            if success and newly_loaded:
+                file_to_models[abs_path] = newly_loaded
         elif os.path.isdir(path):
-            success = self._load_from_directory(path)
-        else:
-            logger.debug(f"Path does not exist or is invalid: {path}")
-            return (None, path)
+            success, file_to_models_result = self._load_from_directory(path)
+            if success:
+                # Convert relative paths to absolute
+                file_to_models = {os.path.abspath(fp): models for fp, models in file_to_models_result.items()}
 
-        if not success:
-            return (None, path)
+        if not file_to_models:
+            return None
 
-        # Return the newly loaded models
-        newly_loaded = set(self._models.keys()) - before
-        return (self.sort_model_names(newly_loaded), path)
+        # Update source and collect model info
+        sorted_model_infos = self._update_source_and_collect(file_to_models)
+
+        return sorted_model_infos
 
     def model_dump(self, context: Any = None) -> dict[str, GraphModelInfo]:
         """Export all model info as a serializable dictionary."""

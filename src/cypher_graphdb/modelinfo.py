@@ -22,12 +22,14 @@ class GraphModelInfo(BaseModel):
         metadata: Additional metadata dictionary.
         graph_model: The actual model class (GraphNode or GraphEdge).
         graph_schema: Generated schema information.
+        source: Source location URI of the model file.
     """
 
     label_: str
     metadata: dict[str, Any] = {}
     graph_model: type[GraphNode | GraphEdge]
     graph_schema: GraphObjectSchema | None = None
+    source: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
         """Initialize schema after model creation."""
@@ -89,6 +91,7 @@ class GraphModelInfo(BaseModel):
             "label_": self.label_,
             "metadata": utils.to_collection(self.metadata),
             "graph_model": f"{graph_model.__module__}.{graph_model.__name__}" if graph_model else None,
+            "source": self.source,
             "fields": _fields,
         }
 

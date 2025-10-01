@@ -43,13 +43,14 @@ class Person(GraphNode):
             )
 
             # Load the model
-            loaded_models, path = model_provider.try_to_load_models(None, str(model_file))
+            loaded_models = model_provider.try_to_load_models(None, str(model_file))
 
             # Verify
             assert loaded_models is not None
-            assert "Person" in loaded_models
             assert len(loaded_models) == 1
-            assert path == str(model_file)
+            assert loaded_models[0].label_ == "Person"
+            assert loaded_models[0].source is not None
+            assert loaded_models[0].source.startswith("file://")
 
     def test_load_directory_with_multiple_models(self, record_initial_models):
         """Test loading all models from a directory."""
@@ -94,15 +95,19 @@ class WORKS_AT(GraphEdge):
             )
 
             # Load all models from directory
-            loaded_models, path = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             # Verify
             assert loaded_models is not None
             assert len(loaded_models) == 3
-            assert "Company" in loaded_models
-            assert "Employee" in loaded_models
-            assert "WORKS_AT" in loaded_models
-            assert path == tmpdir
+            labels = [m.label_ for m in loaded_models]
+            assert "Company" in labels
+            assert "Employee" in labels
+            assert "WORKS_AT" in labels
+            # Verify all have source set
+            for model_info in loaded_models:
+                assert model_info.source is not None
+                assert model_info.source.startswith("file://")
 
     def test_models_are_sorted_correctly(self, record_initial_models):
         """Test that nodes come before edges in sorted results."""
@@ -132,28 +137,29 @@ class Thing(GraphNode):
                 encoding="utf-8",
             )
 
-            loaded_models, _ = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             # Nodes should come before edges
             assert loaded_models is not None
-            thing_idx = loaded_models.index("Thing")
-            related_idx = loaded_models.index("RELATED_TO")
+            labels = [m.label_ for m in loaded_models]
+            thing_idx = labels.index("Thing")
+            related_idx = labels.index("RELATED_TO")
             assert thing_idx < related_idx, "Nodes should come before edges"
 
     def test_load_single_file_that_does_not_exist(self):
         """Test loading a non-existent file."""
-        loaded_models, path = model_provider.try_to_load_models(None, "/tmp/nonexistent_model_file_12345.py")
+        import pytest
 
-        assert loaded_models is None
-        assert path == "/tmp/nonexistent_model_file_12345.py"
+        path = "/tmp/nonexistent_model_file_12345.py"
+        with pytest.raises(FileNotFoundError, match="Path does not exist"):
+            model_provider.try_to_load_models(None, path)
 
     def test_load_empty_directory(self):
         """Test loading from an empty directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            loaded_models, path = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             assert loaded_models is None
-            assert path == tmpdir
 
     def test_directory_ignores_init_files(self, record_initial_models):
         """Test that __init__.py files are properly ignored."""
@@ -174,12 +180,12 @@ class Widget(GraphNode):
                 encoding="utf-8",
             )
 
-            loaded_models, _ = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             # Should only load Widget, not __init__
             assert loaded_models is not None
             assert len(loaded_models) == 1
-            assert "Widget" in loaded_models
+            assert loaded_models[0].label_ == "Widget"
 
     def test_directory_with_syntax_error_file(self, record_initial_models):
         """Test that directory loading continues despite syntax errors."""
@@ -200,11 +206,12 @@ class ValidModel(GraphNode):
                 encoding="utf-8",
             )
 
-            loaded_models, _ = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             # Should load the valid model despite the error
             assert loaded_models is not None
-            assert "ValidModel" in loaded_models
+            labels = [m.label_ for m in loaded_models]
+            assert "ValidModel" in labels
 
     def test_load_with_module_name_and_path(self, record_initial_models):
         """Test specifying both module_name and path."""
@@ -222,10 +229,10 @@ class CustomModel(GraphNode):
                 encoding="utf-8",
             )
 
-            loaded_models, _ = model_provider.try_to_load_models("my_custom_module_name", str(model_file))
+            loaded_models = model_provider.try_to_load_models("my_custom_module_name", str(model_file))
 
             assert loaded_models is not None
-            assert "CustomModel" in loaded_models
+            assert loaded_models[0].label_ == "CustomModel"
 
 
 class TestModelProviderDirectoryScanning:
@@ -248,12 +255,13 @@ class Model{i}(GraphNode):
                     encoding="utf-8",
                 )
 
-            loaded_models, _ = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             assert loaded_models is not None
             assert len(loaded_models) == 5
+            labels = [m.label_ for m in loaded_models]
             for i in range(5):
-                assert f"Model{i}" in loaded_models
+                assert f"Model{i}" in labels
 
     def test_skips_non_python_files(self, record_initial_models):
         """Test that non-.py files are ignored."""
@@ -276,12 +284,12 @@ class RealModel(GraphNode):
             (Path(tmpdir) / "config.json").write_text("{}", encoding="utf-8")
             (Path(tmpdir) / "data.txt").write_text("data", encoding="utf-8")
 
-            loaded_models, _ = model_provider.try_to_load_models(None, tmpdir)
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
 
             # Should only load the .py file
             assert loaded_models is not None
             assert len(loaded_models) == 1
-            assert "RealModel" in loaded_models
+            assert loaded_models[0].label_ == "RealModel"
 
 
 class TestRealWorldScenarios:
@@ -339,14 +347,15 @@ class LIKES(GraphEdge):
                 encoding="utf-8",
             )
 
-            loaded_models, _ = model_provider.try_to_load_models(None, str(models_dir))
+            loaded_models = model_provider.try_to_load_models(None, str(models_dir))
 
             assert loaded_models is not None
             assert len(loaded_models) == 4
-            assert "User" in loaded_models
-            assert "Post" in loaded_models
-            assert "AUTHORED" in loaded_models
-            assert "LIKES" in loaded_models
+            labels = [m.label_ for m in loaded_models]
+            assert "User" in labels
+            assert "Post" in labels
+            assert "AUTHORED" in labels
+            assert "LIKES" in labels
 
     def test_load_single_model_file_from_project(self, record_initial_models):
         """Test loading just one specific model file."""
@@ -369,14 +378,85 @@ class Product(GraphNode):
             )
 
             # Load only this file
-            loaded_models, path = model_provider.try_to_load_models(None, str(model_file))
+            loaded_models = model_provider.try_to_load_models(None, str(model_file))
 
             assert loaded_models is not None
             assert len(loaded_models) == 1
-            assert "Product" in loaded_models
-            assert path == str(model_file)
+            assert loaded_models[0].label_ == "Product"
 
             # Verify the model is registered and usable
             model_info = model_provider.get("Product")
             assert model_info is not None
             assert model_info.label_ == "Product"
+
+    def test_source_property_is_set_on_loaded_models(self, record_initial_models):
+        """Test that source property contains the correct file URI."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create model files with unique names
+            account_file = Path(tmpdir, "account.py")
+            account_file.write_text(
+                """
+from cypher_graphdb import node, GraphNode
+
+@node()
+class Account(GraphNode):
+    '''An account node.'''
+    account_id: str
+    balance: float
+""",
+                encoding="utf-8",
+            )
+
+            permission_file = Path(tmpdir, "permission.py")
+            permission_file.write_text(
+                """
+from cypher_graphdb import node, GraphNode
+
+@node()
+class Permission(GraphNode):
+    '''A permission node.'''
+    name: str
+    level: int
+""",
+                encoding="utf-8",
+            )
+
+            # Load all models from directory
+            loaded_models = model_provider.try_to_load_models(None, tmpdir)
+
+            # Verify source property is set for all loaded models
+            assert loaded_models is not None
+            assert len(loaded_models) >= 2  # At least the two we created
+
+            # Find our specific models
+            account_model = None
+            permission_model = None
+            for model_info in loaded_models:
+                if model_info.label_ == "Account":
+                    account_model = model_info
+                elif model_info.label_ == "Permission":
+                    permission_model = model_info
+
+            # Verify both were loaded
+            assert account_model is not None, "Account model not found"
+            assert permission_model is not None, "Permission model not found"
+
+            # Check each model has a source with file URI
+            assert account_model.source is not None
+            assert account_model.source.startswith("file://")
+            assert str(account_file) in account_model.source
+
+            assert permission_model.source is not None
+            assert permission_model.source.startswith("file://")
+            assert str(permission_file) in permission_model.source
+
+            # Also verify via model_provider.get()
+            account_from_provider = model_provider.get("Account")
+            assert account_from_provider is not None
+            assert account_from_provider.source is not None
+            assert "account.py" in account_from_provider.source
+
+            permission_from_provider = model_provider.get("Permission")
+            assert permission_from_provider is not None
+            assert permission_from_provider.source is not None
+            assert "permission.py" in permission_from_provider.source
