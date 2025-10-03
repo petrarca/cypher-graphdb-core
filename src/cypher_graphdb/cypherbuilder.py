@@ -84,13 +84,13 @@ class CypherBuilder:
         # projection statement for the edge
         projection_stmt = cls._build_projection_stmt(criteria, prefix)
 
-        if criteria.model_fields.get("fetch_nodes_") and criteria.fetch_nodes_:
-            if criteria.model_fields.get("start_criteria_") and criteria.start_criteria_:
+        if hasattr(criteria, "fetch_nodes_") and criteria.fetch_nodes_:
+            if hasattr(criteria, "start_criteria_") and criteria.start_criteria_:
                 start_projection = cls._build_projection_stmt(criteria.start_criteria_, criteria.start_criteria_.get_prefix("s"))
             else:
                 start_projection = "s"
 
-            if criteria.model_fields.get("end_criteria_") and criteria.end_criteria_:
+            if hasattr(criteria, "end_criteria_") and criteria.end_criteria_:
                 end_projection = cls._build_projection_stmt(criteria.end_criteria_, criteria.end_criteria_.get_prefix("e"))
             else:
                 end_projection = "e"
@@ -125,12 +125,10 @@ class CypherBuilder:
         edge_criteria = cls._criteria_builder(criteria, prefix)
 
         start_criteria = (
-            cls._criteria_builder(criteria.start_criteria_, "s")
-            if criteria.model_fields.get("start_criteria_")
-            else (None, "", "s")
+            cls._criteria_builder(criteria.start_criteria_, "s") if hasattr(criteria, "start_criteria_") else (None, "", "s")
         )
         end_criteria = (
-            cls._criteria_builder(criteria.end_criteria_, "e") if criteria.model_fields.get("end_criteria_") else (None, "", "e")
+            cls._criteria_builder(criteria.end_criteria_, "e") if hasattr(criteria, "end_criteria_") else (None, "", "e")
         )
 
         ids = []

@@ -1437,7 +1437,8 @@ class CypherGraphDB:
             return -1
 
         # only the object id needs to be updated
-        obj.bind_id(result[0])
+        # result is [(id,)], extract the integer from the tuple
+        obj.bind_id(result[0][0])
 
         return obj
 
@@ -1450,7 +1451,9 @@ class CypherGraphDB:
             return -1
 
         # merge results back from the retrieved one, could be modified in the meantime
-        obj.__dict__.update(result[0])
+        # result is [(node_obj,)], extract the node object from the tuple
+        updated_node = result[0][0]
+        obj.__dict__.update(updated_node.__dict__)
 
         return obj
 
@@ -1503,7 +1506,8 @@ class CypherGraphDB:
 
         result = self._parse_and_execute(cypher_cmd, True)
 
-        obj.bind_id(result[0])
+        # result is [(id,)], extract the integer from the tuple
+        obj.bind_id(result[0][0])
 
         return obj
 
@@ -1516,7 +1520,9 @@ class CypherGraphDB:
             return -1
 
         # merge results back from the retrieved one, could be modified in the meantime
-        obj.__dict__.update(result[0])
+        # result is [(edge_obj,)], extract the edge object from the tuple
+        updated_edge = result[0][0]
+        obj.__dict__.update(updated_edge.__dict__)
 
         return obj
 
