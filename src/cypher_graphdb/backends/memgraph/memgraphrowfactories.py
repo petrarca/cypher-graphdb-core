@@ -185,7 +185,8 @@ def _convert_memgraph_value(value: Any, exec_stats: ExecStatistics, model_provid
         return {k: _convert_memgraph_value(v, exec_stats, model_provider) for k, v in value.items()}
     else:
         # Return primitive values as is
-        exec_stats.values += 1
+        if value is not None:
+            exec_stats.values += 1
         return value
 
 
