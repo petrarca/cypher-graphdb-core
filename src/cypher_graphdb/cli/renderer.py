@@ -115,10 +115,22 @@ class ResultRenderer:
                 for key in data[0]:
                     table.add_column(key, style="green")
             else:
-                col_headers = opts.col_headers.copy()  # Create a copy to avoid modifying the original
-                for i in range(len(col_headers), col_count):
-                    probe = data[0] if utils.is_scalar_type(data[0]) else data[0][i]
-                    col_headers.append(self._resolve_col_title(probe))
+                # Handle wildcard case (col_headers is None)
+                if opts.col_headers is None:
+                    # Auto-detect columns, then append explicit ones
+                    col_headers = []
+                    wildcard_cols = col_count - len(opts.explicit_cols)
+                    for i in range(wildcard_cols):
+                        probe = data[0] if utils.is_scalar_type(data[0]) else data[0][i]
+                        col_headers.append(self._resolve_col_title(probe))
+                    # Append explicit columns after wildcard
+                    col_headers.extend(opts.explicit_cols)
+                else:
+                    # Normal case - use provided headers, auto-detect rest
+                    col_headers = opts.col_headers.copy()
+                    for i in range(len(col_headers), col_count):
+                        probe = data[0] if utils.is_scalar_type(data[0]) else data[0][i]
+                        col_headers.append(self._resolve_col_title(probe))
 
                 for col_title in col_headers:
                     table.add_column(col_title, style=opts.col_style)
@@ -343,7 +355,8 @@ class RenderTableOpts(options.TypedOptionModel):
     show_header: bool = True
     key_name: str = "Variable"
     value_name: str = "Value"
-    col_headers: list[str] = []
+    col_headers: list[str] | None = []
+    explicit_cols: list[str] = []
     col_style: str = None
 
 

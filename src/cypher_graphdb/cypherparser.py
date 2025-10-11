@@ -161,10 +161,19 @@ class CypherQueryListener(CypherListener):
     def enterOC_ProjectionItems(self, ctx: CypherParser.OC_ProjectionItemsContext):
         if self._inside_return:
             self.return_arguments.clear()
+            # Check if this is RETURN * by looking for the wildcard token
+            text = ctx.getText()
+            if text.startswith("*"):
+                # Add wildcard as a special return argument
+                self._add_return("*", "*")
 
     def exitOC_ProjectionItem(self, ctx: CypherParser.OC_ProjectionItemContext):
         if self._inside_return:
-            self._add_return(self._expression)
+            # Check if there's an AS alias
+            alias = None
+            if ctx.AS() and ctx.oC_Variable():
+                alias = ctx.oC_Variable().getText()
+            self._add_return(self._expression, alias)
 
     def exitOC_Expression(self, ctx: CypherParser.OC_VariableContext):
         if self._inside_return:
@@ -232,10 +241,13 @@ class CypherQueryListener(CypherListener):
         if self._current_clause_part:
             self._current_clause_part.varname = ctx.getText().strip()
 
-    def _add_return(self, expression):
-        self._var_counter += 1
-        var_name = f"p{self._var_counter}"
-        self.return_arguments[var_name] = expression
+    def _add_return(self, expression, alias=None):
+        # Use alias if provided, otherwise use expression as key
+        if alias:
+            key = alias
+        else:
+            key = expression
+        self.return_arguments[key] = expression
 
     def _enter_clause(self, text: str, updating_clause: bool):
         clause = self._regex_clause.match(text)
