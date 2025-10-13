@@ -80,6 +80,7 @@ class MemgraphDB(CypherBackend):
         # No need to check environment variables directly
 
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
+        self._read_only = kwargs.pop("read_only", self._read_only)
 
         # Parse connection info from cinfo string and merge with kwargs
         cinfo_params = {}
@@ -172,8 +173,15 @@ class MemgraphDB(CypherBackend):
 
         Returns:
             Tuple of (query results, execution statistics).
+
+        Raises:
+            ReadOnlyModeError: If query contains write operations in
+                read-only mode.
         """
         assert isinstance(cypher_query, ParsedCypherQuery)
+
+        # Validate read-only mode FIRST
+        self._validate_read_only(cypher_query)
 
         # Get the query string
         query = cypher_query.parsed_query

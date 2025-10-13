@@ -5,7 +5,8 @@ Values can be provided via environment variables (preferred) or fall back to
 the defaults below. A ``Settings`` instance is intended to be retrieved via
 ``get_settings`` which caches the object for reuse across the process.
 
-Environment variables: ``CGDB_BACKEND``, ``CGDB_CINFO``, ``CGDB_GRAPH``.
+Environment variables: ``CGDB_BACKEND``, ``CGDB_CINFO``, ``CGDB_GRAPH``,
+``CGDB_READ_ONLY``.
 """
 
 from functools import lru_cache
@@ -38,6 +39,11 @@ class Settings(BaseSettings):
         default=None,
         description="Default graph name",
         validation_alias="CGDB_GRAPH",
+    )
+    read_only: bool = Field(
+        default=False,
+        description="Enable read-only mode (prevents write operations)",
+        validation_alias="CGDB_READ_ONLY",
     )
 
     @computed_field  # type: ignore[misc]

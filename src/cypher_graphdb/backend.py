@@ -48,6 +48,7 @@ class CypherBackend(abc.ABC):
     def __init__(self, _, **kwargs):
         self.autocommit = kwargs.get("autocommit", True)
         self._graph_name = kwargs.get("graph_name")
+        self._read_only = kwargs.get("read_only", False)
 
         # use global model provider if not injected in constructor
         self._model_provider = kwargs.get("model_provider", modelprovider.model_provider)
@@ -77,6 +78,20 @@ class CypherBackend(abc.ABC):
                 self._graph_name = graph_name
         else:
             self._graph_name = None
+
+    @property
+    def read_only(self) -> bool:
+        """Return True if backend is in read-only mode."""
+        return self._read_only
+
+    @read_only.setter
+    def read_only(self, value: bool):
+        """Set read-only mode for the backend.
+
+        Args:
+            value: True to enable read-only mode, False to disable
+        """
+        self._read_only = value
 
     @property
     def model_provider(self) -> ModelProvider:
@@ -161,6 +176,23 @@ class CypherBackend(abc.ABC):
 
         return parsed_query
 
+    def _validate_read_only(self, parsed_query: ParsedCypherQuery):
+        """Validate query is allowed in read-only mode.
+
+        Args:
+            parsed_query: Parsed Cypher query to validate.
+
+        Raises:
+            ReadOnlyModeError: If query contains write operations in
+                read-only mode.
+        """
+        if self._read_only and parsed_query.has_updating_clause():
+            from .exceptions import ReadOnlyModeError
+
+            raise ReadOnlyModeError(
+                f"Write operation not allowed in read-only mode. Query contains updating clause: {parsed_query.parsed_query}"
+            )
+
     @abc.abstractmethod
     def execute_cypher(
         self,
@@ -187,7 +219,16 @@ class CypherBackend(abc.ABC):
         fetch_one: bool = False,
         raw_data: bool = False,
     ) -> tuple[TabularResult, ExecStatistics, SqlStatistics]:
-        """Execute a SQL statement if supported, else raise an error."""
+        """Execute a SQL statement if supported, else raise an error.
+
+        Raises:
+            ReadOnlyModeError: If in read-only mode.
+            RuntimeError: If backend doesn't support SQL execution.
+        """
+        if self._read_only:
+            from .exceptions import ReadOnlyModeError
+
+            raise ReadOnlyModeError("Direct SQL execution not allowed in read-only mode")
         raise RuntimeError("Backend does not support SQL execution!")
 
     @abc.abstractmethod

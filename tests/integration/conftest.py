@@ -30,12 +30,32 @@ def memgraph_container(request):
 def memgraph_db(memgraph_container):
     """Provide a CypherGraphDB instance connected to test Memgraph."""
     container_info = memgraph_container
-    connect_params = {"host": container_info["host"], "port": container_info["port"]}
+    connect_params = {
+        "host": container_info["host"],
+        "port": container_info["port"],
+        "read_only": False,  # Explicitly set to false
+    }
 
     with CypherGraphDB(backend="memgraph", connect_params=connect_params) as db:
         # Clean the database before each test
         db.execute("MATCH (n) DETACH DELETE n")
         yield db
+
+
+@pytest.fixture(scope="function")
+def memgraph_db_readonly(memgraph_container):
+    """Provide a read-only CypherGraphDB instance."""
+    container_info = memgraph_container
+    connect_params = {
+        "host": container_info["host"],
+        "port": container_info["port"],
+        "read_only": True,
+    }
+
+    db = CypherGraphDB(backend="memgraph", connect_params=connect_params)
+    db.connect()
+    yield db
+    db.disconnect()
 
 
 @pytest.fixture(scope="function")
