@@ -10,6 +10,7 @@ from .cyphergraphdb import CypherGraphDB, MatchCriteria, MatchEdgeById, MatchEdg
 from .cypherjson import GraphJSONEncoder
 from .dbpool import CypherGraphDBPool
 from .decorators import edge, node, relation
+from .exceptions import ReadOnlyModeError
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 from .modelprovider import ModelProvider, model_provider
 from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
@@ -38,6 +39,7 @@ __all__ = [
     "CypherGraphDBPool",
     "Settings",
     "get_settings",
+    "ReadOnlyModeError",
     "backend",
     "backend_provider",
     "node",

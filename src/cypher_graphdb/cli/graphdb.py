@@ -65,6 +65,7 @@ class CLIGraphDB(GraphDBProvider):
         backend_type = settings.backend
         graph_name = settings.graph
         cinfo = settings.cinfo
+        read_only = settings.read_only
 
         if not backend_type:
             rich.print("[red]Please specify a backend to connect to!", file=sys.stderr)
@@ -89,6 +90,7 @@ class CLIGraphDB(GraphDBProvider):
                 graph_name=graph_name,
                 set_graph_if_not_exists=False,
                 autocommit=self._autocommit,
+                read_only=read_only,
             )
         # pylint: disable=W0718
         except Exception as e:

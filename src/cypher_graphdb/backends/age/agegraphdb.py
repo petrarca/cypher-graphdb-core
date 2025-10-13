@@ -102,6 +102,7 @@ class AGEGraphDB(CypherBackend):
 
         self._set_graph_if_not_exists = kwargs.pop("set_graph_if_not_exists", True)
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
+        self._read_only = kwargs.pop("read_only", self._read_only)
 
         logger.debug(
             "cinfo=%s, graph_name=%s, autocommit=%s",
@@ -149,8 +150,15 @@ class AGEGraphDB(CypherBackend):
         Returns:
             Tuple of (query results, execution statistics).
 
+        Raises:
+            ReadOnlyModeError: If query contains write operations in
+                read-only mode.
         """
         assert isinstance(cypher_query, ParsedCypherQuery)
+
+        # Validate read-only mode FIRST
+        self._validate_read_only(cypher_query)
+
         sql = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query)
 
         (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data)

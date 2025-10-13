@@ -63,6 +63,14 @@ def create_main_app() -> typer.Typer:
                 help="Graph name. CLI args > .env > defaults.",
             ),
         ] = None,
+        read_only: Annotated[
+            bool,
+            typer.Option(
+                "--read-only",
+                "-r",
+                help="Connect in read-only mode (prevents data modifications).",
+            ),
+        ] = False,
         log_level: Annotated[
             str | None, typer.Option("--log-level", "-l", help="Log level (INFO, DEBUG, TRACE, ...) [default: INFO]")
         ] = "INFO",
@@ -81,6 +89,7 @@ def create_main_app() -> typer.Typer:
             "backend": backend,
             "cinfo": cinfo,
             "graph": graph,
+            "read_only": read_only,
             "log_level": log_level,
             "yes": yes,
         }

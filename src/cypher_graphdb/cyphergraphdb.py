@@ -67,6 +67,7 @@ from .backend import CypherBackend, ExecStatistics, SqlStatistics
 from .backendprovider import backend_provider
 from .cypherbuilder import CypherBuilder
 from .cypherparser import ParsedCypherQuery
+from .exceptions import ReadOnlyModeError
 from .models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .statistics import LabelStatistics
 
@@ -470,6 +471,8 @@ class CypherGraphDB:
                 merged_kwargs["cinfo"] = self.settings.cinfo
             if "graph_name" not in kwargs and self.settings.graph:
                 merged_kwargs["graph_name"] = self.settings.graph
+            if "read_only" not in kwargs:
+                merged_kwargs["read_only"] = self.settings.read_only
 
             # Explicit kwargs override settings
             merged_kwargs.update(kwargs)
@@ -580,6 +583,46 @@ class CypherGraphDB:
         """
         assert self._backend
         self._backend.rollback()
+
+    @property
+    def read_only(self) -> bool:
+        """Check if the connection is in read-only mode.
+
+        Returns:
+            True if the connection is in read-only mode, False otherwise
+
+        Example:
+            ```python
+            with CypherGraphDB() as cdb:
+                cdb.connect(read_only=True)
+                print(cdb.read_only)  # True
+            ```
+        """
+        return self._backend.read_only if self._backend else False
+
+    @read_only.setter
+    def read_only(self, value: bool):
+        """Set the read-only mode for the connection.
+
+        Args:
+            value: True to enable read-only mode, False to disable
+
+        Raises:
+            RuntimeError: If backend is not initialized
+
+        Example:
+            ```python
+            with CypherGraphDB() as cdb:
+                cdb.connect()
+                cdb.read_only = True  # Enable read-only mode
+                # Now write operations will be blocked
+                cdb.read_only = False  # Disable read-only mode
+                # Write operations are allowed again
+            ```
+        """
+        if not self._backend:
+            raise RuntimeError("Cannot set read-only mode: backend not initialized")
+        self._backend.read_only = value
 
     def fetch(
         self,
@@ -886,8 +929,15 @@ class CypherGraphDB:
             graph = Graph(nodes=[product, technology], edges=[uses])
             cdb.create_or_merge(graph)
             ```
+
+        Raises:
+            ReadOnlyModeError: If the connection is in read-only mode
         """
         assert self._backend
+
+        # Validate read-only mode
+        if self.read_only:
+            raise ReadOnlyModeError("Cannot execute CREATE or MERGE in read-only mode")
 
         assert strategy in config.CREATE_OR_MERGE_STRAGEY, f"Invalid strategy {strategy}!"
 
@@ -954,8 +1004,15 @@ class CypherGraphDB:
             Deleting nodes without detach=True will fail if the node has
             relationships. Always use detach=True for nodes unless you're
             certain they have no relationships.
+
+        Raises:
+            ReadOnlyModeError: If the connection is in read-only mode
         """
         assert self._backend
+
+        # Validate read-only mode
+        if self.read_only:
+            raise ReadOnlyModeError("Cannot execute DELETE in read-only mode")
 
         if isinstance(obj, GraphNode):
             return self._delete_node_by_id(obj, detach)

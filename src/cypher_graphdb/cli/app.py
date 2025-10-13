@@ -283,6 +283,8 @@ class CypherGraphCLI(CLIRuntime):
             settings.cinfo = cinfo  # Auto-sanitized via @computed_field
         if graph := options.get("graph"):
             settings.graph = graph
+        if "read_only" in options:
+            settings.read_only = options["read_only"]
 
     def _pipe_to_shell_cmd(self, parse_result: PromptParserResult):
         process = subprocess.Popen(
