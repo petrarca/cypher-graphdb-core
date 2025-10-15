@@ -10,5 +10,5 @@ from cypher_graphdb.backendprovider import backend_provider
 
 from .agegraphdb import AGEGraphDB
 
-# Register AGE backend
-backend_provider.register("AGE", AGEGraphDB)
+# Register AGE backend - use the backend's name attribute
+backend_provider.register(AGEGraphDB.name, AGEGraphDB)

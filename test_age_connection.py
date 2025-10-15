@@ -22,7 +22,7 @@ try:
     )
 
     print("✅ Connection successful!")
-    print(f"Backend: {db.backend.id}")
+    print(f"Backend: {db.backend.name}")
     print(f"Graph name: {db.graph_name}")
 
     # Test a simple query

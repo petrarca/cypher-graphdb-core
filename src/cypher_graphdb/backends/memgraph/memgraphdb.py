@@ -30,7 +30,7 @@ class MemgraphDB(CypherBackend):
     that fully supports the Cypher query language.
 
     Attributes:
-        _id: Backend identifier set to "MEMGRAPH".
+        name: Backend identifier set to "MEMGRAPH".
         _connection: Current database connection.
         _graph_name: Name of the active graph.
         autocommit: Whether to automatically commit transactions.
@@ -40,6 +40,8 @@ class MemgraphDB(CypherBackend):
         >>> db = MemgraphDB("host=localhost port=7687", "my_graph")
         >>> result = db.execute_cypher("MATCH (n) RETURN n LIMIT 5")
     """
+
+    name = "MEMGRAPH"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize Memgraph GraphDB backend.
@@ -464,6 +466,7 @@ class MemgraphDB(CypherBackend):
         if result and len(result) > 0 and isinstance(result[0], tuple):
             exec_stats.col_count = len(result[0])
 
+        return (result, exec_stats)
         return (result, exec_stats)
         return (result, exec_stats)
         return (result, exec_stats)

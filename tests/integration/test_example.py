@@ -15,7 +15,7 @@ def test_connection(test_db):
     """Test basic connection to graph database (Memgraph and Apache AGE)."""
     # Test that we can execute a simple query (no CREATE, just RETURN)
     result = test_db.execute("RETURN 1 AS test_value", unnest_result=True)
-    print(f"Backend: {test_db.backend.id}, Result: {result}")
+    print(f"Backend: {test_db.backend.name}, Result: {result}")
 
     # Check that we got a result
     assert result is not None
@@ -39,7 +39,7 @@ def test_crud_operations(test_db):
         unnest_result=True,
     )
 
-    print(f"Backend: {test_db.backend.id}, Result: {result}")
+    print(f"Backend: {test_db.backend.name}, Result: {result}")
     assert result is not None
     # Result is a tuple: ('Alice', 30, 'alice@example.com')
     assert result[0] == "Alice"  # name
@@ -69,7 +69,7 @@ def test_relationships(test_db):
         unnest_result=True,
     )
 
-    print(f"Backend: {test_db.backend.id}, Result: {result}")
+    print(f"Backend: {test_db.backend.name}, Result: {result}")
     assert len(result) == 2  # Alice and Bob
     # Results are tuples: [('Alice', 'Engineer', 'TechCorp'),
     #                      ('Bob', 'Designer', 'TechCorp')]

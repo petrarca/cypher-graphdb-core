@@ -313,13 +313,13 @@ class CypherGraphDB:
         """Get the unique identifier for this database connection.
 
         Returns:
-            String identifier combining backend ID and graph name.
+            String identifier combining backend name and graph name.
         """
         if self._backend:
             if self._backend.graph_name:
-                return f"{self._backend.id}:{self._backend.graph_name}"
+                return f"{self._backend.name}:{self._backend.graph_name}"
             else:
-                return self._backend.id
+                return self._backend.name
         else:
             return ""
 
@@ -1678,5 +1678,6 @@ class CypherGraphDB:
                 obj.id_ = id_
                 return True
 
+        return False
         return False
         return False

@@ -45,6 +45,9 @@ class SqlStatistics(BaseModel):
 class CypherBackend(abc.ABC):
     """Abstract base class for graph database backend implementations."""
 
+    # Backend name - should be overridden by subclasses
+    name: str = None
+
     def __init__(self, _, **kwargs):
         self.autocommit = kwargs.get("autocommit", True)
         self._graph_name = kwargs.get("graph_name")
@@ -54,15 +57,10 @@ class CypherBackend(abc.ABC):
         self._model_provider = kwargs.get("model_provider", modelprovider.model_provider)
 
         self._connection = None
-        self._id = None
 
     @property
     def connection(self):
         return self._connection
-
-    @property
-    def id(self):
-        return self._id
 
     @property
     def graph_name(self) -> str:
@@ -256,7 +254,7 @@ class CypherBackend(abc.ABC):
         """Return backend state as a dictionary for introspection."""
         return utils.to_collection(
             {
-                "id": self.id,
+                "name": self.name,
                 "graph_name": self.graph_name,
                 "autocommit": self.autocommit,
                 "connection": self._connection,

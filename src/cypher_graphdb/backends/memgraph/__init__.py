@@ -10,7 +10,7 @@ from cypher_graphdb.backendprovider import backend_provider
 
 from .memgraphdb import MemgraphDB
 
-# Register Memgraph backend
-backend_provider.register("MEMGRAPH", MemgraphDB)
+# Register Memgraph backend - use the backend's name attribute
+backend_provider.register(MemgraphDB.name, MemgraphDB)
 
 __all__ = ["MemgraphDB"]

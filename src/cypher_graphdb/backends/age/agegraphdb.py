@@ -40,7 +40,7 @@ class AGEGraphDB(CypherBackend):
     and query capabilities.
 
     Attributes:
-        _id: Backend identifier set to "AGE".
+        name: Backend identifier set to "AGE".
         _connection: Current database connection.
         _graph_name: Name of the active graph.
         autocommit: Whether to automatically commit transactions.
@@ -51,6 +51,8 @@ class AGEGraphDB(CypherBackend):
         >>> result = db.execute_cypher("MATCH (n) RETURN n LIMIT 5")
 
     """
+
+    name = "AGE"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize AGE GraphDB backend.
@@ -497,6 +499,7 @@ class AGEGraphDB(CypherBackend):
                 raise RuntimeError("Missing agtype information!")
 
         connection.adapters.register_loader(aginfo.oid, AgTypeLoader)
+        connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
