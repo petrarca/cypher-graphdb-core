@@ -60,7 +60,9 @@ def _map_age_value(value, stats: ExecStatistics, provider: ModelProvider):
     elif isinstance(value, age.models.Path):
         return _create_graph_path(value, stats, provider)
     else:
-        stats.values += 1
+        # Only count non-null values (matching Memgraph behavior)
+        if value is not None:
+            stats.values += 1
         return value
 
 

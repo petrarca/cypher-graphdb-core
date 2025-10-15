@@ -21,4 +21,7 @@ class AgTypeLoader(Loader):
 
     def load(self, data: bytes | bytearray | memoryview) -> Any | None:
         # decode agtype result into vertex, edge, path etc...
+        # psycopg3 returns memoryview - convert to bytes first
+        if isinstance(data, memoryview):
+            data = bytes(data)
         return self._result_handler.parse(data.decode("utf-8"))
