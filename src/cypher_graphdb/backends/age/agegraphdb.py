@@ -431,7 +431,12 @@ class AGEGraphDB(CypherBackend):
             row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
         ) as cursor:
             try:
-                result = cursor.execute(sql).fetchone() if fetch_one else cursor.execute(sql).fetchall()
+                if fetch_one:
+                    row = cursor.execute(sql).fetchone()
+                    # Wrap single row in a list to match Memgraph's return format
+                    result = [row] if row is not None else []
+                else:
+                    result = cursor.execute(sql).fetchall()
 
                 col_names = [col.name for col in cursor.description]
                 sql_stats = SqlStatistics(sql_stmt=sql.as_string(), col_names=col_names)
@@ -492,5 +497,6 @@ class AGEGraphDB(CypherBackend):
                 raise RuntimeError("Missing agtype information!")
 
         connection.adapters.register_loader(aginfo.oid, AgTypeLoader)
+        connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)

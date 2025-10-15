@@ -101,6 +101,16 @@ tasks:
     cmds:
       - .venv/bin/pytest -m integration
 
+  test:integration:memgraph:
+    desc: "Run the integration tests for Memgraph backend only"
+    cmds:
+      - .venv/bin/pytest -m integration_memgraph
+
+  test:integration:age:
+    desc: "Run the integration tests for Apache AGE backend only"
+    cmds:
+      - .venv/bin/pytest -m integration_age
+
   test:cov:
     desc: "Run the unit tests using pytest with coverage"
     cmds:

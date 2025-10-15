@@ -1,23 +1,6 @@
-"""Integration tests for CypherGraphDB with Memgraph backend."""
+"""Integration tests for CypherGraphDB with Memgraph and Apache AGE."""
 
 import pytest
-
-
-@pytest.fixture(scope="module")
-def test_db(memgraph_db):
-    """Initialize test data once per module."""
-    # Create test data that will be available for all tests in this module
-    memgraph_db.execute("""
-        CREATE (p1:Person {name: 'Alice', age: 30, email: 'alice@example.com'})
-        CREATE (p2:Person {name: 'Bob', age: 25, email: 'bob@example.com'})
-        CREATE (c:Company {name: 'TechCorp', founded: 2010})
-        CREATE (p1)-[:WORKS_FOR {since: 2020, role: 'Engineer'}]->(c)
-        CREATE (p2)-[:WORKS_FOR {since: 2021, role: 'Designer'}]->(c)
-        CREATE (p1)-[:KNOWS {since: 2019}]->(p2)
-    """)
-
-    # Return the database connection for tests to use
-    yield memgraph_db
 
 
 def test_integration_example():
@@ -27,23 +10,27 @@ def test_integration_example():
     assert True  # Placeholder test
 
 
-def test_memgraph_connection(test_db):
-    """Test basic connection to Memgraph test container."""
-    # Test that we can execute a simple query
+@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+def test_connection(test_db):
+    """Test basic connection to graph database (Memgraph and Apache AGE)."""
+    # Test that we can execute a simple query (no CREATE, just RETURN)
     result = test_db.execute("RETURN 1 AS test_value", unnest_result=True)
-    print(result)
+    print(f"Backend: {test_db.backend.id}, Result: {result}")
 
     # Check that we got a result
     assert result is not None
     assert result == 1
 
 
-def test_memgraph_crud_operations(test_db):
-    """Test basic CRUD operations against Memgraph."""
-    # The test data is already created by the module_test_data fixture
-    # We can query the existing data instead of creating new data
+@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+def test_crud_operations(test_db):
+    """Test basic CRUD operations (Memgraph and Apache AGE)."""
+    # First create test data
+    test_db.execute("""
+        CREATE (p:Person {name: 'Alice', age: 30, email: 'alice@example.com'})
+    """)
 
-    # Read the existing Alice user
+    # Read the Alice user
     result = test_db.execute(
         """
         MATCH (p:Person {name: 'Alice'})
@@ -52,7 +39,7 @@ def test_memgraph_crud_operations(test_db):
         unnest_result=True,
     )
 
-    print(result)
+    print(f"Backend: {test_db.backend.id}, Result: {result}")
     assert result is not None
     # Result is a tuple: ('Alice', 30, 'alice@example.com')
     assert result[0] == "Alice"  # name
@@ -60,8 +47,18 @@ def test_memgraph_crud_operations(test_db):
     assert result[2] == "alice@example.com"  # email
 
 
-def test_memgraph_relationships(test_db):
-    """Test querying relationships with the pre-created data."""
+@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+def test_relationships(test_db):
+    """Test querying relationships (Memgraph and Apache AGE)."""
+    # Create test data
+    test_db.execute("""
+        CREATE (p1:Person {name: 'Alice', age: 30})
+        CREATE (p2:Person {name: 'Bob', age: 25})
+        CREATE (c:Company {name: 'TechCorp'})
+        CREATE (p1)-[:WORKS_FOR {role: 'Engineer'}]->(c)
+        CREATE (p2)-[:WORKS_FOR {role: 'Designer'}]->(c)
+    """)
+
     # Query the relationship data
     result = test_db.execute(
         """
@@ -72,7 +69,7 @@ def test_memgraph_relationships(test_db):
         unnest_result=True,
     )
 
-    print(result)
+    print(f"Backend: {test_db.backend.id}, Result: {result}")
     assert len(result) == 2  # Alice and Bob
     # Results are tuples: [('Alice', 'Engineer', 'TechCorp'),
     #                      ('Bob', 'Designer', 'TechCorp')]

@@ -61,16 +61,27 @@ class SQLBuilder:
                 rt = "text"
             else:
                 rt = "agtype"
-                columns.append(k)
+                # Quote column names to handle special characters like parentheses
+                columns.append(sql.Identifier(k).as_string(None))
             return_arguments[k] = rt
 
         # select <columns>
         column_list = ",".join(columns)
         # return (...)
-        result_types = ",".join([f"{k} {rt}" for k, rt in return_arguments.items()])
+        # Quote column names in result types as well
+        result_types = ",".join([f"{sql.Identifier(k).as_string(None)} {rt}" for k, rt in return_arguments.items()])
+
+        # Handle queries without RETURN clause (CREATE, DELETE, MERGE, etc.)
+        if not result_types:
+            # Use a dummy column for queries that don't return data
+            column_list = "result"
+            result_types = "result agtype"
+
+        # Strip trailing semicolon from Cypher query - AGE doesn't accept it in cypher() function
+        cypher_clean = cypher_query.parsed_query.rstrip(";").strip()
 
         # TODO: select explicit fields from return argmentents: select p1, ..
-        return sql.SQL(f"SELECT {column_list} FROM cypher('{graph_name}', $$ {cypher_query.parsed_query} $$) as ({result_types})")
+        return sql.SQL(f"SELECT {column_list} FROM cypher('{graph_name}', $$ {cypher_clean} $$) as ({result_types})")
 
     @classmethod
     def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.SQL:

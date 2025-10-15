@@ -1679,3 +1679,4 @@ class CypherGraphDB:
                 return True
 
         return False
+        return False
