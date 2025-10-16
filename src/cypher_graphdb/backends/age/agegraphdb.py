@@ -17,6 +17,7 @@ from loguru import logger
 from psycopg.client_cursor import ClientCursor
 from psycopg.sql import SQL
 from psycopg.types import TypeInfo
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
@@ -396,16 +397,34 @@ class AGEGraphDB(CypherBackend):
                 cursor.execute(SQLBuilder.create_elabel(graph_name, val))
             self._connection.commit()
 
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((psycopg.OperationalError, ConnectionError)),
+        reraise=True,
+    )
+    def _connect_with_retry(self):
+        """Connect to PostgreSQL with retry logic for transient failures."""
+        logger.debug("Attempting connection to PostgreSQL/AGE")
+        connection = psycopg.connect(self._cinfo, cursor_factory=self._cursor_factory, **self._ckwargs)
+        self._setup_age(connection)
+        return connection
+
     def connect_to_db(self):
         """Establish connection to the PostgreSQL database.
 
         Sets up the database connection with AGE extension configuration.
+        Uses retry logic to handle transient connection failures.
         """
         assert self._connection is None
 
-        connection = psycopg.connect(self._cinfo, cursor_factory=self._cursor_factory, **self._ckwargs)
-        self._setup_age(connection)
-        self._connection = connection
+        try:
+            self._connection = self._connect_with_retry()
+            logger.debug("Successfully connected to PostgreSQL/AGE")
+        except Exception as e:
+            logger.error(f"Failed to connect to PostgreSQL/AGE: {e}")
+            self._connection = None
+            raise
 
     def _execute_sql(
         self, sql: SQL, fetch_one: bool = False, raw_data: bool = False
