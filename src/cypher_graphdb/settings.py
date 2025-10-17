@@ -45,6 +45,11 @@ class Settings(BaseSettings):
         description="Enable read-only mode (prevents write operations)",
         validation_alias="CGDB_READ_ONLY",
     )
+    create_graph: bool = Field(
+        default=False,
+        description="Auto-create graph if it does not exist (AGE only)",
+        validation_alias="CGDB_CREATE_GRAPH_IF_NOT_EXISTS",
+    )
 
     @computed_field  # type: ignore[misc]
     @property
