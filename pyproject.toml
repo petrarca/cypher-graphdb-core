@@ -30,6 +30,7 @@ dependencies = [
     "pydantic-settings>=2.2.1",
     "loguru",
     "psycopg >= 3.2.1",
+    "psycopg-binary >= 3.2.1",
     "pymgclient",
     "typing-extensions",
     "typer",
@@ -78,6 +79,9 @@ examples = [
     "fastapi",
     "uvicorn",
 ]
+
+[tool.uv.sources]
+apache-age-python = { git = "https://github.com/apache/age.git", tag = "PG17/v1.6.0-rc0", subdirectory = "drivers/python" }
 
 [project.scripts]
 cypher-graphdb = "cypher_graphdb.args:typer_main"

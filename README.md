@@ -116,6 +116,34 @@ with CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687") as d
 
 Alternative connection methods (CINFO parameter, individual params, environment variables) are also supported. See documentation for details.
 
+## Configuration
+
+The library reads configuration from environment variables (can be overridden by CLI flags or constructor parameters):
+
+| Setting | Env Var | CLI Flag | Default | Description |
+|---------|---------|----------|---------|-------------|
+| backend | `CGDB_BACKEND` | `-b / --backend` | `None` | Backend type (`memgraph`, `age`) |
+| cinfo | `CGDB_CINFO` | `-c / --cinfo` | `None` | Connection string / DSN |
+| graph | `CGDB_GRAPH` | `-g / --graph` | `None` | Graph name (backend-specific) |
+| read_only | `CGDB_READ_ONLY` | `-r / --read-only` | `False` | Block write operations |
+| create_graph | `CGDB_CREATE_GRAPH_IF_NOT_EXISTS` | - | `False` | Auto-create graph if missing (AGE only) |
+
+**Precedence:** CLI arguments > Environment variables > Constructor parameters > Defaults
+
+**Example .env files:**
+- `.env.memgraph.example` - Pre-configured for Memgraph Docker Compose stack
+- `.env.age.example` - Pre-configured for Apache AGE Docker Compose stack
+
+Copy the appropriate example file to `.env` and the library will automatically load it:
+
+```bash
+# For Memgraph
+cp .env.memgraph.example .env
+
+# For Apache AGE
+cp .env.age.example .env
+```
+
 ### Basic Queries
 
 ```python

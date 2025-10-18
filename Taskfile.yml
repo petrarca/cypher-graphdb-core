@@ -11,7 +11,8 @@ tasks:
   install:
     desc: "Install the package in editable mode"
     cmds:
-      - uv pip install -e ".[dev,build,examples,docs]"
+      - uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
+      - uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
     deps:
       - setup
 

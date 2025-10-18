@@ -178,15 +178,23 @@ class TestSafeSettingsStr:
 class TestIntegrationWithActualSettings:
     """Integration tests using the actual Settings class."""
 
-    def test_integration_with_cypher_settings(self):
+    def test_integration_with_cypher_settings(self, monkeypatch, tmp_path):
         """Test utilities work with actual CypherGraphDB Settings class."""
         from cypher_graphdb.settings import Settings
 
-        # Create settings instance with sensitive data
-        settings = Settings(backend="memgraph", cinfo="postgres://user:topsecret@localhost:5432/mydb", graph="test_graph")
+        # Change to temp directory to avoid loading .env file from project
+        monkeypatch.chdir(tmp_path)
+
+        # Set environment variables for the test (BaseSettings prefers env vars)
+        monkeypatch.setenv("CGDB_BACKEND", "memgraph")
+        monkeypatch.setenv("CGDB_CINFO", "postgres://user:topsecret@localhost:5432/mydb")
+        monkeypatch.setenv("CGDB_GRAPH", "test_graph")
+
+        # Create settings instance - will read from env vars we just set
+        settings = Settings()
 
         # Test with sanitizer that matches Settings class behavior
-        sanitizers = {"cinfo": lambda _: "postgres://user:***MASKED***@localhost:5432/mydb"}
+        sanitizers = {"cinfo": lambda _: ("postgres://user:***MASKED***@localhost:5432/mydb")}
 
         repr_result = safe_settings_repr(settings, field_sanitizers=sanitizers)
         str_result = safe_settings_str(settings, field_sanitizers=sanitizers)

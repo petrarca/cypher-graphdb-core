@@ -466,13 +466,19 @@ class CypherGraphDB:
             # Pass settings as fallbacks - explicit params take precedence
             merged_kwargs = {}
 
+            # Only add cinfo from settings if no explicit connection params
+            # (host, port, etc.) are provided
+            has_explicit_conn_params = any(k in kwargs for k in ["host", "port", "dbname", "user", "password"])
+
             # Add settings as defaults if not already provided
-            if "cinfo" not in kwargs and self.settings.cinfo:
+            if "cinfo" not in kwargs and self.settings.cinfo and not has_explicit_conn_params:
                 merged_kwargs["cinfo"] = self.settings.cinfo
             if "graph_name" not in kwargs and self.settings.graph:
                 merged_kwargs["graph_name"] = self.settings.graph
             if "read_only" not in kwargs:
                 merged_kwargs["read_only"] = self.settings.read_only
+            if "create_graph" not in kwargs:
+                merged_kwargs["create_graph"] = self.settings.create_graph
 
             # Explicit kwargs override settings
             merged_kwargs.update(kwargs)
