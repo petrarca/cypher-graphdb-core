@@ -10,14 +10,7 @@ from typing import TYPE_CHECKING, TextIO
 
 import rich
 from loguru import logger
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from cypher_graphdb.command_reader import CommandReader, FileCommandReader
 
