@@ -23,7 +23,6 @@ from cypher_graphdb.cli.promptparser import PromptParser, PromptParserCmd, Promp
 from cypher_graphdb.cli.provider import CLIProviders
 from cypher_graphdb.cli.renderer import ResultRenderer
 from cypher_graphdb.cli.runtime import CLIRuntime
-from cypher_graphdb.command_reader import CommandReader, FileCommandReader
 from cypher_graphdb.settings import get_settings
 
 
@@ -103,75 +102,130 @@ class CypherGraphCLI(CLIRuntime):
         self._resolve_cmdline_args(options)
         logger.debug("cmdline_options:\n{}", options)
 
-        if exec_cmd := options.get("execute"):
-            exec_cmd = exec_cmd.strip()
-        if file_cmd := options.get("file"):
-            file_cmd = file_cmd.strip()
+        # Parse execution mode options
+        exec_cmd, file_cmd, verbose, progress = self._parse_execution_options(options)
 
-        # Convenience: allow -e <file> to behave like -f <file> if the argument
-        # is an existing readable file and no explicit -f was provided.
-        # This avoids the cryptic parser error when a user mistakenly uses -e with a path.
-        if exec_cmd and not file_cmd and os.path.isfile(exec_cmd):
-            logger.debug("Detected -e argument refers to a file; switching to file execution mode: {}", exec_cmd)
-            file_cmd = exec_cmd
-            exec_cmd = None
-
+        # Determine if we're in interactive mode
         self._with_prompt = sys.stdin.isatty() and not (exec_cmd or file_cmd)
 
-        # Set autoconfirm based on input mode (propagated to graphdb)
-        self._set_autoconfirm(
-            self._determine_autoconfirm(
-                exec_cmd,
-                file_cmd,
-                options,
-            )
-        )
-
-        # Determine output suppression: suppress when non-interactive and executing from
-        # file (-f) or stdin (no -e provided). Single -e one-liners still produce output.
+        # Set autoconfirm and output suppression
+        self._set_autoconfirm(self._determine_autoconfirm(exec_cmd, file_cmd, options))
         self._renderer.suppress_output = self._determine_suppress_output(exec_cmd, file_cmd)
 
+        # Show banner and connect to database
         if self._with_prompt and self.show_banner:
             self.banner()
 
         if not self._graphdb.connect():
             return
 
-        # inject db also in graph data
+        # Setup database and config
+        self._setup_after_connect()
+
+        # Execute based on mode
+        if self._with_prompt:
+            self._run_interactive_mode()
+        else:
+            self._run_non_interactive_mode(exec_cmd, file_cmd, verbose, progress)
+
+    def _parse_execution_options(self, options: dict[str, Any]) -> tuple[str | None, str | None, bool, bool]:
+        """Parse execution-related options.
+
+        Returns:
+            Tuple of (exec_cmd, file_cmd, verbose, progress)
+        """
+        exec_cmd = options.get("execute")
+        if exec_cmd:
+            exec_cmd = exec_cmd.strip()
+
+        file_cmd = options.get("file")
+        if file_cmd:
+            file_cmd = file_cmd.strip()
+
+        verbose = options.get("verbose", False)
+        no_progress = options.get("no_progress", False)
+        progress = not no_progress
+
+        # Convenience: allow -e <file> to behave like -f <file>
+        if exec_cmd and not file_cmd and os.path.isfile(exec_cmd):
+            logger.debug("Detected -e refers to file, switching to -f mode: {}", exec_cmd)
+            file_cmd = exec_cmd
+            exec_cmd = None
+
+        return exec_cmd, file_cmd, verbose, progress
+
+    def _setup_after_connect(self):
+        """Setup configuration after database connection."""
+        # Inject db into graph data
         self._graph_data.db = self._graphdb.db
 
+        # Set default output format
         if not self._config.get_property("output_format"):
             self._config.set_property(
                 "output_format",
                 "table" if self._with_prompt else "json",
             )
 
-        if self._with_prompt:
-            # wrap all providers, required to get data for command completion
-            providers = CLIProviders(
-                model_provider=self._graphdb.db.model_provider,
-                graphdb_provider=self._graphdb,
-                graphdata_provider=self._graph_data,
-                var_provider=self._graph_data,
-                config_provider=self._config,
-            )
+    def _run_interactive_mode(self):
+        """Run the CLI in interactive mode with prompt."""
+        # Wrap all providers for command completion
+        providers = CLIProviders(
+            model_provider=self._graphdb.db.model_provider,
+            graphdb_provider=self._graphdb,
+            graphdata_provider=self._graph_data,
+            var_provider=self._graph_data,
+            config_provider=self._config,
+        )
 
-            cmdline_prompt = CommandLinePrompt(
-                self._prompt_parser,
-                providers,
-                on_resolve_prompt=lambda: self._graphdb.id,
-            )
+        cmdline_prompt = CommandLinePrompt(
+            self._prompt_parser,
+            providers,
+            on_resolve_prompt=lambda: self._graphdb.id,
+        )
 
-            cmdline_prompt.runloop(lambda cmdline: self._parse_and_execute(cmdline, False))
+        cmdline_prompt.runloop(lambda cmdline: self._parse_and_execute(cmdline, False))
+        rich.print("[green]Bye!")
 
-            rich.print("[green]Bye!")
+    def _run_non_interactive_mode(self, exec_cmd: str | None, file_cmd: str | None, verbose: bool, progress: bool):
+        """Run the CLI in non-interactive mode.
+
+        Args:
+            exec_cmd: Command to execute via -e
+            file_cmd: File to execute via -f
+            verbose: Whether to show verbose output
+            progress: Whether to show progress bar
+        """
+        if exec_cmd:
+            self._execute_from_cmdline(exec_cmd)
+        elif file_cmd:
+            if self._confirm_file_execution(file_cmd):
+                self._execute_from_file(file_cmd, verbose=verbose, progress=progress)
         else:
-            if exec_cmd:
-                self._execute_from_cmdline(exec_cmd)
-            elif file_cmd:
-                self._execute_from_file(file_cmd)
-            else:
-                self._execute_from_file(sys.stdin)
+            self._execute_from_file(sys.stdin, verbose=verbose, progress=progress)
+
+    def _confirm_file_execution(self, file_cmd: str) -> bool:
+        """Ask for confirmation before executing a file.
+
+        Args:
+            file_cmd: Path to the file to execute
+
+        Returns:
+            True if user confirms or autoconfirm is enabled
+        """
+        if self._autoconfirm or not sys.stdin.isatty():
+            return True
+
+        try:
+            prompt_msg = f"Execute script '{file_cmd}'? [y/N]: "
+            answer = input(prompt_msg).strip().lower()
+        except EOFError:
+            answer = ""
+
+        if answer not in {"y", "yes"}:
+            rich.print("[yellow]Execution aborted.")
+            return False
+
+        return True
 
     def _execute_from_cmdline(self, cmdline: str):
         parts = cmdline.split(";")
@@ -184,29 +238,58 @@ class CypherGraphCLI(CLIRuntime):
             if not self._parse_and_execute(cmd, True):
                 break
 
-    def _execute_from_file(self, file: str | TextIO):
+    def _execute_from_file(
+        self,
+        file: str | TextIO,
+        verbose: bool = False,
+        progress: bool = True,
+    ):
         """Execute semicolon-terminated commands from a file or stream.
 
-        Uses the shared CommandReader implementation to support multi-line
-        statements, inline semicolon detection, and comment skipping.
-        Output is suppressed, beside errors/warnings.
+        Uses FileExecutor to handle execution with progress tracking.
+
+        Default behavior: progress=true, verbose=false
+        Can be controlled with --verbose and --no-progress flags
+
+        Args:
+            file: File path or stream to execute commands from
+            verbose: Show each command (from --verbose flag)
+            progress: Show progress bar (inverted from --no-progress flag)
         """
+        from cypher_graphdb.cli.file_executor import FileExecutor
 
-        def exec_commands(reader: CommandReader):
-            for cmd in reader:
-                logger.debug("Exec command: {}", cmd)
-                if not self._parse_and_execute(cmd, True):
-                    break
+        executor = FileExecutor(self)
 
-        if isinstance(file, str):
-            try:
-                logger.debug("Try to open command file {}", file)
-                with FileCommandReader(file) as reader:
-                    exec_commands(reader)
-            except FileNotFoundError:
-                rich.print(f"[red]File not found: {file}")
-        else:
-            exec_commands(CommandReader(file))
+        # Default behavior: progress=true, verbose=false
+        # --verbose: enables verbose
+        # --no-progress: disables progress
+        # Both flags can be used independently
+
+        # Use the provided flag values directly
+        show_progress = progress
+        show_verbose = verbose
+
+        # Always show summary if either verbose or progress is enabled
+        show_summary = show_progress or show_verbose
+
+        executor.execute(
+            file,
+            show_progress=show_progress,
+            verbose=show_verbose,
+            show_summary=show_summary,
+        )
+
+    def parse_and_execute(self, cmdline: str, terminate_on_failure: bool) -> bool:
+        """Parse and execute a command line (CLIRuntime interface).
+
+        Args:
+            cmdline: The command line to parse and execute
+            terminate_on_failure: Whether to terminate on failure
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self._parse_and_execute(cmdline, terminate_on_failure)
 
     def _parse_and_execute(self, cmdline: str, terminate_on_failure: bool) -> bool:
         parse_result: PromptParserResult = self._prompt_parser.parse_prompt(cmdline)
@@ -369,16 +452,18 @@ class CypherGraphCLI(CLIRuntime):
 
         Rules:
         * Interactive prompt (tty, no -e/-f): never autoconfirm.
-        * File execution (-f) OR stdin (non-tty, no -e): autoconfirm.
-        * Single execute command (-e) only autoconfirms with --yes.
+        * File execution (-f) with --yes: autoconfirm.
+        * File execution (-f) without --yes: ask for confirmation.
+        * Piped stdin (non-tty, no -e): autoconfirm.
+        * Single execute command (-e): only autoconfirm with --yes.
         """
         if self._with_prompt:
             return False
-        if file_cmd:
-            return True
-        if not exec_cmd:  # piped stdin
-            return True
-        return bool(options.get("yes"))
+        # File execution and single -e commands: only autoconfirm with --yes
+        if file_cmd or exec_cmd:
+            return bool(options.get("yes"))
+        # Piped stdin (no -e, no -f, non-tty): autoconfirm
+        return True
 
     def _determine_suppress_output(self, exec_cmd, file_cmd) -> bool:
         """Determine whether to suppress result rendering.

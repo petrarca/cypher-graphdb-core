@@ -74,7 +74,28 @@ def create_main_app() -> typer.Typer:
         log_level: Annotated[
             str | None, typer.Option("--log-level", "-l", help="Log level (INFO, DEBUG, TRACE, ...) [default: INFO]")
         ] = "INFO",
-        yes: Annotated[bool, typer.Option("--yes", "-y", help="Automatically confirm all operations without prompting.")] = False,
+        yes: Annotated[
+            bool,
+            typer.Option(
+                "--yes",
+                "-y",
+                help="Automatically confirm all operations.",
+            ),
+        ] = False,
+        verbose: Annotated[
+            bool,
+            typer.Option(
+                "--verbose",
+                help="Show each command and summary (file mode).",
+            ),
+        ] = False,
+        no_progress: Annotated[
+            bool,
+            typer.Option(
+                "--no-progress",
+                help="Disable progress bar (file mode).",
+            ),
+        ] = False,
     ) -> None:
         """CypherGraph CLI - A command-line interface for graph databases."""
         # Import here to avoid circular imports
@@ -92,6 +113,8 @@ def create_main_app() -> typer.Typer:
             "read_only": read_only,
             "log_level": log_level,
             "yes": yes,
+            "verbose": verbose,
+            "no_progress": no_progress,
         }
 
         # Filter out None and False values

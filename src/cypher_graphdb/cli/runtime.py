@@ -69,3 +69,15 @@ class CLIRuntime:
     def set_last_cypher_cmd(self, cmd: str) -> None:
         """Store the last executed cypher command."""
         raise NotImplementedError
+
+    def parse_and_execute(self, cmdline: str, terminate_on_failure: bool) -> bool:
+        """Parse and execute a command line.
+
+        Args:
+            cmdline: The command line to parse and execute
+            terminate_on_failure: Whether to terminate on failure
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        raise NotImplementedError
