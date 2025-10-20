@@ -1,11 +1,11 @@
 site_name: "cypher-graphdb"
 site_description: "Library to work for cpyher-based graph databased, including a CLI"
 #site_url: "https://..." link to documentation
-repo_url: https://git.cgm.ag/cgm-platform/cypher-graphdb/
-repo_name: cgm-platform/cypher-graphdb
+repo_url: https://github.com/petrarca/cypher-graphdb/
+repo_name: petrarca/cypher-graphdb
 site_dir: "site"
 watch: [mkdocs.yml, README.md, CHANGELOG.md, scripts/, src/cypher_graphdb]
-copyright: Copyright &copy; 2025 - cyphergraph-db contributors
+copyright: Copyright &copy; 2025 Petrarca Labs (Wolfgang Miller) and contributors
 edit_uri: edit/main/docs/
 
 validation:
