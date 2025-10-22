@@ -4,7 +4,7 @@ from cypher_graphdb.schema import GraphSchemaContext, build_json_schema
 
 
 def test_graph_model_info_basic_fields_filtering():
-    info = GraphModelInfo(label_="Person", graph_model=GraphNode, metadata={})
+    info = GraphModelInfo(label_="Person", graph_model=GraphNode)
     # node fields exclude id_, label_, properties_
     filtered = info.fields
     assert "id_" not in filtered and "label_" not in filtered
@@ -13,7 +13,7 @@ def test_graph_model_info_basic_fields_filtering():
 
 
 def test_graph_model_info_serialization_compact_vs_detailed():
-    info = GraphModelInfo(label_="Person", graph_model=GraphNode, metadata={"a": 1})
+    info = GraphModelInfo(label_="Person", graph_model=GraphNode)
     compact = info.model_dump()
     assert compact["graph_model"].endswith("GraphNode")
     assert isinstance(compact["fields"], list)
@@ -26,7 +26,7 @@ def test_graph_model_info_detailed_fields_content():
         required: str
         optional: str | None = None
 
-    info = GraphModelInfo(label_="Sample", graph_model=SampleNode, metadata={})
+    info = GraphModelInfo(label_="Sample", graph_model=SampleNode)
 
     detailed = info.model_dump(context={"with_detailed_fields": True})
     fields = detailed["fields"]
@@ -43,7 +43,7 @@ def test_graph_model_info_detailed_fields_content():
 
 def test_graph_node_info_relations_serialization():
     rels = [GraphRelationInfo(rel_type_name="KNOWS", to_type_name="Person")]
-    info = GraphNodeInfo(label_="Person", graph_model=GraphNode, metadata={}, relations=rels)
+    info = GraphNodeInfo(label_="Person", graph_model=GraphNode, relations=rels)
     dumped = info.model_dump()
     assert dumped["type_"] == GraphObjectType.NODE
     # to_collection converts objects to dicts
@@ -52,16 +52,16 @@ def test_graph_node_info_relations_serialization():
 
 
 def test_graph_edge_info_type_and_serialization():
-    info = GraphEdgeInfo(label_="KNOWS", graph_model=GraphEdge, metadata={})
+    info = GraphEdgeInfo(label_="KNOWS", graph_model=GraphEdge)
     dumped = info.model_dump()
     assert dumped["type_"] == GraphObjectType.EDGE
     assert dumped["label_"] == "KNOWS"
 
 
 def test_model_info_hash_and_equality():
-    info1 = GraphModelInfo(label_="Book", graph_model=GraphNode, metadata={})
-    info2 = GraphModelInfo(label_="Book", graph_model=GraphNode, metadata={})
-    info3 = GraphModelInfo(label_="Author", graph_model=GraphNode, metadata={})
+    info1 = GraphModelInfo(label_="Book", graph_model=GraphNode)
+    info2 = GraphModelInfo(label_="Book", graph_model=GraphNode)
+    info3 = GraphModelInfo(label_="Author", graph_model=GraphNode)
     assert hash(info1) == hash(info2)
     assert info1 == "Book"
     assert info1 != "Author"
@@ -69,7 +69,7 @@ def test_model_info_hash_and_equality():
 
 
 def test_schema_flag_custom_assignment():
-    info = GraphModelInfo(label_="Doc", graph_model=GraphNode, metadata={})
+    info = GraphModelInfo(label_="Doc", graph_model=GraphNode)
     assert info.graph_schema.has_schema is False
     # assign custom schema
     custom = {"title": "Doc", "type": "object"}
@@ -80,7 +80,7 @@ def test_schema_flag_custom_assignment():
 
 
 def test_graph_model_info_json_schema_without_extensions():
-    info = GraphModelInfo(label_="Doc", graph_model=GraphNode, metadata={})
+    info = GraphModelInfo(label_="Doc", graph_model=GraphNode)
 
     schema = build_json_schema(info.graph_model)
 
@@ -90,12 +90,12 @@ def test_graph_model_info_json_schema_without_extensions():
 
 def test_graph_node_info_json_schema_with_extensions():
     rels = [GraphRelationInfo(rel_type_name="KNOWS", to_type_name="Person")]
-    info = GraphNodeInfo(label_="Person", graph_model=GraphNode, metadata={"team": "core"}, relations=rels)
+    info = GraphNodeInfo(label_="Person", graph_model=GraphNode, relations=rels)
 
     graph_model_ref = f"{info.graph_model.__module__}.{info.graph_model.__name__}"
     context = GraphSchemaContext(
         label=info.label_,
-        metadata=info.metadata,
+        metadata={},
         graph_type=GraphObjectType.NODE,
         relations=info.relations,
         graph_model_ref=graph_model_ref,
@@ -106,7 +106,7 @@ def test_graph_node_info_json_schema_with_extensions():
     extension = schema["x-graph"]
     assert extension["type"] == GraphObjectType.NODE.name
     assert extension["label"] == "Person"
-    assert extension["metadata"] == {"team": "core"}
+    assert extension["metadata"] == {}
     assert extension["graph_model"].endswith("GraphNode")
     assert extension["relations"][0] == rels[0].model_dump()
 

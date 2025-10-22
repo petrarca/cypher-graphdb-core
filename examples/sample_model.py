@@ -1,7 +1,7 @@
 from cypher_graphdb import GraphEdge, GraphNode, edge, node, relation
 
 
-@node(metadata={"category": "software"})
+@node()
 @relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
 class Product(GraphNode):
     name: str

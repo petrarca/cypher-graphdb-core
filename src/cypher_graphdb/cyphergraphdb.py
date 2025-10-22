@@ -15,8 +15,8 @@ Exemplary Data Model:
 
 Typed approach with Product and Technology entities:
 
-    # Node model with metadata and relation definition
-    @node(metadata={"category": "software"})
+    # Node model with relation definition
+    @node()
     @relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
     class Product(GraphNode):
         name: str

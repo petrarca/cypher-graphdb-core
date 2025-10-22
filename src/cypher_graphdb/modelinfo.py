@@ -19,14 +19,12 @@ class GraphModelInfo(BaseModel):
 
     Attributes:
         label_: Graph label for the model.
-        metadata: Additional metadata dictionary.
         graph_model: The actual model class (GraphNode or GraphEdge).
         graph_schema: Generated schema information.
         source: Source location URI of the model file.
     """
 
     label_: str
-    metadata: dict[str, Any] = {}
     graph_model: type[GraphNode | GraphEdge]
     graph_schema: GraphObjectSchema | None = None
     source: str | None = None
@@ -54,7 +52,7 @@ class GraphModelInfo(BaseModel):
 
         return GraphSchemaContext(
             label=self.label_,
-            metadata=self.metadata,
+            metadata={},
             graph_type=self.type_,
             relations=list(relations or []),
             graph_model_ref=graph_model_ref,
@@ -81,7 +79,7 @@ class GraphModelInfo(BaseModel):
 
     @model_serializer
     def serialize_model(self, info) -> dict[str, Any]:
-        """Serialize metadata, schema, and optional field details for the model."""
+        """Serialize schema and optional field details for the model."""
         graph_model = self.graph_model
 
         _fields = self._serialize_fields(info.context if info else None)
@@ -89,7 +87,6 @@ class GraphModelInfo(BaseModel):
         return {
             "type_": self.type_,
             "label_": self.label_,
-            "metadata": utils.to_collection(self.metadata),
             "graph_model": f"{graph_model.__module__}.{graph_model.__name__}" if graph_model else None,
             "source": self.source,
             "fields": _fields,

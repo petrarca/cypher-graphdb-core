@@ -11,12 +11,11 @@ from .modelprovider import ModelProvider, model_provider
 from .models import GraphEdge, GraphNode
 
 
-def node(label: str = None, metadata: dict[str, Any] = None, provider: ModelProvider = None) -> Any:
-    """Decorator to register a GraphNode subclass with optional label and metadata.
+def node(label: str = None, provider: ModelProvider = None) -> Any:
+    """Decorator to register a GraphNode subclass with optional label.
 
     Args:
         label: Graph label for this node type (defaults to class name).
-        metadata: Optional metadata dictionary.
         provider: Model provider to register with (defaults to global provider).
 
     Returns:
@@ -28,15 +27,13 @@ def node(label: str = None, metadata: dict[str, Any] = None, provider: ModelProv
         if not issubclass(cls, GraphNode):
             raise RuntimeError(f"@node decorator can only be applied to GraphNode models. {cls.__name__} is not.")
 
-        nonlocal provider, metadata
+        nonlocal provider
 
         # might already by defined by @relation
         node_info = cls.graph_info_ if hasattr(cls, "graph_info_") else None
 
         # derive label from class name if not explicitly defined
         label_ = cls.__name__ if label is None else label
-
-        metadata = metadata or {}
 
         if provider is None:
             provider = model_provider
@@ -48,9 +45,8 @@ def node(label: str = None, metadata: dict[str, Any] = None, provider: ModelProv
 
             # will be registered under this label in the provider
             node_info.label_ = label_
-            node_info.metadata = metadata
         else:
-            node_info = GraphNodeInfo(label_=label_, metadata=metadata, graph_model=cls)
+            node_info = GraphNodeInfo(label_=label_, graph_model=cls)
             cls.graph_info_ = node_info
 
         # register in the factory
@@ -61,12 +57,11 @@ def node(label: str = None, metadata: dict[str, Any] = None, provider: ModelProv
     return decorator
 
 
-def edge(label: str = None, metadata: dict[str, Any] = None, provider: ModelProvider = None) -> Any:
-    """Decorator to register a GraphEdge subclass with optional label and metadata.
+def edge(label: str = None, provider: ModelProvider = None) -> Any:
+    """Decorator to register a GraphEdge subclass with optional label.
 
     Args:
         label: Graph label for this edge type (defaults to class name).
-        metadata: Optional metadata dictionary.
         provider: Model provider to register with (defaults to global provider).
 
     Returns:
@@ -78,14 +73,12 @@ def edge(label: str = None, metadata: dict[str, Any] = None, provider: ModelProv
         if not issubclass(cls, GraphEdge):
             raise RuntimeError(f"@edge decorator can only be applied to GraphEdge models. {cls.__name__} is not.")
 
-        nonlocal metadata, provider
+        nonlocal provider
 
         # derive label from class name if not explicitly defined
         label_ = cls.__name__ if label is None else label
 
-        metadata = metadata or {}
-
-        edge_info = GraphEdgeInfo(label_=label_, metadata=metadata, graph_model=cls)
+        edge_info = GraphEdgeInfo(label_=label_, graph_model=cls)
         cls.graph_info_ = edge_info
 
         if provider is None:
