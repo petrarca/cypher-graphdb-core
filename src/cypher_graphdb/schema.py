@@ -23,6 +23,7 @@ class GraphSchemaContext:
     graph_type: GraphObjectType
     relations: list[Any]
     graph_model_ref: str | None = None
+    display: Any | None = None  # DisplayConfig to avoid circular import
 
 
 def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext | None) -> dict[str, Any]:
@@ -57,29 +58,65 @@ def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext 
     return filtered_schema
 
 
+def _build_graph_extension(context: GraphSchemaContext) -> dict[str, Any]:
+    """Build the x-graph extension dictionary from context.
+
+    Args:
+        context: Graph schema context with metadata.
+
+    Returns:
+        Dictionary for x-graph extension.
+    """
+    graph_type = context.graph_type.name if hasattr(context.graph_type, "name") else context.graph_type
+
+    extension: dict[str, Any] = {
+        "type": graph_type,
+        "label": context.label,
+        "metadata": utils.to_collection(context.metadata or {}),
+    }
+
+    if context.graph_model_ref is not None:
+        extension["graph_model"] = context.graph_model_ref
+
+    if context.display is not None:
+        if hasattr(context.display, "model_dump"):
+            extension["display"] = context.display.model_dump(exclude_none=True)
+        else:
+            extension["display"] = utils.to_collection(context.display)
+
+    if context.relations:
+        normalized_relations: list[Any] = []
+        for relation in context.relations:
+            if hasattr(relation, "model_dump"):
+                normalized_relations.append(relation.model_dump())
+            else:
+                normalized_relations.append(utils.to_collection(relation))
+        extension["relations"] = normalized_relations
+
+    return extension
+
+
 def build_json_schema(
     graph_model: type[GraphNode | GraphEdge] | None,
     *,
     base_schema: dict[str, Any] | None = None,
     context: GraphSchemaContext | None = None,
 ) -> dict[str, Any]:
-    """Generate a JSON schema and optionally enrich it with graph metadata.
+    """Generate a JSON schema and enrich with graph metadata.
 
     Args:
-        graph_model: Model class used to derive the base schema when `base_schema` is not provided.
-        base_schema: Precomputed schema to reuse instead of deriving from the model.
-        context: Optional metadata describing label, relations, and graph type to embed under
-            the `x-graph` key in the resulting schema.
+        graph_model: Model class to derive base schema from.
+        base_schema: Precomputed schema to reuse.
+        context: Optional metadata for x-graph extension.
 
     Returns:
-        A JSON schema dictionary enriched with graph metadata when `context` is supplied.
+        JSON schema dictionary enriched with graph metadata.
     """
 
     if base_schema is not None:
         schema_source = base_schema
     elif graph_model is not None:
         schema_source = graph_model.model_json_schema()
-        # Filter internal fields from properties
         schema_source = _filter_internal_fields(schema_source, context)
     else:
         schema_source = {}
@@ -92,34 +129,11 @@ def build_json_schema(
     if context is None:
         return schema
 
-    label = context.label
-    metadata = context.metadata
-    graph_type = context.graph_type.name if hasattr(context.graph_type, "name") else context.graph_type
-    relations = context.relations
-    graph_model_ref = context.graph_model_ref
-
-    extension: dict[str, Any] = {
-        "type": graph_type,
-        "label": label,
-        "metadata": utils.to_collection(metadata or {}),
-    }
-
-    if graph_model_ref is not None:
-        extension["graph_model"] = graph_model_ref
-
-    if relations:
-        normalized_relations: list[Any] = []
-        for relation in relations:
-            if hasattr(relation, "model_dump"):
-                normalized_relations.append(relation.model_dump())
-            else:
-                normalized_relations.append(utils.to_collection(relation))
-        extension["relations"] = normalized_relations
+    extension = _build_graph_extension(context)
 
     enriched_schema = dict(schema)
     enriched_schema["x-graph"] = extension
 
-    # Order schema keys according to JSON Schema conventions
     ordered_schema = utils.order_dict(enriched_schema, ("title", "type", "properties", "required"))
 
     return ordered_schema

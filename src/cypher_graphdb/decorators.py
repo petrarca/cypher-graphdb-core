@@ -6,17 +6,23 @@ subclasses with the global model provider.
 
 from typing import Any
 
+from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, model_provider
 from .models import GraphEdge, GraphNode
 
 
-def node(label: str = None, provider: ModelProvider = None) -> Any:
+def node(
+    label: str = None,
+    display: DisplayConfig = None,
+    provider: ModelProvider = None,
+) -> Any:
     """Decorator to register a GraphNode subclass with optional label.
 
     Args:
         label: Graph label for this node type (defaults to class name).
-        provider: Model provider to register with (defaults to global provider).
+        display: Display configuration for UI rendering.
+        provider: Model provider to register with (defaults to global).
 
     Returns:
         Class decorator that registers the node class.
@@ -25,7 +31,8 @@ def node(label: str = None, provider: ModelProvider = None) -> Any:
 
     def decorator(cls: Any) -> Any:
         if not issubclass(cls, GraphNode):
-            raise RuntimeError(f"@node decorator can only be applied to GraphNode models. {cls.__name__} is not.")
+            msg = f"@node decorator can only be applied to GraphNode models. {cls.__name__} is not."
+            raise RuntimeError(msg)
 
         nonlocal provider
 
@@ -39,14 +46,17 @@ def node(label: str = None, provider: ModelProvider = None) -> Any:
             provider = model_provider
 
         if node_info:
-            # Occurs when @relation is used after @node, so relation decorator is called before (!) @node.
-            # Also required because label might might override default and provider needs to be updated when already registered.
+            # Occurs when @relation is used after @node, so relation
+            # decorator is called before (!) @node.
+            # Also required because label might override default and
+            # provider needs to be updated when already registered.
             model_provider.remove(node_info)
 
             # will be registered under this label in the provider
             node_info.label_ = label_
+            node_info.display = display
         else:
-            node_info = GraphNodeInfo(label_=label_, graph_model=cls)
+            node_info = GraphNodeInfo(label_=label_, graph_model=cls, display=display)
             cls.graph_info_ = node_info
 
         # register in the factory
@@ -57,12 +67,17 @@ def node(label: str = None, provider: ModelProvider = None) -> Any:
     return decorator
 
 
-def edge(label: str = None, provider: ModelProvider = None) -> Any:
+def edge(
+    label: str = None,
+    display: DisplayConfig = None,
+    provider: ModelProvider = None,
+) -> Any:
     """Decorator to register a GraphEdge subclass with optional label.
 
     Args:
         label: Graph label for this edge type (defaults to class name).
-        provider: Model provider to register with (defaults to global provider).
+        display: Display configuration for UI rendering.
+        provider: Model provider to register with (defaults to global).
 
     Returns:
         Class decorator that registers the edge class.
@@ -71,14 +86,15 @@ def edge(label: str = None, provider: ModelProvider = None) -> Any:
 
     def decorator(cls: Any) -> Any:
         if not issubclass(cls, GraphEdge):
-            raise RuntimeError(f"@edge decorator can only be applied to GraphEdge models. {cls.__name__} is not.")
+            msg = f"@edge decorator can only be applied to GraphEdge models. {cls.__name__} is not."
+            raise RuntimeError(msg)
 
         nonlocal provider
 
         # derive label from class name if not explicitly defined
         label_ = cls.__name__ if label is None else label
 
-        edge_info = GraphEdgeInfo(label_=label_, graph_model=cls)
+        edge_info = GraphEdgeInfo(label_=label_, graph_model=cls, display=display)
         cls.graph_info_ = edge_info
 
         if provider is None:
@@ -106,7 +122,8 @@ def relation(rel_type: GraphEdge | str, to_type: Any = GraphNode | str) -> Any:
 
     def decorator(cls: Any) -> Any:
         if not issubclass(cls, GraphNode):
-            raise RuntimeError(f"@node decorator can only be applied to GraphNode models. {cls.__name__} is not.")
+            msg = f"@node decorator can only be applied to GraphNode models. {cls.__name__} is not."
+            raise RuntimeError(msg)
 
         if not hasattr(cls, "graph_info_") or cls.graph_info_ is None:
             node()(cls)

@@ -10,6 +10,7 @@ from pydantic import BaseModel, model_serializer
 from pydantic.fields import FieldInfo, PydanticUndefined
 
 from . import config, utils
+from .display import DisplayConfig
 from .models import GraphEdge, GraphNode, GraphObjectType
 from .schema import GraphObjectSchema, GraphSchemaContext
 
@@ -22,12 +23,14 @@ class GraphModelInfo(BaseModel):
         graph_model: The actual model class (GraphNode or GraphEdge).
         graph_schema: Generated schema information.
         source: Source location URI of the model file.
+        display: Display configuration for UI rendering.
     """
 
     label_: str
     graph_model: type[GraphNode | GraphEdge]
     graph_schema: GraphObjectSchema | None = None
     source: str | None = None
+    display: DisplayConfig | None = None
 
     def model_post_init(self, __context: Any) -> None:
         """Initialize schema after model creation."""
@@ -56,6 +59,7 @@ class GraphModelInfo(BaseModel):
             graph_type=self.type_,
             relations=list(relations or []),
             graph_model_ref=graph_model_ref,
+            display=self.display,
         )
 
     @property
