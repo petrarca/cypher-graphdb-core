@@ -102,8 +102,8 @@ def test_graph_node_info_json_schema_with_extensions():
     )
     schema = build_json_schema(info.graph_model, context=context)
 
-    assert "x-cypher-graphdb" in schema
-    extension = schema["x-cypher-graphdb"]
+    assert "x-graph" in schema
+    extension = schema["x-graph"]
     assert extension["type"] == GraphObjectType.NODE.name
     assert extension["label"] == "Person"
     assert extension["metadata"] == {"team": "core"}
@@ -111,4 +111,4 @@ def test_graph_node_info_json_schema_with_extensions():
     assert extension["relations"][0] == rels[0].model_dump()
 
     schema_from_property = info.graph_schema.json_schema
-    assert schema_from_property["x-cypher-graphdb"] == extension
+    assert schema_from_property["x-graph"] == extension

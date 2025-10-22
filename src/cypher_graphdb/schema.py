@@ -69,7 +69,7 @@ def build_json_schema(
         graph_model: Model class used to derive the base schema when `base_schema` is not provided.
         base_schema: Precomputed schema to reuse instead of deriving from the model.
         context: Optional metadata describing label, relations, and graph type to embed under
-            the `x-cypher-graphdb` key in the resulting schema.
+            the `x-graph` key in the resulting schema.
 
     Returns:
         A JSON schema dictionary enriched with graph metadata when `context` is supplied.
@@ -117,7 +117,7 @@ def build_json_schema(
         extension["relations"] = normalized_relations
 
     enriched_schema = dict(schema)
-    enriched_schema["x-cypher-graphdb"] = extension
+    enriched_schema["x-graph"] = extension
 
     # Order schema keys according to JSON Schema conventions
     ordered_schema = utils.order_dict(enriched_schema, ("title", "type", "properties", "required"))
