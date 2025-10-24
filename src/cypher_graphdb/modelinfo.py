@@ -170,11 +170,13 @@ class GraphRelationInfo(BaseModel):
         rel_type_name: Name of the relationship type.
         to_type_name: Name of the target node type.
         cardinality: Relationship cardinality (ONE or MANY), defaults to MANY.
+        form_field: Whether this relation appears as a field in forms.
     """
 
     rel_type_name: str
     to_type_name: str
     cardinality: Cardinality = Cardinality.MANY
+    form_field: bool = False
 
 
 class GraphNodeInfo(GraphModelInfo):

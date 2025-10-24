@@ -113,6 +113,7 @@ def relation(
     rel_type: GraphEdge | str,
     to_type: Any = GraphNode | str,
     cardinality: Cardinality = Cardinality.MANY,
+    form_field: bool = False,
 ) -> Any:
     """Decorator to define relationships from a node type to other node types.
 
@@ -120,6 +121,7 @@ def relation(
         rel_type: GraphEdge class or string label for the relationship type.
         to_type: GraphNode class or string label for the target node type.
         cardinality: Relationship cardinality (ONE or MANY), defaults to MANY.
+        form_field: Whether relation appears as form field (default: False).
 
     Returns:
         Class decorator that adds relationship info to the node's metadata.
@@ -142,7 +144,12 @@ def relation(
         # resolve type name (label) of target node
         to_type_name = to_type.graph_info_.label_ if isinstance(to_type, GraphNode) else to_type
 
-        rel_info = GraphRelationInfo(rel_type_name=rel_type_name, to_type_name=to_type_name, cardinality=cardinality)
+        rel_info = GraphRelationInfo(
+            rel_type_name=rel_type_name,
+            to_type_name=to_type_name,
+            cardinality=cardinality,
+            form_field=form_field,
+        )
 
         node_info.relations.append(rel_info)
 
