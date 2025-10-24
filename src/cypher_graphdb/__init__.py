@@ -6,6 +6,7 @@ Apache AGE (Age Graph Extension) for PostgreSQL.
 """
 
 from .backendprovider import backend_provider
+from .cardinality import Cardinality
 from .cyphergraphdb import CypherGraphDB, MatchCriteria, MatchEdgeById, MatchEdgeCriteria, MatchNodeById, MatchNodeCriteria
 from .cypherjson import GraphJSONEncoder
 from .dbpool import CypherGraphDBPool
@@ -45,6 +46,7 @@ __all__ = [
     "node",
     "edge",
     "relation",
+    "Cardinality",
     "graphops",
     "backends",
 ]

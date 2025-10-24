@@ -6,6 +6,7 @@ subclasses with the global model provider.
 
 from typing import Any
 
+from .cardinality import Cardinality
 from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, model_provider
@@ -108,12 +109,17 @@ def edge(
     return decorator
 
 
-def relation(rel_type: GraphEdge | str, to_type: Any = GraphNode | str) -> Any:
+def relation(
+    rel_type: GraphEdge | str,
+    to_type: Any = GraphNode | str,
+    cardinality: Cardinality = Cardinality.MANY,
+) -> Any:
     """Decorator to define relationships from a node type to other node types.
 
     Args:
         rel_type: GraphEdge class or string label for the relationship type.
         to_type: GraphNode class or string label for the target node type.
+        cardinality: Relationship cardinality (ONE or MANY), defaults to MANY.
 
     Returns:
         Class decorator that adds relationship info to the node's metadata.
@@ -136,7 +142,7 @@ def relation(rel_type: GraphEdge | str, to_type: Any = GraphNode | str) -> Any:
         # resolve type name (label) of target node
         to_type_name = to_type.graph_info_.label_ if isinstance(to_type, GraphNode) else to_type
 
-        rel_info = GraphRelationInfo(rel_type_name=rel_type_name, to_type_name=to_type_name)
+        rel_info = GraphRelationInfo(rel_type_name=rel_type_name, to_type_name=to_type_name, cardinality=cardinality)
 
         node_info.relations.append(rel_info)
 

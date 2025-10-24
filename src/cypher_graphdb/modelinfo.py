@@ -10,6 +10,7 @@ from pydantic import BaseModel, model_serializer
 from pydantic.fields import FieldInfo, PydanticUndefined
 
 from . import config, utils
+from .cardinality import Cardinality
 from .display import DisplayConfig
 from .models import GraphEdge, GraphNode, GraphObjectType
 from .schema import GraphObjectSchema, GraphSchemaContext
@@ -168,10 +169,12 @@ class GraphRelationInfo(BaseModel):
     Attributes:
         rel_type_name: Name of the relationship type.
         to_type_name: Name of the target node type.
+        cardinality: Relationship cardinality (ONE or MANY), defaults to MANY.
     """
 
     rel_type_name: str
     to_type_name: str
+    cardinality: Cardinality = Cardinality.MANY
 
 
 class GraphNodeInfo(GraphModelInfo):
