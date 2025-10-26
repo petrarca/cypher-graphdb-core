@@ -9,9 +9,9 @@ class Cardinality(str, Enum):
     Defines how many target nodes can be connected via a relationship.
 
     Attributes:
-        ONE: Single target node (1:1 or N:1 relationship).
-        MANY: Multiple target nodes (1:N or N:N relationship).
+        ONE_TO_ONE: Single target node (1:1 or N:1 relationship).
+        ONE_TO_MANY: Multiple target nodes (1:N or N:N relationship).
     """
 
-    ONE = "ONE"
-    MANY = "MANY"
+    ONE_TO_ONE = "ONE_TO_ONE"
+    ONE_TO_MANY = "ONE_TO_MANY"

@@ -2,7 +2,12 @@ from cypher_graphdb import GraphEdge, GraphNode, edge, node, relation
 
 
 @node()
-@relation(rel_type="USES_TECHNOLOGY", to_type="Technology", cardinality="MANY", form_field=True)
+@relation(
+    rel_type="USES_TECHNOLOGY",
+    to_type="Technology",
+    cardinality="ONE_TO_MANY",
+    form_field=True,
+)
 class Product(GraphNode):
     name: str
     multi_tenancy: bool | None = None

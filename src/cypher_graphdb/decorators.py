@@ -112,7 +112,7 @@ def edge(
 def relation(
     rel_type: GraphEdge | str,
     to_type: Any = GraphNode | str,
-    cardinality: Cardinality = Cardinality.MANY,
+    cardinality: Cardinality = Cardinality.ONE_TO_MANY,
     form_field: bool = False,
 ) -> Any:
     """Decorator to define relationships from a node type to other node types.
@@ -120,7 +120,8 @@ def relation(
     Args:
         rel_type: GraphEdge class or string label for the relationship type.
         to_type: GraphNode class or string label for the target node type.
-        cardinality: Relationship cardinality (ONE or MANY), defaults to MANY.
+        cardinality: Relationship cardinality (ONE_TO_ONE or ONE_TO_MANY),
+            defaults to ONE_TO_MANY.
         form_field: Whether relation appears as form field (default: False).
 
     Returns:
