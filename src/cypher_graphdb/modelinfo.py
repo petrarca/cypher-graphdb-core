@@ -61,6 +61,7 @@ class GraphModelInfo(BaseModel):
             relations=list(relations or []),
             graph_model_ref=graph_model_ref,
             display=self.display,
+            source=self.source,
         )
 
     @property

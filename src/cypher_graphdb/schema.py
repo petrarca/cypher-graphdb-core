@@ -24,6 +24,7 @@ class GraphSchemaContext:
     relations: list[Any]
     graph_model_ref: str | None = None
     display: Any | None = None  # DisplayConfig to avoid circular import
+    source: str | None = None  # URI indicating schema source (file://, database://, temporary://)
 
 
 def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext | None) -> dict[str, Any]:
@@ -77,6 +78,9 @@ def _build_graph_extension(context: GraphSchemaContext) -> dict[str, Any]:
 
     if context.graph_model_ref is not None:
         extension["graph_model"] = context.graph_model_ref
+
+    if hasattr(context, "source") and context.source is not None:
+        extension["source"] = context.source
 
     if context.display is not None:
         if hasattr(context.display, "model_dump"):
