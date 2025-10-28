@@ -14,7 +14,7 @@ from typing import Any, Final
 from loguru import logger
 
 from . import utils
-from .modelinfo import GraphModelInfo
+from .modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from .models import GraphEdge, GraphNode, GraphObject, GraphObjectType
 
 
@@ -346,6 +346,217 @@ class ModelProvider(collections.abc.Collection):
     def reset(self):
         """Remove all models without associated graph_model classes."""
         self._models = [item for item in self._models if item.graph_model is not None]
+
+    def _parse_display_config(self, display_data: dict[str, Any] | None):
+        """Parse display configuration from x-graph extension.
+
+        Args:
+            display_data: Display configuration dictionary from x-graph.
+
+        Returns:
+            DisplayConfig instance or None.
+        """
+        if display_data is None:
+            return None
+
+        from .display import DisplayConfig
+
+        try:
+            return DisplayConfig(**display_data)
+        except Exception as e:
+            logger.warning(f"Failed to parse display config: {e}")
+            return None
+
+    def _extract_x_graph_metadata(self, schema: dict[str, Any]) -> tuple[str, str, list[GraphRelationInfo], Any]:
+        """Extract metadata from x-graph extension in JSON schema.
+
+        Args:
+            schema: JSON schema dictionary with x-graph extension.
+
+        Returns:
+            Tuple of (label, graph_type, relations, display_config).
+
+        Raises:
+            ValueError: If required x-graph metadata is missing or invalid.
+        """
+        x_graph = schema.get("x-graph", {})
+
+        if not x_graph:
+            raise ValueError("Schema missing required 'x-graph' extension")
+
+        # Extract graph type (NODE or EDGE)
+        graph_type = x_graph.get("type")
+        if graph_type not in ("NODE", "EDGE"):
+            raise ValueError(f"Invalid or missing x-graph.type: {graph_type}. Must be 'NODE' or 'EDGE'")
+
+        # Extract label (prefer x-graph.label, fallback to schema title)
+        label = x_graph.get("label") or schema.get("title")
+        if not label:
+            raise ValueError("Schema missing both x-graph.label and title")
+
+        # Extract relations (only for nodes)
+        relations = []
+        if graph_type == "NODE":
+            for rel_data in x_graph.get("relations", []):
+                try:
+                    relations.append(GraphRelationInfo(**rel_data))
+                except Exception as e:
+                    logger.warning(f"Failed to parse relation {rel_data}: {e}")
+
+        # Extract display config
+        display = self._parse_display_config(x_graph.get("display"))
+
+        return label, graph_type, relations, display
+
+    def _create_typed_model_class(self, schema: dict[str, Any], label: str, graph_type: str) -> type[GraphNode | GraphEdge]:
+        """Create a typed Pydantic model class from JSON schema.
+
+        Args:
+            schema: JSON schema dictionary (without x-graph extension).
+            label: Model label to use as class name.
+            graph_type: "NODE" or "EDGE".
+
+        Returns:
+            Generated Pydantic model class inheriting from GraphNode or GraphEdge.
+
+        Raises:
+            ImportError: If json-schema-to-pydantic is not installed.
+            ValueError: If model generation fails.
+        """
+        try:
+            from json_schema_to_pydantic import create_model
+        except ImportError as e:
+            raise ImportError(
+                "json-schema-to-pydantic is required for loading models from JSON schemas. "
+                "Install it with: pip install json-schema-to-pydantic"
+            ) from e
+
+        # Remove x-graph extension before passing to create_model
+        clean_schema = {k: v for k, v in schema.items() if k != "x-graph"}
+
+        try:
+            # Generate base Pydantic model from schema
+            base_model = create_model(clean_schema)
+        except Exception as e:
+            raise ValueError(f"Failed to generate Pydantic model from schema: {e}") from e
+
+        # Create typed model class inheriting from GraphNode or GraphEdge
+        if graph_type == "NODE":
+            typed_model = type(label, (GraphNode, base_model), {})
+        else:  # EDGE
+            typed_model = type(label, (GraphEdge, base_model), {})
+
+        return typed_model
+
+    def load_from_json_schemas(self, schemas: list[dict[str, Any]], source_uri: str = "schema://dynamic") -> list[GraphModelInfo]:
+        """Load models from JSON schemas with x-graph extensions.
+
+        This method creates Pydantic model classes dynamically from JSON schemas
+        and registers them with the model provider. The schemas must include
+        x-graph extensions with metadata (type, label, relations, etc.).
+
+        Args:
+            schemas: List of JSON Schema dictionaries with x-graph extensions.
+                Each schema must have:
+                - x-graph.type: "NODE" or "EDGE"
+                - x-graph.label or title: Model label
+                - Optional: x-graph.relations (for nodes)
+                - Optional: x-graph.display
+            source_uri: URI indicating schema source (e.g., "database://server",
+                "schema://injected"). Defaults to "schema://dynamic".
+
+        Returns:
+            List of registered GraphModelInfo objects, sorted by label
+            (nodes first, then edges).
+
+        Raises:
+            ValueError: If schema is invalid or missing required fields.
+            ImportError: If json-schema-to-pydantic is not installed.
+
+        Examples:
+            Load a simple node model:
+            >>> schemas = [{
+            ...     "title": "Person",
+            ...     "type": "object",
+            ...     "properties": {
+            ...         "name": {"type": "string"},
+            ...         "age": {"type": "integer"}
+            ...     },
+            ...     "required": ["name"],
+            ...     "x-graph": {
+            ...         "type": "NODE",
+            ...         "label": "Person"
+            ...     }
+            ... }]
+            >>> loaded = provider.load_from_json_schemas(schemas)
+            >>> len(loaded)
+            1
+
+            Load models from server:
+            >>> schemas = fetch_schemas_from_server()
+            >>> provider.load_from_json_schemas(
+            ...     schemas,
+            ...     source_uri="database://server"
+            ... )
+        """
+        if not schemas:
+            logger.debug("No schemas provided to load")
+            return []
+
+        loaded_models: list[GraphModelInfo] = []
+
+        for schema in schemas:
+            try:
+                # Extract x-graph metadata
+                label, graph_type, relations, display = self._extract_x_graph_metadata(schema)
+
+                # Check if model already exists
+                if existing := self.get(label):
+                    logger.warning(f"Model '{label}' already registered, skipping. Source: {existing.source}")
+                    continue
+
+                # Create typed Pydantic model class
+                typed_model = self._create_typed_model_class(schema, label, graph_type)
+
+                # Create appropriate model info
+                if graph_type == "NODE":
+                    model_info = GraphNodeInfo(
+                        label_=label,
+                        graph_model=typed_model,
+                        relations=relations,
+                        display=display,
+                        source=source_uri,
+                    )
+                else:  # EDGE
+                    model_info = GraphEdgeInfo(
+                        label_=label,
+                        graph_model=typed_model,
+                        display=display,
+                        source=source_uri,
+                    )
+
+                # Attach graph_info_ to the generated class
+                typed_model.graph_info_ = model_info
+
+                # Register with provider
+                self.register(model_info)
+                loaded_models.append(model_info)
+
+                logger.debug(f"Successfully loaded {graph_type} model '{label}' from schema")
+
+            except Exception as e:
+                schema_title = schema.get("title", "unknown")
+                logger.error(f"Failed to load schema '{schema_title}': {e}")
+                # Continue processing other schemas
+                continue
+
+        # Sort results (nodes first, then edges)
+        if loaded_models:
+            sorted_labels = self.sort_model_names([mi.label_ for mi in loaded_models])
+            loaded_models = [next(mi for mi in loaded_models if mi.label_ == label) for label in sorted_labels]
+
+        logger.info(f"Loaded {len(loaded_models)} model(s) from JSON schemas")
+        return loaded_models
 
     def __contains__(self, x: object) -> bool:
         return x.label_ in self._models
