@@ -241,7 +241,9 @@ class ModelProvider(collections.abc.Collection):
         """
         loaded_model_infos: list[GraphModelInfo] = []
         for file_path, model_labels in file_to_models.items():
-            file_uri = f"{config.MODEL_SOURCE_FILE_URI}{file_path}"
+            # Only store filename (not full path) for security reasons
+            filename = os.path.basename(file_path)
+            file_uri = f"{config.MODEL_SOURCE_FILE_URI}{filename}"
             for label in model_labels:
                 if model_info := self.get(label):
                     model_info.source = file_uri

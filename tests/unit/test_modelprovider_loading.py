@@ -441,14 +441,14 @@ class Permission(GraphNode):
             assert account_model is not None, "Account model not found"
             assert permission_model is not None, "Permission model not found"
 
-            # Check each model has a source with file URI
+            # Check each model has a source with file URI (only filename, not full path for security)
             assert account_model.source is not None
             assert account_model.source.startswith("file://")
-            assert str(account_file) in account_model.source
+            assert account_model.source == "file://account.py"
 
             assert permission_model.source is not None
             assert permission_model.source.startswith("file://")
-            assert str(permission_file) in permission_model.source
+            assert permission_model.source == "file://permission.py"
 
             # Also verify via model_provider.get()
             account_from_provider = model_provider.get("Account")
