@@ -24,7 +24,7 @@ class GraphSchemaContext:
     relations: list[Any]
     graph_model_ref: str | None = None
     display: Any | None = None  # DisplayConfig to avoid circular import
-    source: str | None = None  # URI indicating schema source (file://, database://, temporary://)
+    source: str | None = None  # URI indicating schema source (e.g., file://, db://, schema://)
 
 
 def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext | None) -> dict[str, Any]:

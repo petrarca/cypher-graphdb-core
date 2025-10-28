@@ -533,3 +533,139 @@ class TestComplexSchemas:
         # Should work with optional fields
         person2 = PersonModel(name="Bob", email="bob@example.com")
         assert person2.email == "bob@example.com"
+
+
+class TestReplaceExisting:
+    """Test replace_existing parameter functionality."""
+
+    def test_replace_existing_false_skips_duplicates(self, provider):
+        """Test that replace_existing=False skips duplicate models."""
+        schemas = [
+            {
+                "title": "Person",
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                "required": ["name"],
+                "x-graph": {"type": "NODE", "label": "Person"},
+            }
+        ]
+
+        # Load first time
+        loaded1 = provider.load_from_json_schemas(schemas, source_uri="db://test")
+        assert len(loaded1) == 1
+        assert loaded1[0].graph_model.model_fields["age"].annotation is int
+
+        # Modify schema (change age to string)
+        schemas[0]["properties"]["age"] = {"type": "string"}
+
+        # Load again without replace_existing - should skip
+        loaded2 = provider.load_from_json_schemas(schemas, source_uri="db://test", replace_existing=False)
+        assert len(loaded2) == 0  # Skipped because already exists
+
+        # Model should still have integer age (not updated)
+        person_info = provider.get("Person")
+        assert person_info.graph_model.model_fields["age"].annotation is int
+
+    def test_replace_existing_true_updates_models(self, provider):
+        """Test that replace_existing=True updates existing models."""
+        schemas = [
+            {
+                "title": "Person",
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                "required": ["name"],
+                "x-graph": {"type": "NODE", "label": "Person"},
+            }
+        ]
+
+        # Load first time
+        loaded1 = provider.load_from_json_schemas(schemas, source_uri="db://test")
+        assert len(loaded1) == 1
+        assert loaded1[0].graph_model.model_fields["age"].annotation is int
+
+        # Modify schema (change age to string)
+        schemas[0]["properties"]["age"] = {"type": "string"}
+
+        # Load again with replace_existing=True
+        loaded2 = provider.load_from_json_schemas(schemas, source_uri="db://test", replace_existing=True)
+        assert len(loaded2) == 1
+
+        # Model should now have string age (updated)
+        person_info = provider.get("Person")
+        assert person_info.graph_model.model_fields["age"].annotation is str
+
+    def test_replace_existing_removes_deleted_schemas(self, provider):
+        """Test that replace_existing=True removes models not in new schema set."""
+        schemas = [
+            {
+                "title": "Person",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "x-graph": {"type": "NODE", "label": "Person"},
+            },
+            {
+                "title": "Company",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "x-graph": {"type": "NODE", "label": "Company"},
+            },
+        ]
+
+        # Load both models
+        loaded1 = provider.load_from_json_schemas(schemas, source_uri="db://test")
+        assert len(loaded1) == 2
+        assert provider.get("Person") is not None
+        assert provider.get("Company") is not None
+
+        # Load again with only Person (Company removed from schemas)
+        schemas_reduced = [schemas[0]]
+        loaded2 = provider.load_from_json_schemas(schemas_reduced, source_uri="db://test", replace_existing=True)
+        assert len(loaded2) == 1
+
+        # Person should exist, Company should be removed
+        assert provider.get("Person") is not None
+        assert provider.get("Company") is None
+
+    def test_replace_existing_only_affects_matching_source(self, provider):
+        """Test that replace_existing only removes models with matching source prefix."""
+        # Load from database source
+        db_schemas = [
+            {
+                "title": "Person",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "x-graph": {"type": "NODE", "label": "Person"},
+            },
+        ]
+        provider.load_from_json_schemas(db_schemas, source_uri="db://metadata")
+
+        # Load from file source
+        file_schemas = [
+            {
+                "title": "Company",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "x-graph": {"type": "NODE", "label": "Company"},
+            },
+        ]
+        provider.load_from_json_schemas(file_schemas, source_uri="file:///models.py")
+
+        # Both should exist
+        assert provider.get("Person") is not None
+        assert provider.get("Company") is not None
+
+        # Reload database source with replace_existing=True
+        new_db_schemas = [
+            {
+                "title": "Product",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "x-graph": {"type": "NODE", "label": "Product"},
+            },
+        ]
+        provider.load_from_json_schemas(new_db_schemas, source_uri="db://metadata", replace_existing=True)
+
+        # Person (db://) should be removed, Company (file://) should remain
+        assert provider.get("Person") is None
+        assert provider.get("Company") is not None
+        assert provider.get("Product") is not None

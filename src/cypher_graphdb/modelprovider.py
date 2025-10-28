@@ -13,7 +13,7 @@ from typing import Any, Final
 
 from loguru import logger
 
-from . import utils
+from . import config, utils
 from .modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from .models import GraphEdge, GraphNode, GraphObject, GraphObjectType
 
@@ -241,7 +241,7 @@ class ModelProvider(collections.abc.Collection):
         """
         loaded_model_infos: list[GraphModelInfo] = []
         for file_path, model_labels in file_to_models.items():
-            file_uri = f"file://{file_path}"
+            file_uri = f"{config.MODEL_SOURCE_FILE_URI}{file_path}"
             for label in model_labels:
                 if model_info := self.get(label):
                     model_info.source = file_uri
@@ -448,7 +448,25 @@ class ModelProvider(collections.abc.Collection):
 
         return typed_model
 
-    def load_from_json_schemas(self, schemas: list[dict[str, Any]], source_uri: str = "schema://dynamic") -> list[GraphModelInfo]:
+    def _clear_models_by_source_prefix(self, source_prefix: str) -> int:
+        """Remove all models with matching source prefix.
+
+        Args:
+            source_prefix: Source URI prefix to match (e.g., "db://", "file://")
+
+        Returns:
+            Number of models removed
+        """
+        removed_count = 0
+        for _label, info in list(self.items()):
+            if info.source and info.source.startswith(source_prefix):
+                self.remove(info)
+                removed_count += 1
+        return removed_count
+
+    def load_from_json_schemas(
+        self, schemas: list[dict[str, Any]], source_uri: str | None = None, replace_existing: bool = False
+    ) -> list[GraphModelInfo]:
         """Load models from JSON schemas with x-graph extensions.
 
         This method creates Pydantic model classes dynamically from JSON schemas
@@ -462,8 +480,10 @@ class ModelProvider(collections.abc.Collection):
                 - x-graph.label or title: Model label
                 - Optional: x-graph.relations (for nodes)
                 - Optional: x-graph.display
-            source_uri: URI indicating schema source (e.g., "database://server",
-                "schema://injected"). Defaults to "schema://dynamic".
+            source_uri: URI indicating schema source. If None, defaults to
+                config.MODEL_SOURCE_SCHEMA_URI + "dynamic".
+            replace_existing: If True, removes all models with matching source URI
+                prefix before loading new ones. Useful for reloading scenarios.
 
         Returns:
             List of registered GraphModelInfo objects, sorted by label
@@ -496,12 +516,23 @@ class ModelProvider(collections.abc.Collection):
             >>> schemas = fetch_schemas_from_server()
             >>> provider.load_from_json_schemas(
             ...     schemas,
-            ...     source_uri="database://server"
+            ...     source_uri=config.MODEL_SOURCE_DB_URI + "metadata"
             ... )
         """
         if not schemas:
             logger.debug("No schemas provided to load")
             return []
+
+        # Set default source_uri if not provided
+        if source_uri is None:
+            source_uri = f"{config.MODEL_SOURCE_SCHEMA_URI}dynamic"
+
+        # Clear existing models from same source if requested
+        if replace_existing:
+            source_prefix = source_uri.split("://")[0] + "://"
+            removed_count = self._clear_models_by_source_prefix(source_prefix)
+            if removed_count > 0:
+                logger.debug(f"Removed {removed_count} existing model(s) from source prefix '{source_prefix}'")
 
         loaded_models: list[GraphModelInfo] = []
 

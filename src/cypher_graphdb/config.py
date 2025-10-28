@@ -49,3 +49,8 @@ CGDB_GRAPH = "CGDB_GRAPH"
 TREE_DIRECTION_INCOMING = "incoming"
 TREE_DIRECTION_OUTGOING = "outgoing"
 DEFAULT_TREE_DIRECTION = TREE_DIRECTION_INCOMING
+
+# Model source URI schemes
+MODEL_SOURCE_FILE_URI = "file://"  # File-based models (e.g., "file:///path/to/models.py")
+MODEL_SOURCE_DB_URI = "db://"  # Database-loaded models (e.g., "db://metadata")
+MODEL_SOURCE_SCHEMA_URI = "schema://"  # Schema-injected models (e.g., "schema://dynamic")
