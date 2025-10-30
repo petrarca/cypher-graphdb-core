@@ -449,11 +449,11 @@ class ModelProvider(collections.abc.Collection):
 
         return typed_model
 
-    def _clear_models_by_source_prefix(self, source_prefix: str | None) -> int:
+    def _clear_models_by_source(self, source: str | None) -> int:
         """Remove all models with matching source.
 
         Args:
-            source_prefix: Source value to match ("model" for Python models,
+            source: Source value to match ("model" for Python models,
                 None for JSON schema models)
 
         Returns:
@@ -461,7 +461,7 @@ class ModelProvider(collections.abc.Collection):
         """
         removed_count = 0
         for _label, info in list(self.items()):
-            if info.source == source_prefix:
+            if info.source == source:
                 self.remove(info)
                 removed_count += 1
         return removed_count
@@ -523,7 +523,7 @@ class ModelProvider(collections.abc.Collection):
 
         # Clear existing models from JSON schemas (source=None) if requested
         if replace_existing:
-            removed_count = self._clear_models_by_source_prefix(None)
+            removed_count = self._clear_models_by_source(None)
             if removed_count > 0:
                 logger.debug(f"Removed {removed_count} existing schema-based model(s)")
 
