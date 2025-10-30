@@ -50,7 +50,7 @@ class Person(GraphNode):
             assert len(loaded_models) == 1
             assert loaded_models[0].label_ == "Person"
             assert loaded_models[0].source is not None
-            assert loaded_models[0].source.startswith("file://")
+            assert loaded_models[0].source == "model"
 
     def test_load_directory_with_multiple_models(self, record_initial_models):
         """Test loading all models from a directory."""
@@ -107,7 +107,7 @@ class WORKS_AT(GraphEdge):
             # Verify all have source set
             for model_info in loaded_models:
                 assert model_info.source is not None
-                assert model_info.source.startswith("file://")
+                assert model_info.source == "model"
 
     def test_models_are_sorted_correctly(self, record_initial_models):
         """Test that nodes come before edges in sorted results."""
@@ -441,22 +441,20 @@ class Permission(GraphNode):
             assert account_model is not None, "Account model not found"
             assert permission_model is not None, "Permission model not found"
 
-            # Check each model has a source with file URI (only filename, not full path for security)
+            # Check each model has a source set to "file"
             assert account_model.source is not None
-            assert account_model.source.startswith("file://")
-            assert account_model.source == "file://account.py"
+            assert account_model.source == "model"
 
             assert permission_model.source is not None
-            assert permission_model.source.startswith("file://")
-            assert permission_model.source == "file://permission.py"
+            assert permission_model.source == "model"
 
             # Also verify via model_provider.get()
             account_from_provider = model_provider.get("Account")
             assert account_from_provider is not None
             assert account_from_provider.source is not None
-            assert "account.py" in account_from_provider.source
+            assert account_from_provider.source == "model"
 
             permission_from_provider = model_provider.get("Permission")
             assert permission_from_provider is not None
             assert permission_from_provider.source is not None
-            assert "permission.py" in permission_from_provider.source
+            assert permission_from_provider.source == "model"

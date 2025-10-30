@@ -242,11 +242,10 @@ class ModelProvider(collections.abc.Collection):
         loaded_model_infos: list[GraphModelInfo] = []
         for file_path, model_labels in file_to_models.items():
             # Only store filename (not full path) for security reasons
-            filename = os.path.basename(file_path)
-            file_uri = f"{config.MODEL_SOURCE_FILE_URI}{filename}"
+            os.path.basename(file_path)
             for label in model_labels:
                 if model_info := self.get(label):
-                    model_info.source = file_uri
+                    model_info.source = config.MODEL_SOURCE_MODEL
                     loaded_model_infos.append(model_info)
 
         # Sort by label names (nodes first, then edges)
@@ -450,30 +449,31 @@ class ModelProvider(collections.abc.Collection):
 
         return typed_model
 
-    def _clear_models_by_source_prefix(self, source_prefix: str) -> int:
-        """Remove all models with matching source prefix.
+    def _clear_models_by_source_prefix(self, source_prefix: str | None) -> int:
+        """Remove all models with matching source.
 
         Args:
-            source_prefix: Source URI prefix to match (e.g., "db://", "file://")
+            source_prefix: Source value to match ("model" for Python models,
+                None for JSON schema models)
 
         Returns:
             Number of models removed
         """
         removed_count = 0
         for _label, info in list(self.items()):
-            if info.source and info.source.startswith(source_prefix):
+            if info.source == source_prefix:
                 self.remove(info)
                 removed_count += 1
         return removed_count
 
-    def load_from_json_schemas(
-        self, schemas: list[dict[str, Any]], source_uri: str | None = None, replace_existing: bool = False
-    ) -> list[GraphModelInfo]:
+    def load_from_json_schemas(self, schemas: list[dict[str, Any]], replace_existing: bool = False) -> list[GraphModelInfo]:
         """Load models from JSON schemas with x-graph extensions.
 
         This method creates Pydantic model classes dynamically from JSON schemas
         and registers them with the model provider. The schemas must include
         x-graph extensions with metadata (type, label, relations, etc.).
+
+        Models loaded from JSON schemas will have source=None (not set).
 
         Args:
             schemas: List of JSON Schema dictionaries with x-graph extensions.
@@ -482,10 +482,9 @@ class ModelProvider(collections.abc.Collection):
                 - x-graph.label or title: Model label
                 - Optional: x-graph.relations (for nodes)
                 - Optional: x-graph.display
-            source_uri: URI indicating schema source. If None, defaults to
-                config.MODEL_SOURCE_SCHEMA_URI + "dynamic".
-            replace_existing: If True, removes all models with matching source URI
-                prefix before loading new ones. Useful for reloading scenarios.
+            replace_existing: If True, removes all existing models where
+                source is None before loading new ones. Python models (source="model")
+                are preserved. Useful for reloading scenarios.
 
         Returns:
             List of registered GraphModelInfo objects, sorted by label
@@ -516,25 +515,17 @@ class ModelProvider(collections.abc.Collection):
 
             Load models from server:
             >>> schemas = fetch_schemas_from_server()
-            >>> provider.load_from_json_schemas(
-            ...     schemas,
-            ...     source_uri=config.MODEL_SOURCE_DB_URI + "metadata"
-            ... )
+            >>> provider.load_from_json_schemas(schemas, replace_existing=True)
         """
         if not schemas:
             logger.debug("No schemas provided to load")
             return []
 
-        # Set default source_uri if not provided
-        if source_uri is None:
-            source_uri = f"{config.MODEL_SOURCE_SCHEMA_URI}dynamic"
-
-        # Clear existing models from same source if requested
+        # Clear existing models from JSON schemas (source=None) if requested
         if replace_existing:
-            source_prefix = source_uri.split("://")[0] + "://"
-            removed_count = self._clear_models_by_source_prefix(source_prefix)
+            removed_count = self._clear_models_by_source_prefix(None)
             if removed_count > 0:
-                logger.debug(f"Removed {removed_count} existing model(s) from source prefix '{source_prefix}'")
+                logger.debug(f"Removed {removed_count} existing schema-based model(s)")
 
         loaded_models: list[GraphModelInfo] = []
 
@@ -551,21 +542,19 @@ class ModelProvider(collections.abc.Collection):
                 # Create typed Pydantic model class
                 typed_model = self._create_typed_model_class(schema, label, graph_type)
 
-                # Create appropriate model info
+                # Create appropriate model info (source is not set for schema-based models)
                 if graph_type == "NODE":
                     model_info = GraphNodeInfo(
                         label_=label,
                         graph_model=typed_model,
                         relations=relations,
                         display=display,
-                        source=source_uri,
                     )
                 else:  # EDGE
                     model_info = GraphEdgeInfo(
                         label_=label,
                         graph_model=typed_model,
                         display=display,
-                        source=source_uri,
                     )
 
                 # Attach graph_info_ to the generated class

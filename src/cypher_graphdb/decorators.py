@@ -6,6 +6,7 @@ subclasses with the global model provider.
 
 from typing import Any
 
+from . import config
 from .cardinality import Cardinality
 from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
@@ -56,8 +57,14 @@ def node(
             # will be registered under this label in the provider
             node_info.label_ = label_
             node_info.display = display
+            node_info.source = config.MODEL_SOURCE_MODEL
         else:
-            node_info = GraphNodeInfo(label_=label_, graph_model=cls, display=display)
+            node_info = GraphNodeInfo(
+                label_=label_,
+                graph_model=cls,
+                display=display,
+                source=config.MODEL_SOURCE_MODEL,
+            )
             cls.graph_info_ = node_info
 
         # register in the factory
@@ -95,7 +102,12 @@ def edge(
         # derive label from class name if not explicitly defined
         label_ = cls.__name__ if label is None else label
 
-        edge_info = GraphEdgeInfo(label_=label_, graph_model=cls, display=display)
+        edge_info = GraphEdgeInfo(
+            label_=label_,
+            graph_model=cls,
+            display=display,
+            source=config.MODEL_SOURCE_MODEL,
+        )
         cls.graph_info_ = edge_info
 
         if provider is None:

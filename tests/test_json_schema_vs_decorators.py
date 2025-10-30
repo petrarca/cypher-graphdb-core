@@ -349,26 +349,26 @@ class TestDecoratorVsSchemaEquivalence:
     def test_source_tracking_difference(self, provider):
         """Test that source tracking correctly distinguishes the two approaches."""
 
-        # Define using decorators (source will be None initially)
+        # Define using decorators (source will be "model")
         @node(label="PersonDecorator", provider=provider)
         class PersonDecorator(GraphNode):
             name: str
 
-        # Define using JSON schema
+        # Define using JSON schema (source will be None)
         schema = {
             "title": "PersonSchema",
             "type": "object",
             "properties": {"name": {"type": "string"}},
             "x-graph": {"type": "NODE", "label": "PersonSchema"},
         }
-        provider.load_from_json_schemas([schema], source_uri="schema://test")
+        provider.load_from_json_schemas([schema])
 
         # Check sources
         decorator_info = provider.get("PersonDecorator")
         schema_info = provider.get("PersonSchema")
 
-        # Decorator-based has no source initially
-        assert decorator_info.source is None
+        # Decorator-based has source="model"
+        assert decorator_info.source == "model"
 
-        # Schema-based has the provided source
-        assert schema_info.source == "schema://test"
+        # Schema-based has no source (None)
+        assert schema_info.source is None

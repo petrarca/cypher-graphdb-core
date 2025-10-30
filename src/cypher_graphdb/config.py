@@ -50,7 +50,5 @@ TREE_DIRECTION_INCOMING = "incoming"
 TREE_DIRECTION_OUTGOING = "outgoing"
 DEFAULT_TREE_DIRECTION = TREE_DIRECTION_INCOMING
 
-# Model source URI schemes
-MODEL_SOURCE_FILE_URI = "file://"  # File-based models (e.g., "file:///path/to/models.py")
-MODEL_SOURCE_DB_URI = "db://"  # Database-loaded models (e.g., "db://metadata")
-MODEL_SOURCE_SCHEMA_URI = "schema://"  # Schema-injected models (e.g., "schema://dynamic")
+# Model source type identifier
+MODEL_SOURCE_MODEL = "model"  # Models defined in Python code (Pydantic models with decorators)
