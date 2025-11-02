@@ -1,4 +1,5 @@
-from cypher_graphdb import Cardinality, GraphEdge, GraphNode, edge, node, relation
+from cypher_graphdb import (Cardinality, GraphEdge, GraphNode, edge, node,
+                            relation)
 
 
 @node()
@@ -20,9 +21,26 @@ from cypher_graphdb import Cardinality, GraphEdge, GraphNode, edge, node, relati
     cardinality=Cardinality.ONE_TO_MANY,
     form_field=True,
 )
+@relation(
+    rel_type="IP_OWNED_BY",
+    to_type="Company",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
+@relation(
+    rel_type="DEPLOYED_IN",
+    to_type="Country",
+    cardinality=Cardinality.ONE_TO_MANY,
+    form_field=True,
+)
+@relation(
+    rel_type="SUPPORTS_LANGUAGE",
+    to_type="Language",
+    cardinality=Cardinality.ONE_TO_MANY,
+    form_field=True,
+)
 class Product(GraphNode):
     name: str
-    multi_tenancy: bool | None = None
 
 
 @node(label="Technology")
@@ -42,12 +60,24 @@ class UsesTechnology(GraphEdge):
 
 
 @node(label="ArchitecturePattern")
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="ArchitectureCategory",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
 class ArchitecturePattern(GraphNode):
     name: str
     description: str | None = None
 
 
 @node(label="ArchitectureCharacteristic")
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="ArchitectureCategory",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
 class ArchitectureCharacteristic(GraphNode):
     name: str
     description: str | None = None
@@ -80,6 +110,68 @@ class TechnologyRoot(GraphNode):
     name: str
 
 
+@node(label="ArchitectureRoot")
+class ArchitectureRoot(GraphNode):
+    name: str
+
+
+@node(label="ArchitectureCategory")
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="ArchitectureRoot",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
+class ArchitectureCategory(GraphNode):
+    name: str
+    description: str | None = None
+
+
+@node(label="ArchitectureStyle")
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="ArchitectureCategory",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
+class ArchitectureStyle(GraphNode):
+    name: str
+    description: str | None = None
+
+
 @edge(label="BELONGS_TO")
 class BelongsTo(GraphEdge):
+    pass
+
+
+@node(label="Company")
+class Company(GraphNode):
+    name: str
+    description: str | None = None
+
+
+@node(label="Country")
+class Country(GraphNode):
+    name: str
+    description: str | None = None
+
+
+@node(label="Language")
+class Language(GraphNode):
+    name: str
+    description: str | None = None
+
+
+@edge(label="IP_OWNED_BY")
+class IpOwnedBy(GraphEdge):
+    pass
+
+
+@edge(label="DEPLOYED_IN")
+class DeployedIn(GraphEdge):
+    pass
+
+
+@edge(label="SUPPORTS_LANGUAGE")
+class SupportsLanguage(GraphEdge):
     pass
