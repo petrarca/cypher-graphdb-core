@@ -8,10 +8,10 @@ import cypher_graphdb
 from cypher_graphdb import CypherGraphDB, MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
 
 module_prefix = f"{__package__}." if __package__ else ""
-sample_model = import_module(f"{module_prefix}sample_model")
-Product = sample_model.Product
-Technology = sample_model.Technology
-UsesTechnology = sample_model.UsesTechnology
+graph_model = import_module(f"{module_prefix}graph_model")
+Product = graph_model.Product
+Technology = graph_model.Technology
+UsesTechnology = graph_model.UsesTechnology
 
 # configure logging and enable logging for cypher_graphdb
 logger.remove()
@@ -58,7 +58,7 @@ pprint(edge_stats)
 
 """ Merge or create operations, with typed graph objects"""
 
-demo_product = Product(name="CypherGraph Demo", multi_tenancy=True)
+demo_product = Product(name="CypherGraph Demo")
 cdb.create_or_merge(demo_product)
 pprint(demo_product)
 

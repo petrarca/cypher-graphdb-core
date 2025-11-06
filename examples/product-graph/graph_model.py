@@ -1,5 +1,4 @@
-from cypher_graphdb import (Cardinality, GraphEdge, GraphNode, edge, node,
-                            relation)
+from cypher_graphdb import Cardinality, GraphEdge, GraphNode, edge, node, relation
 
 
 @node()
@@ -100,7 +99,15 @@ class HasArchCharacteristic(GraphEdge):
     cardinality=Cardinality.ONE_TO_ONE,
     form_field=True,
 )
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="TechnologyCategory",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
 class TechnologyCategory(GraphNode):
+    """Technology category node. Categories can be nested by relating to another TechnologyCategory."""
+
     name: str
     description: str | None = None
 
@@ -122,7 +129,15 @@ class ArchitectureRoot(GraphNode):
     cardinality=Cardinality.ONE_TO_ONE,
     form_field=True,
 )
+@relation(
+    rel_type="BELONGS_TO",
+    to_type="ArchitectureCategory",
+    cardinality=Cardinality.ONE_TO_ONE,
+    form_field=True,
+)
 class ArchitectureCategory(GraphNode):
+    """Architecture category node. Categories can be nested by relating to another ArchitectureCategory."""
+
     name: str
     description: str | None = None
 

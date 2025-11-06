@@ -15,10 +15,10 @@ from importlib import import_module
 from cypher_graphdb import CypherGraphDB, MatchEdgeCriteria, MatchNodeCriteria
 
 module_prefix = f"{__package__}." if __package__ else ""
-sample_model = import_module(f"{module_prefix}sample_model")
-Product = sample_model.Product
-Technology = sample_model.Technology
-UsesTechnology = sample_model.UsesTechnology
+graph_model = import_module(f"{module_prefix}graph_model")
+Product = graph_model.Product
+Technology = graph_model.Technology
+UsesTechnology = graph_model.UsesTechnology
 
 
 def test_basic_connection():
@@ -70,8 +70,6 @@ def test_fetch_nodes_typed():
         if product:
             # With typed approach, we can access properties directly as attributes
             print(f"Found product: {product.name}")
-            if hasattr(product, "multi_tenancy"):
-                print(f"Supports multi-tenancy: {product.multi_tenancy}")
 
         # Advanced criteria with model class
         criteria = MatchNodeCriteria(label_=Technology, projection_=["n.name", "id(n)"])
@@ -193,10 +191,6 @@ def test_model_comparison():
             if hasattr(typed_product, "name"):
                 print(f"- Product name: {typed_product.name}")
                 print("- Direct attribute access available")
-
-            # Domain-specific attributes
-            if hasattr(typed_product, "multi_tenancy"):
-                print(f"- Multi-tenancy flag available: {typed_product.multi_tenancy}")
 
             # Type validation
             print("- Type validation through Pydantic models")
