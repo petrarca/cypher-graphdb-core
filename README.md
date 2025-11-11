@@ -257,7 +257,7 @@ Define typed models with decorators for better type safety and metadata:
 ```python
 from cypher_graphdb import GraphNode, GraphEdge, node, edge, relation
 
-@node(metadata={"category": "software"})
+@node(label="Product")
 @relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
 class Product(GraphNode):
     name: str
