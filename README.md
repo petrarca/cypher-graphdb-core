@@ -2,19 +2,43 @@
 
 ## Overview
 
-CypherGraphDB provides a lightweight, model-aware Python interface and CLI for working with Cypher-capable graph databases (Apache AGE, Memgraph). Key capabilities:
+CypherGraphDB is a unified Python toolkit for working with Cypher-capable graph databases. It provides three core capabilities:
 
-- **Unified API** – Work with multiple graph backends through consistent interface
-- **Typed models** – Optional Pydantic-based decorators (@node, @edge, @relation)
-- **Query execution** – Direct Cypher queries with result unnesting and statistics
-- **Interactive CLI** – Explore graph databases with syntax highlighting and formatting
-- **Import/Export** – Tools for CSV, Excel, JSON data exchange
+### 1. **Generalized API** - Vendor-Neutral Graph Database Access
 
+Work with multiple graph database backends through a unified, consistent interface:
+
+- **Vendor Neutrality** – Same API works across Apache AGE, Memgraph, and other Cypher databases
+- **Extensible Architecture** – Add new backends by implementing the `CypherBackend` abstract class
+- **Connection Management** – Pooled connections with automatic reconnection and configuration
+- **Query Execution** – Direct Cypher queries with result processing and statistics
+- **Data Exchange** – Built-in import/export tools for CSV, Excel, JSON formats
+- **Schema Operations** – Graph introspection, schema dumping, and analysis tools
+
+### 2. **Typed ORM-Like Access Layer**
+
+Optional Pydantic-based object mapping for type-safe graph operations:
+
+- **Model Decorators** – `@node`, `@edge`, `@relation` for defining graph schemas
+- **Type Safety** – Automatic validation and IDE support with autocompletion
+- **Custom Methods** – Add business logic directly to your graph models
+- **Schema Generation** – Automatic JSON schema generation from Python models
+
+### 3. **Interactive CLI** - Vendor-Neutral Graph Database Operations
+
+Comprehensive command-line interface that works identically across all supported backends:
+
+- **44+ Commands** – Full suite of graph operations, schema management, and analysis tools
+- **Rich Formatting** – Colorized output with tables, trees, and JSON highlighting
+- **Cross-Platform** – Same commands work with Apache AGE, Memgraph, or any supported backend
+- **Interactive Exploration** – Real-time graph querying and visualization
 
 ## Supported Backends
 
 - **age** – Apache AGE extension on PostgreSQL
 - **memgraph** – Memgraph database via Bolt protocol
+
+**Extensible:** Add new Cypher-compatible backends by implementing the `CypherBackend` abstract class.
 
 ## Prerequisites
 
@@ -93,9 +117,13 @@ export CGDB_CINFO="bolt://user:pass@localhost:7687"
 cypher-graphdb --backend memgraph
 ```
 
-## Using the Library
+## 1. Generalized API Usage
 
-### Connection (Recommended)
+### Vendor-Neutral Database Access
+
+The unified API provides consistent access to different graph database backends:
+
+#### Connection (Recommended)
 
 The recommended connection method is `connect_url` for simplicity:
 
@@ -225,9 +253,9 @@ db.execute("""
 """)
 ```
 
-## CLI (Interactive Graph Exploration)
+## 3. Interactive CLI - Vendor-Neutral Graph Operations
 
-The library includes an interactive CLI for exploring graph databases.
+The library includes a comprehensive interactive CLI with 44+ commands for exploring graph databases. The CLI provides identical functionality across all supported backends.
 
 ### Running the CLI
 
@@ -239,18 +267,48 @@ task run:cli
 .venv/bin/cypher-graphdb
 ```
 
-### Common Commands
+### Command Categories
 
-| Command | Purpose |
-|---------|---------|
-| `connect memgraph bolt://localhost:7687` | Connect to Memgraph |
-| `connect age postgresql://...` | Connect to Apache AGE |
-| `MATCH (n) RETURN n LIMIT 5;` | Execute Cypher query |
-| `:help` | Show available commands |
-| `:stats` | Show last query statistics |
-| `:exit` | Exit CLI |
+**Connection Management:**
+- `connect memgraph bolt://localhost:7687` – Connect to Memgraph
+- `connect age postgresql://...` – Connect to Apache AGE
+- `disconnect` – Close current connection
 
-## Typed Models
+**Query Execution:**
+- `MATCH (n) RETURN n LIMIT 5;` – Execute any Cypher query
+- `stats` – Show last query execution statistics
+- `format_output` – Configure result display format
+
+**Graph Operations:**
+- `create_node` – Create nodes with properties
+- `create_edge` – Create relationships between nodes
+- `fetch_nodes` – Retrieve nodes by criteria
+- `fetch_edges` – Retrieve edges by criteria
+- `delete_graphobj` – Remove nodes or edges
+
+**Schema & Introspection:**
+- `dump_schema` – Export graph schema definitions
+- `dump_labels` – List all node and edge labels
+- `dump_models` – Show registered model classes
+- `load_models` – Import model definitions
+
+**Import/Export:**
+- `import_graph` – Load data from CSV, Excel, JSON files
+- `export_graph` – Export graph data to various formats
+
+**Transaction Control:**
+- `commit` – Commit current transaction
+- `rollback` – Rollback current transaction
+
+**Utilities:**
+- `help` – Show all available commands
+- `exit` – Exit CLI (aliases: `quit`, `q`, `bye`)
+- `search` – Full-text search across graph data
+- `graph_to_tree` – Visualize graph structure as tree
+
+> **Vendor Neutrality:** All CLI commands work identically across Apache AGE, Memgraph, and any other supported backend.
+
+## 2. Typed ORM-Like Access Layer
 
 Define typed models with decorators for better type safety and metadata:
 
