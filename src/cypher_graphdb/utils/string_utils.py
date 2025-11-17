@@ -8,7 +8,7 @@ import ast
 from typing import Any
 
 
-def convert_to_str(value) -> str:
+def convert_to_str(value: Any) -> str:
     """Convert various Python types to their string representation.
 
     Converts different Python types (strings, dicts, lists, None, etc.)
@@ -74,7 +74,7 @@ def dict_to_non_quoted_json(values: dict[str, Any]) -> str:
     return "{" + ",".join(items) + "}"
 
 
-def dict_to_value_pairs(dict_values, prefix="", assignment_op="=", separator=",") -> str:
+def dict_to_value_pairs(dict_values: dict[str, Any], prefix: str = "", assignment_op: str = "=", separator: str = ",") -> str:
     """Convert dictionary to string of key-value pairs.
 
     Transforms a dictionary into a delimited string of key-value pairs,
@@ -103,7 +103,7 @@ def dict_to_value_pairs(dict_values, prefix="", assignment_op="=", separator=","
     return separator.join(items)
 
 
-def dict_from_value_pairs(value_pairs: str | dict, assignment_op="=", separator=",") -> dict:
+def dict_from_value_pairs(value_pairs: str | dict, assignment_op: str = "=", separator: str = ",") -> dict:
     """Parse string of key-value pairs into a dictionary.
 
     Parses a delimited string of key-value pairs back into a dictionary,
@@ -150,7 +150,7 @@ def dict_from_value_pairs(value_pairs: str | dict, assignment_op="=", separator=
     return result
 
 
-def resolve_template(template: str, **kwargs) -> str:
+def resolve_template(template: str, **kwargs: Any) -> str:
     """Resolve a string template with named arguments.
 
     Supports Python format strings with curly braces: "labels({node})[0]"
@@ -568,7 +568,7 @@ def args_to_dict(s: str | list[str]) -> dict[str, Any]:
     return result
 
 
-def try_literal_eval(literal) -> tuple[Any, bool]:
+def try_literal_eval(literal: str) -> tuple[Any, bool]:
     """Attempt to evaluate a string as a Python literal.
 
     Tries to parse a string as a Python literal expression. If successful,
@@ -604,7 +604,7 @@ def try_literal_eval(literal) -> tuple[Any, bool]:
     return value, is_literal
 
 
-def starts_with(s, tokens) -> int:
+def starts_with(s: str, tokens: list[str] | tuple[str, ...]) -> int:
     """Check if string starts with any of the given tokens.
 
     Checks if a string starts with any token from a collection and returns

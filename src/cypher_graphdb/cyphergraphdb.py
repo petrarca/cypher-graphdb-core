@@ -56,7 +56,7 @@ the benefits of type safety and validation.
 
 import contextlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from pydantic import BaseModel
@@ -360,7 +360,7 @@ class CypherGraphDB:
         return self._model_provider
 
     @staticmethod
-    def get_settings():
+    def get_settings() -> "config.Settings":
         """Get the singleton settings instance.
 
         Returns:
@@ -424,7 +424,7 @@ class CypherGraphDB:
             self.disconnect()
         return False  # Don't suppress exceptions
 
-    def connect(self, connect_url: str | None = None, *args, **kwargs):
+    def connect(self, connect_url: str | None = None, *args: Any, **kwargs: Any) -> "CypherGraphDB":
         """Establish a connection to the configured graph database backend.
 
         Args:
@@ -634,8 +634,8 @@ class CypherGraphDB:
         self,
         criteria: MatchCriteria,
         unnest_result: str | bool = None,
-        fetch_one=None,
-    ):
+        fetch_one: bool | None = None,
+    ) -> Any:
         """Universal fetch method that dispatches to nodes or edges based on criteria type.
 
         Convenience method that automatically routes to fetch_nodes or fetch_edges
@@ -689,8 +689,8 @@ class CypherGraphDB:
         self,
         criteria: MatchCriteria | int | str | dict[str, Any],
         unnest_result: str | bool = None,
-        fetch_one=None,
-    ):
+        fetch_one: bool | None = None,
+    ) -> Any:
         """Fetch GraphNode instances from the database using flexible criteria.
 
         Provides multiple ways to specify node matching criteria with intelligent
@@ -780,8 +780,8 @@ class CypherGraphDB:
         self,
         criteria: MatchCriteria | int | str | dict[str, Any],
         unnest_result: str | bool = None,
-        fetch_one=None,
-    ):
+        fetch_one: bool | None = None,
+    ) -> Any:
         """Fetch GraphEdge instances from the database using flexible criteria.
 
         Similar to fetch_nodes but for relationships/edges. Supports additional
@@ -882,7 +882,7 @@ class CypherGraphDB:
     def create_or_merge(
         self,
         obj: GraphNode | GraphEdge | Graph,
-        strategy=config.CREATE_OR_MERGE_STRAGEY[0],
+        strategy: Literal["merge", "force_create"] = config.CREATE_OR_MERGE_STRATEGY[0],
     ) -> GraphNode | GraphEdge | Graph:
         """Create or merge graph objects (nodes, edges, or entire graphs) into the database.
 
@@ -945,7 +945,7 @@ class CypherGraphDB:
         if self.read_only:
             raise ReadOnlyModeError("Cannot execute CREATE or MERGE in read-only mode")
 
-        assert strategy in config.CREATE_OR_MERGE_STRAGEY, f"Invalid strategy {strategy}!"
+        assert strategy in config.CREATE_OR_MERGE_STRATEGY, f"Invalid strategy {strategy}!"
 
         if isinstance(obj, GraphNode):
             return self._create_or_merge_node(obj, strategy)
@@ -956,7 +956,7 @@ class CypherGraphDB:
 
         raise RuntimeError(f"Unsupported objectobject type to merge/create: {type(obj)} with strategy {strategy}")
 
-    def delete(self, obj: GraphNode | GraphEdge | MatchCriteria, detach=False):
+    def delete(self, obj: GraphNode | GraphEdge | MatchCriteria, detach: bool = False) -> int | Any:
         """Delete graph entities from the database.
 
         Supports deletion of individual nodes/edges by object reference or
@@ -1078,8 +1078,8 @@ class CypherGraphDB:
         self,
         cypher_cmd: str | ParsedCypherQuery,
         unnest_result: str | bool = None,
-        fetch_one=False,
-        raw_data=False,
+        fetch_one: bool = False,
+        raw_data: bool = False,
     ) -> Any | TabularResult:
         """Execute a Cypher command and return results with flexible formatting options.
 

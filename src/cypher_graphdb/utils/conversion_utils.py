@@ -109,7 +109,7 @@ def resolve_properties(properties: dict) -> dict:
     return properties
 
 
-def isnan(value) -> bool:
+def isnan(value: Any) -> bool:
     """Check if value is a float NaN.
 
     Uses numpy to check for NaN values, handling both float and non-float types safely.

@@ -278,7 +278,7 @@ def extract_from_nested_dict(data: dict[Any, Any], path: tuple) -> dict[Any, Any
     return result
 
 
-def resolve_nested_lengths(value) -> tuple:
+def resolve_nested_lengths(value: Any) -> tuple:
     """Get the nested structure lengths of a collection.
 
     Analyzes the nested structure of lists, tuples, or dictionaries to determine
@@ -321,7 +321,7 @@ def resolve_nested_lengths(value) -> tuple:
     return tuple(result)
 
 
-def expected_nested_lengths(value, sizes: tuple) -> bool:
+def expected_nested_lengths(value: Any, sizes: tuple) -> bool:
     """Check if value has expected nested structure lengths.
 
     Validates that a collection has the expected nested structure by comparing
@@ -422,7 +422,7 @@ def slice_model_properties(cls: type[BaseModel], properties: dict) -> tuple[dict
     return t1, t2
 
 
-def unnest_result(result, unnest_mode: str | bool | None):
+def unnest_result(result: Any, unnest_mode: str | bool | None) -> Any:
     """Unnest result collections based on specified mode.
 
     Simplifies nested result structures based on the unnest mode.

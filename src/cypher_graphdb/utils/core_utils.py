@@ -86,7 +86,7 @@ def generate_unique_string_id(length: int = 16) -> str:
     return unique_id
 
 
-def resolve_fileformat(file_or_dirname) -> str | None:
+def resolve_fileformat(file_or_dirname: str) -> str | None:
     """Resolve file format from file extension.
 
     Determines the file format based on file extension, supporting common

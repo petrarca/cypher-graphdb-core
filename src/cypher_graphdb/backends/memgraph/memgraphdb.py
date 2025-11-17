@@ -197,7 +197,7 @@ class MemgraphDB(CypherBackend):
 
         Args:
             cypher_query: Base Cypher query to modify for full-text search.
-             fts_query: Full-text search query string.
+            fts_query: Full-text search query string.
             language: Language for text search.
 
         Returns:

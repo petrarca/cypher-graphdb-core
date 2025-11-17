@@ -16,8 +16,8 @@ def parse_connection_uri(uri: str | None) -> dict[str, Any]:
 
     Supports various URI formats:
     - bolt://[username:password@]host[:port]
-    - postgres://[username:password@]host[:port][/database]
-    - postgresql://[username:password@]host[:port][/database]
+    - postgres://[username:password@]host[:port][`/database`]
+    - postgresql://[username:password@]host[:port][`/database`]
     - key=value format: "host=localhost port=7687 username=user"
 
     Args:
