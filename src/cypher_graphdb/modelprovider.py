@@ -8,6 +8,7 @@ import collections.abc
 import importlib.util
 import os
 import re
+import threading
 import traceback
 from typing import Any, Final
 
@@ -30,6 +31,7 @@ class ModelProvider(collections.abc.Collection):
         """
         self._models: GraphModelInfo = {}
         self._disabled = False
+        self._lock = threading.RLock()
 
         # passed to callbacks
         self._ctx = ctx
@@ -57,11 +59,13 @@ class ModelProvider(collections.abc.Collection):
     # Combine the sorted lists
     def register(self, modelinfo: GraphModelInfo):
         """Register a model class under its label."""
-        self._models[modelinfo.label_] = modelinfo
+        with self._lock:
+            self._models[modelinfo.label_] = modelinfo
 
     def remove(self, modelinfo: GraphModelInfo) -> bool:
         """Remove a registered model and return True if it existed."""
-        return bool(self._models.pop(modelinfo.label_, None))
+        with self._lock:
+            return bool(self._models.pop(modelinfo.label_, None))
 
     def get(self, label: str) -> GraphModelInfo:
         """Get model info by label, returning None if not found."""
@@ -305,29 +309,30 @@ class ModelProvider(collections.abc.Collection):
         # Resolve absolute path for source URI
         abs_path = os.path.abspath(path)
 
-        # Track loading results
-        file_to_models: dict[str, list[str]] = {}
+        with self._lock:
+            # Track loading results
+            file_to_models: dict[str, list[str]] = {}
 
-        # Check if path is a file or directory
-        if os.path.isfile(path):
-            logger.debug(f"Loading single model file: {path}")
-            mod_name = module_name or (utils.split_path(path))[1]
-            success, newly_loaded = self._load_single_file(path, mod_name)
-            if success and newly_loaded:
-                file_to_models[abs_path] = newly_loaded
-        elif os.path.isdir(path):
-            success, file_to_models_result = self._load_from_directory(path)
-            if success:
-                # Convert relative paths to absolute
-                file_to_models = {os.path.abspath(fp): models for fp, models in file_to_models_result.items()}
+            # Check if path is a file or directory
+            if os.path.isfile(path):
+                logger.debug(f"Loading single model file: {path}")
+                mod_name = module_name or (utils.split_path(path))[1]
+                success, newly_loaded = self._load_single_file(path, mod_name)
+                if success and newly_loaded:
+                    file_to_models[abs_path] = newly_loaded
+            elif os.path.isdir(path):
+                success, file_to_models_result = self._load_from_directory(path)
+                if success:
+                    # Convert relative paths to absolute
+                    file_to_models = {os.path.abspath(fp): models for fp, models in file_to_models_result.items()}
 
-        if not file_to_models:
-            return None
+            if not file_to_models:
+                return None
 
-        # Update source and collect model info
-        sorted_model_infos = self._update_source_and_collect(file_to_models)
+            # Update source and collect model info
+            sorted_model_infos = self._update_source_and_collect(file_to_models)
 
-        return sorted_model_infos
+            return sorted_model_infos
 
     def model_dump(self, context: Any = None) -> dict[str, GraphModelInfo]:
         """Export all model info as a serializable dictionary."""
@@ -338,15 +343,18 @@ class ModelProvider(collections.abc.Collection):
 
     def disable(self):
         """Disable model resolution, falling back to default types."""
-        self._disabled = True
+        with self._lock:
+            self._disabled = True
 
     def enable(self):
         """Re-enable model resolution."""
-        self._disabled = False
+        with self._lock:
+            self._disabled = False
 
     def reset(self):
         """Remove all models without associated graph_model classes."""
-        self._models = [item for item in self._models if item.graph_model is not None]
+        with self._lock:
+            self._models = [item for item in self._models if item.graph_model is not None]
 
     def _parse_display_config(self, display_data: dict[str, Any] | None):
         """Parse display configuration from x-graph extension.
@@ -521,64 +529,65 @@ class ModelProvider(collections.abc.Collection):
             logger.debug("No schemas provided to load")
             return []
 
-        # Clear existing models from JSON schemas (source=None) if requested
-        if replace_existing:
-            removed_count = self._clear_models_by_source(None)
-            if removed_count > 0:
-                logger.debug(f"Removed {removed_count} existing schema-based model(s)")
+        with self._lock:
+            # Clear existing models from JSON schemas (source=None) if requested
+            if replace_existing:
+                removed_count = self._clear_models_by_source(None)
+                if removed_count > 0:
+                    logger.debug(f"Removed {removed_count} existing schema-based model(s)")
 
-        loaded_models: list[GraphModelInfo] = []
+            loaded_models: list[GraphModelInfo] = []
 
-        for schema in schemas:
-            try:
-                # Extract x-graph metadata
-                label, graph_type, relations, display = self._extract_x_graph_metadata(schema)
+            for schema in schemas:
+                try:
+                    # Extract x-graph metadata
+                    label, graph_type, relations, display = self._extract_x_graph_metadata(schema)
 
-                # Check if model already exists
-                if existing := self.get(label):
-                    logger.warning(f"Model '{label}' already registered, skipping. Source: {existing.source}")
+                    # Check if model already exists
+                    if existing := self.get(label):
+                        logger.warning(f"Model '{label}' already registered, skipping. Source: {existing.source}")
+                        continue
+
+                    # Create typed Pydantic model class
+                    typed_model = self._create_typed_model_class(schema, label, graph_type)
+
+                    # Create appropriate model info (source is not set for schema-based models)
+                    if graph_type == "NODE":
+                        model_info = GraphNodeInfo(
+                            label_=label,
+                            graph_model=typed_model,
+                            relations=relations,
+                            display=display,
+                        )
+                    else:  # EDGE
+                        model_info = GraphEdgeInfo(
+                            label_=label,
+                            graph_model=typed_model,
+                            display=display,
+                        )
+
+                    # Attach graph_info_ to the generated class
+                    typed_model.graph_info_ = model_info
+
+                    # Register with provider
+                    self.register(model_info)
+                    loaded_models.append(model_info)
+
+                    logger.debug(f"Successfully loaded {graph_type} model '{label}' from schema")
+
+                except Exception as e:
+                    schema_title = schema.get("title", "unknown")
+                    logger.error(f"Failed to load schema '{schema_title}': {e}")
+                    # Continue processing other schemas
                     continue
 
-                # Create typed Pydantic model class
-                typed_model = self._create_typed_model_class(schema, label, graph_type)
+            # Sort results (nodes first, then edges)
+            if loaded_models:
+                sorted_labels = self.sort_model_names([mi.label_ for mi in loaded_models])
+                loaded_models = [next(mi for mi in loaded_models if mi.label_ == label) for label in sorted_labels]
 
-                # Create appropriate model info (source is not set for schema-based models)
-                if graph_type == "NODE":
-                    model_info = GraphNodeInfo(
-                        label_=label,
-                        graph_model=typed_model,
-                        relations=relations,
-                        display=display,
-                    )
-                else:  # EDGE
-                    model_info = GraphEdgeInfo(
-                        label_=label,
-                        graph_model=typed_model,
-                        display=display,
-                    )
-
-                # Attach graph_info_ to the generated class
-                typed_model.graph_info_ = model_info
-
-                # Register with provider
-                self.register(model_info)
-                loaded_models.append(model_info)
-
-                logger.debug(f"Successfully loaded {graph_type} model '{label}' from schema")
-
-            except Exception as e:
-                schema_title = schema.get("title", "unknown")
-                logger.error(f"Failed to load schema '{schema_title}': {e}")
-                # Continue processing other schemas
-                continue
-
-        # Sort results (nodes first, then edges)
-        if loaded_models:
-            sorted_labels = self.sort_model_names([mi.label_ for mi in loaded_models])
-            loaded_models = [next(mi for mi in loaded_models if mi.label_ == label) for label in sorted_labels]
-
-        logger.info(f"Loaded {len(loaded_models)} model(s) from JSON schemas")
-        return loaded_models
+            logger.info(f"Loaded {len(loaded_models)} model(s) from JSON schemas")
+            return loaded_models
 
     def __contains__(self, x: object) -> bool:
         return x.label_ in self._models

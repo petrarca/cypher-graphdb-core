@@ -5,6 +5,7 @@ Provides BackendProvider for registering and resolving backends by name, and the
 
 import collections.abc
 import importlib
+import threading
 from collections.abc import Iterator
 from typing import Final
 
@@ -20,6 +21,7 @@ class BackendProvider(collections.abc.Collection):
     def __init__(self) -> None:
         """Initialize an empty backend registry."""
         self._backends: dict[str, CypherBackend | type[CypherBackend]] = {}
+        self._lock = threading.RLock()
 
     def register(self, name: str, cls: CypherBackend) -> None:
         """Register a backend class under the given name.
@@ -86,24 +88,25 @@ class BackendProvider(collections.abc.Collection):
             An instantiated CypherBackend, or None if resolution fails.
 
         """
-        normalized_name = name.casefold()
+        with self._lock:
+            normalized_name = name.casefold()
 
-        for phase in (0, 1):
-            result = self._backends.get(normalized_name, None)
-            if result:
-                break
+            for phase in (0, 1):
+                result = self._backends.get(normalized_name, None)
+                if result:
+                    break
 
-            # try to load module in first phase, if load failed, give up
-            if not phase and not self._try_to_load_backend(name):
-                break
+                # try to load module in first phase, if load failed, give up
+                if not phase and not self._try_to_load_backend(name):
+                    break
 
-        # Instantiate only if result is a backend class (not an instance already)
-        if result and isinstance(result, type) and issubclass(result, CypherBackend):
-            result = result()
-            # replace class with singleton instance
-            self._backends[normalized_name] = result
+            # Instantiate only if result is a backend class (not an instance already)
+            if result and isinstance(result, type) and issubclass(result, CypherBackend):
+                result = result()
+                # replace class with singleton instance
+                self._backends[normalized_name] = result
 
-        return result
+            return result
 
     def items(self) -> dict[str, CypherBackend | type[CypherBackend]]:
         """Return a snapshot of the registry mapping names to backends.
