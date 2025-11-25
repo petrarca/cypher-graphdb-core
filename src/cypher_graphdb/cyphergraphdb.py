@@ -59,7 +59,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import config, modelprovider, utils
 from . import graphops as gops
@@ -70,6 +70,51 @@ from .cypherparser import ParsedCypherQuery
 from .exceptions import ReadOnlyModeError
 from .models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .statistics import LabelStatistics
+
+
+class QueryResult(BaseModel):
+    """Immutable container for query execution results and metadata.
+
+    Provides complete query execution information without mutable state,
+    ensuring thread safety and clean state ownership.
+
+    Attributes:
+        data: Query results formatted according to unnest_result parameter
+        exec_statistics: Execution metrics and statistics
+        sql_statistics: SQL-specific statistics (SQL queries only)
+        parsed_query: Parsed query analysis and metadata
+    """
+
+    data: Any | TabularResult = Field(..., description="Query results data")
+    exec_statistics: ExecStatistics = Field(..., description="Execution statistics")
+    sql_statistics: SqlStatistics | None = Field(None, description="SQL statistics (SQL queries only)")
+    parsed_query: ParsedCypherQuery | None = Field(None, description="Parsed query analysis")
+
+    model_config = {"frozen": True}  # Makes the model immutable
+
+    def is_empty(self) -> bool:
+        """Check if the result contains no data.
+
+        Returns:
+            True if the result contains no data, False otherwise
+        """
+        return not self.data
+
+    def has_graph_data(self) -> bool:
+        """Check if the result contains graph data (nodes/edges).
+
+        Returns:
+            True if the result contains graph data, False otherwise
+        """
+        return self.exec_statistics.has_graph_data()
+
+    def has_tabular_data(self) -> bool:
+        """Check if the result contains tabular data.
+
+        Returns:
+            True if the result contains tabular data, False otherwise
+        """
+        return self.exec_statistics.has_tabular_data()
 
 
 class MatchCriteria(BaseModel):
@@ -292,10 +337,6 @@ class CypherGraphDB:
         # inject into the backend
         self._backend.model_provider = self._model_provider
 
-        self._exec_statistics = ExecStatistics()
-        self._sql_statistics = SqlStatistics()
-        self._last_parsed_query = None
-
         # will be called before executing the query for e.g. security checks
         self.on_before_execute: Callable = lambda parsed_query: True
         # will be called after executing the query
@@ -331,15 +372,6 @@ class CypherGraphDB:
             Graph name string, or None if no backend connected.
         """
         return self._backend.graph_name if self._backend else None
-
-    @property
-    def last_parsed_query(self) -> ParsedCypherQuery:
-        """Get the most recently parsed Cypher query.
-
-        Returns:
-            ParsedCypherQuery object containing query analysis.
-        """
-        return self._last_parsed_query
 
     @property
     def backend(self) -> Any:
@@ -1157,6 +1189,68 @@ class CypherGraphDB:
 
         return utils.unnest_result(result, unnest_result)
 
+    def execute_with_stats(
+        self,
+        cypher_cmd: str | ParsedCypherQuery,
+        unnest_result: str | bool = None,
+        fetch_one: bool = False,
+        raw_data: bool = False,
+    ) -> QueryResult:
+        """Execute a Cypher command and return immutable QueryResult with statistics.
+
+        Provides complete query execution information without mutable state,
+        ensuring thread safety and clean state ownership.
+
+        Args:
+            cypher_cmd: Cypher query string or pre-parsed ParsedCypherQuery
+            unnest_result: Result formatting option (same as execute method)
+            fetch_one: Optimize for single result (stops after first match)
+            raw_data: Return raw database results without object transformation
+
+        Returns:
+            QueryResult containing data, execution statistics, and parsed query
+
+        Examples:
+            ```python
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
+
+                # Full query information
+                result = cdb.execute_with_stats("MATCH (p:Product) RETURN p.name", unnest_result="c")
+                data = result.data  # ['Product1', 'Product2', ...]
+                stats = result.exec_statistics  # Execution metrics
+                parsed = result.parsed_query  # Query analysis
+
+                # Performance monitoring
+                if result.exec_statistics.exec_time > 1.0:
+                    print(f"Slow query: {result.exec_statistics.exec_time}s")
+
+                # Check data types
+                if result.has_graph_data():
+                    print(f"Graph result with {result.exec_statistics.nodes} nodes")
+                elif result.has_tabular_data():
+                    print(f"Tabular result with {result.exec_statistics.row_count} rows")
+            ```
+        """
+        assert self._backend
+
+        logger.debug(f"Execute cypher with stats {unnest_result=}, {fetch_one=}: \n{cypher_cmd}")
+
+        # Parse the query to get the parsed query object
+        parsed_query = self._parse_cypher(cypher_cmd)
+
+        # Execute the query and get statistics
+        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data)
+
+        # Create immutable QueryResult
+        return QueryResult(
+            data=utils.unnest_result(result, unnest_result),
+            exec_statistics=exec_stats,
+            sql_statistics=None,  # Only populated for SQL queries
+            parsed_query=parsed_query,
+        )
+
     def execute_sql(
         self,
         sql_str: str,
@@ -1171,6 +1265,59 @@ class CypherGraphDB:
         result = self._execute_sql(sql_str, fetch_one, raw_data)
 
         return utils.unnest_result(result, unnest_result)
+
+    def execute_sql_with_stats(
+        self,
+        sql_str: str,
+        unnest_result: str | bool = None,
+        fetch_one: bool = False,
+        raw_data: bool = False,
+    ) -> QueryResult:
+        """Execute a SQL command and return immutable QueryResult with statistics.
+
+        Provides complete query execution information for SQL queries without mutable state,
+        ensuring thread safety and clean state ownership.
+
+        Args:
+            sql_str: SQL query string to execute
+            unnest_result: Result formatting option (same as execute_sql method)
+            fetch_one: Optimize for single result (stops after first match)
+            raw_data: Return raw database results without object transformation
+
+        Returns:
+            QueryResult containing data, execution statistics, SQL statistics, and no parsed query
+
+        Examples:
+            ```python
+            # Using context manager (recommended approach)
+            with CypherGraphDB() as cdb:
+                cdb.connect()
+
+                # SQL query with full information
+                result = cdb.execute_sql_with_stats("SELECT * FROM products LIMIT 5")
+                data = result.data  # Query results
+                exec_stats = result.exec_statistics  # Execution metrics
+                sql_stats = result.sql_statistics  # SQL-specific info including column names
+
+                # Access SQL column information
+                if sql_stats and sql_stats.col_names:
+                    print(f"Columns: {sql_stats.col_names}")
+            ```
+        """
+        assert self._backend
+
+        logger.debug(f"Execute SQL with stats {unnest_result=}, {fetch_one=}: \n{sql_str}")
+
+        # Execute the SQL query and get statistics
+        result, exec_stats, sql_stats = self._backend.execute_sql(sql_str, fetch_one=fetch_one, raw_data=raw_data)
+
+        # Create immutable QueryResult
+        return QueryResult(
+            data=utils.unnest_result(result, unnest_result),
+            exec_statistics=exec_stats,
+            sql_statistics=sql_stats,  # SQL statistics populated for SQL queries
+            parsed_query=None,  # No parsed query for SQL queries
+        )
 
     def search(
         self, parsed_query: ParsedCypherQuery, fts_query: str, language: str = None, unnest_result: str | bool = None
@@ -1232,69 +1379,13 @@ class CypherGraphDB:
         assert self._backend
         logger.debug(f"Search fts_query={fts_query} unnest_result={unnest_result}\ncypher_query={parsed_query.submitted_query}")
 
-        result, self._exec_statistics = self._backend.fulltext_search(
+        result, _ = self._backend.fulltext_search(
             parsed_query,
             fts_query,
             language,
         )
 
         return utils.unnest_result(result, unnest_result)
-
-    def exec_statistics(self) -> ExecStatistics:
-        """Get execution statistics from the most recent database operation.
-
-        Provides detailed metrics about the last executed query including
-        timing, resource usage, and result statistics. Useful for performance
-        monitoring
-            and query optimization.
-
-            Returns:
-                ExecStatistics object with comprehensive operation metrics
-
-            Examples:
-                ```python
-                # Using context manager (recommended)
-                with CypherGraphDB() as cdb:
-                    cdb.connect()
-
-                    # Execute a query
-                    result = cdb.execute("MATCH (n:Product) RETURN count(n)")
-
-                    # Get execution statistics
-                    stats = cdb.exec_statistics()
-                    print(f"Execution time: {stats.execution_time_ms}ms")
-                    print(f"Nodes examined: {stats.nodes_examined}")
-                    print(
-                        "Relationships examined: "
-                        f"{stats.relationships_examined}"
-                    )
-                    print(f"Records produced: {stats.records_produced}")
-                    print(f"Memory usage: {stats.memory_used_bytes} bytes")
-
-                    # Monitor complex query performance
-                    complex_result = cdb.execute('''
-                        MATCH (p:Product)-[:USES_TECHNOLOGY*1..2]->(t:Technology)
-                        WHERE t.name = "Python"
-                        RETURN p.name, t.name
-                        ORDER BY p.name
-                        LIMIT 100
-                    ''')
-
-                    perf_stats = cdb.exec_statistics()
-                    if perf_stats.execution_time_ms > 1000:  # Slow query
-                        print(f"Query took {perf_stats.execution_time_ms}ms")
-                        print(f"Consider adding indexes or optimizing")
-                ```
-        """
-        return self._exec_statistics
-
-    def sql_statistics(self) -> SqlStatistics:
-        """Get SQL statistics from the last operation.
-
-        Returns:
-            SqlStatistics object with SQL execution metrics.
-        """
-        return self._sql_statistics
 
     def graphs(self) -> tuple[str]:
         """Get list of available graphs in the database backend.
@@ -1627,8 +1718,7 @@ class CypherGraphDB:
         return obj
 
     def _parse_cypher(self, cmd: str) -> ParsedCypherQuery:
-        self._last_parsed_query = self._backend.parse_cypher(cmd)
-        return self._last_parsed_query
+        return self._backend.parse_cypher(cmd)
 
     def _parse_and_execute(
         self,
@@ -1647,9 +1737,7 @@ class CypherGraphDB:
             logger.debug("Cancelled execution due failure of before_execute hook!")
             return None
 
-        self._last_parsed_query = parsed_query
-
-        result, self._exec_statistics = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data)
+        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data)
 
         self._after_execute(result, parsed_query)
 
@@ -1665,7 +1753,7 @@ class CypherGraphDB:
             self.on_after_execute(result, parsed_query)
 
     def _execute_sql(self, sql_str: str, fetch_one: bool, raw_data: bool) -> TabularResult:
-        result, self._exec_statistics, self._sql_statistics = self._backend.execute_sql(sql_str, fetch_one, raw_data)
+        result, exec_stats, sql_stats = self._backend.execute_sql(sql_str, fetch_one, raw_data)
 
         return result
 

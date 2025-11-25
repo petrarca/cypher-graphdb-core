@@ -33,6 +33,7 @@ class DumpStatisticsCommand(BaseCommand):
         """Execute the dump statistics command.
 
         Shows execution statistics for either cypher or SQL operations.
+        Uses cached statistics from the last query execution.
 
         Args:
             parsed_cmd: Parsed command with optional statistics type
@@ -44,9 +45,17 @@ class DumpStatisticsCommand(BaseCommand):
 
         match stats_type:
             case "exec":
-                result = self.graphdb.db.exec_statistics()
+                # Get cached execution statistics from CLI state
+                if not hasattr(self.graph_data, "last_exec_statistics") or self.graph_data.last_exec_statistics is None:
+                    rich.print("[red]No query statistics available! Execute a query first.", file=sys.stderr)
+                    return False
+                result = self.graph_data.last_exec_statistics
             case "sql":
-                result = self.graphdb.db.sql_statistics()
+                # SQL statistics need to be accessed from cached QueryResult
+                if not hasattr(self.graph_data, "last_sql_statistics") or self.graph_data.last_sql_statistics is None:
+                    rich.print("[red]No SQL statistics available! Execute a SQL query first.", file=sys.stderr)
+                    return False
+                result = self.graph_data.last_sql_statistics
             case _:
                 rich.print(f"[red]Invalid statistics type {stats_type}!", file=sys.stderr)
                 return False

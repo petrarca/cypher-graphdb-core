@@ -39,8 +39,11 @@ class SearchCommand(BaseCommand):
 
         parsed_cmd.output = self.graphdb.db.search(parsed_query, parsed_cmd.get_arg(0), parsed_cmd.get_kwarg("language"), False)
 
-        # label columns based on cypher returns
-        render_kwargs = {"col_headers": self.graphdb.db.last_parsed_query.return_arguments.values()}
+        # label columns based on cached parsed query returns
+        if hasattr(self.graph_data, "last_parsed_query") and self.graph_data.last_parsed_query:
+            render_kwargs = {"col_headers": self.graph_data.last_parsed_query.return_arguments.values()}
+        else:
+            render_kwargs = {}
 
         return self._post_processing_cmd(parsed_cmd, parsed_cmd.output, render_kwargs=render_kwargs)
 
@@ -58,12 +61,11 @@ class SearchCommand(BaseCommand):
         """
         from cypher_graphdb.cypherparser import ParsedCypherQuery
 
-        if parsed_cmd.is_singlecmd():
-            if not (parsed_query := self.graphdb.db.last_parsed_query):
-                rich.print("[yellow]No parsed query")
+        if parsed_cmd.is_singlecmd() or parsed_cmd.is_firstcmd():
+            if not hasattr(self.graph_data, "last_parsed_query") or self.graph_data.last_parsed_query is None:
+                rich.print("[yellow]No parsed query available! Execute a query first.")
                 return None
-        elif parsed_cmd.is_firstcmd():
-            parsed_query = self.graphdb.db.last_parsed_query
+            parsed_query = self.graph_data.last_parsed_query
         else:
             parsed_query = parsed_cmd.input
 

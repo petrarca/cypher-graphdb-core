@@ -67,8 +67,8 @@ class DumpParsedQueryCommand(BaseCommand):
         Returns:
             The parsed query object or None if not available
         """
-        # This method would need to be implemented based on how
-        # parsed queries are stored/accessed in the CLI context
-        # For now, delegate to the graphdb's last parsed query
+        # Get cached parsed query from CLI state (simplified approach)
         _ = parsed_cmd  # Mark as intentionally unused for now
-        return self.graphdb.db.last_parsed_query if self.graphdb.db else None
+        if not hasattr(self.graph_data, "last_parsed_query") or self.graph_data.last_parsed_query is None:
+            return None
+        return self.graph_data.last_parsed_query

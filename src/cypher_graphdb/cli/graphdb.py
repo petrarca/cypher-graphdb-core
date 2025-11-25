@@ -117,8 +117,44 @@ class CLIGraphDB(GraphDBProvider):
     def execute(self, cyper_cmd: str) -> list[tuple[Any, ...]]:
         return self.db.execute(cyper_cmd, unnest_result=False)
 
+    def execute_with_stats(
+        self, cyper_cmd: str, *, fetch_one: bool = False, raw_data: bool = False, unnest_result: bool | str = False
+    ):
+        """Execute Cypher command and return QueryResult with statistics.
+
+        Delegates to the underlying CypherGraphDB instance's execute_with_stats method.
+
+        Args:
+            cyper_cmd: Cypher command string
+            fetch_one: Whether to fetch only one result
+            raw_data: Whether to return raw database objects
+            unnest_result: Whether to unnest the result (False, True, or specific unnest type)
+
+        Returns:
+            QueryResult: Complete query result with data, statistics, and parsed query
+        """
+        return self.db.execute_with_stats(cyper_cmd, fetch_one=fetch_one, raw_data=raw_data, unnest_result=unnest_result)
+
     def execute_sql(self, sql_str: str) -> list[tuple[Any, ...]]:
         return self.db.execute_sql(sql_str, unnest_result=False)
+
+    def execute_sql_with_stats(
+        self, sql_str: str, *, fetch_one: bool = False, raw_data: bool = False, unnest_result: bool | str = False
+    ):
+        """Execute SQL command and return QueryResult with SQL statistics.
+
+        Delegates to the underlying CypherGraphDB instance's execute_sql_with_stats method.
+
+        Args:
+            sql_str: SQL command string
+            fetch_one: Whether to fetch only one result
+            raw_data: Whether to return raw database objects
+            unnest_result: Whether to unnest the result (False, True, or specific unnest type)
+
+        Returns:
+            QueryResult: Complete query result with data, execution statistics, and SQL statistics
+        """
+        return self.db.execute_sql_with_stats(sql_str, fetch_one=fetch_one, raw_data=raw_data, unnest_result=unnest_result)
 
     def commit(self) -> bool:
         assert self.db

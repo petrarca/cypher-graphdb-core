@@ -34,9 +34,18 @@ class SqlCommand(BaseCommand):
             return False
 
         try:
-            result = self.graphdb.execute_sql(parsed_cmd.options)
+            # Execute SQL with statistics to get QueryResult
+            query_result = self.graphdb.execute_sql_with_stats(parsed_cmd.options)
+            result = query_result.data
 
-            render_kwargs = {"col_headers": self.graphdb.db.sql_statistics().col_names, "col_style": "green"}
+            # Cache SQL statistics for dump_statistics_command
+            self.graph_data.last_sql_statistics = query_result.sql_statistics
+
+            # Get column headers from SQL statistics in QueryResult
+            if query_result.sql_statistics and query_result.sql_statistics.col_names:
+                render_kwargs = {"col_headers": query_result.sql_statistics.col_names, "col_style": "green"}
+            else:
+                render_kwargs = {"col_style": "green"}
         # pylint: disable=W0718
         except Exception as e:
             rich.print(e)
