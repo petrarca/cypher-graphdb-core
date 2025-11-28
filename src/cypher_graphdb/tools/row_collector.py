@@ -31,12 +31,14 @@ class RowCollector:
     Note: Call close() when done to release resources (currently no-op for pure Python).
     """
 
-    def __init__(self, db: CypherGraphDB, with_label: bool = True):
+    def __init__(self, db: CypherGraphDB, with_label: bool = True, chunk_size: int = 50000):
         self.db = db
         self.with_label = with_label
         self._label: str | None = None
         # node metadata cache: id -> (gid, label)
         self._node_cache: dict[int, tuple[str | None, str | None]] = {}
+        # Chunking configuration
+        self.chunk_size = chunk_size
 
     def collect(self, entities: Iterable[GraphNode | GraphEdge]) -> list[dict[str, Any]]:
         # Reset label constraint so the same collector instance can be reused across
@@ -66,57 +68,11 @@ class RowCollector:
         if not edges:
             return rows
 
-        rows.extend(self._collect_edges_pure_python(edges))
+        # Always use chunked processing for consistency and memory safety
+        chunk_rows = self._collect_edges_chunked(edges)
+        rows.extend(chunk_rows)
 
         return rows
-
-    def _collect_edges_pure_python(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:
-        """Process edges using pure Python dictionary lookups instead of SQL JOINs."""
-        # Determine endpoint ids for edges; if they're already in cache, skip lookups entirely.
-        endpoint_ids: set[int] = set()
-        for e in edges:
-            if e.start_id_ is not None:
-                endpoint_ids.add(e.start_id_)
-            if e.end_id_ is not None:
-                endpoint_ids.add(e.end_id_)
-        missing_ids = endpoint_ids.difference(self._node_cache.keys())
-
-        # Batch populate cache for any node ids not already seen (minimize backend lookups)
-        if missing_ids:
-            self._bulk_populate_node_cache(missing_ids)
-
-        result: list[dict[str, Any]] = []
-
-        for edge in edges:
-            edge_data = edge.model_dump(context={"with_type": False})
-
-            # Get start node metadata
-            start_gid, start_label = self._node_cache.get(edge.start_id_, (None, None))
-            # Get end node metadata
-            end_gid, end_label = self._node_cache.get(edge.end_id_, (None, None))
-
-            # Build result row
-            row: dict[str, Any] = {
-                "start_gid_": start_gid,
-                "end_gid_": end_gid,
-            }
-
-            # Add edge label if requested
-            if self.with_label:
-                row["label_"] = edge.label_
-
-            # Add labels if requested
-            if self.with_label:
-                row["start_label_"] = start_label
-                row["end_label_"] = end_label
-
-            # Add edge properties
-            edge_props = edge_data.pop("properties_", {}) or {}
-            row.update(edge_props)
-
-            result.append(row)
-
-        return result
 
     def _row_from_entity(self, obj: GraphNode | GraphEdge) -> dict[str, Any]:
         obj.resolve()
@@ -226,12 +182,90 @@ class RowCollector:
         for node_id, gid, label in rows:
             self._node_cache[node_id] = (gid, label)
 
+    def _collect_edges_chunked(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:
+        """Process edges in chunks for memory efficiency."""
+        from cypher_graphdb import utils
+
+        all_rows = []
+
+        # Process edges in chunks
+        for edge_chunk in utils.chunk_list(edges, self.chunk_size):
+            chunk_rows = self._process_edges_chunk(edge_chunk)
+            all_rows.extend(chunk_rows)
+
+        return all_rows
+
+    def _process_edges_chunk(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:
+        """Process a single chunk of edges efficiently."""
+        result: list[dict[str, Any]] = []
+        node_cache = self._node_cache  # Local reference for speed
+
+        for edge in edges:
+            edge_data = edge.model_dump(context={"with_type": False})
+
+            # Get start node metadata
+            start_gid, start_label = node_cache.get(edge.start_id_, (None, None))
+            # Get end node metadata
+            end_gid, end_label = node_cache.get(edge.end_id_, (None, None))
+
+            # Build result row
+            row: dict[str, Any] = {
+                "start_gid_": start_gid,
+                "end_gid_": end_gid,
+            }
+
+            # Add edge label if requested
+            if self.with_label:
+                row["label_"] = edge.label_
+
+            # Add labels if requested
+            if self.with_label:
+                row["start_label_"] = start_label
+                row["end_label_"] = end_label
+
+            # Add edge properties
+            edge_props = edge_data.pop("properties_", {}) or {}
+            row.update(edge_props)
+
+            result.append(row)
+
+        return result
+
+    def collect_streaming(self, entities: Iterable[GraphNode | GraphEdge]):
+        """Streaming API for processing large datasets - yields chunks."""
+        # Reset label constraint
+        self._label = None
+
+        # Separate nodes and edges
+        nodes: list[GraphNode] = []
+        edges: list[GraphEdge] = []
+        for e in entities:
+            if isinstance(e, GraphNode):
+                nodes.append(e)
+            elif isinstance(e, GraphEdge):
+                edges.append(e)
+
+        # Process nodes first and yield as a chunk
+        if nodes:
+            node_rows = []
+            for n in nodes:
+                gid = n.properties_.get(config.PROP_GID) if n.properties_ else None
+                self._node_cache[n.id_] = (gid, n.label_)
+                node_rows.append(self._row_from_entity(n))
+            yield node_rows
+
+        # Stream edges in chunks
+        if edges:
+            from cypher_graphdb import utils
+
+            for edge_chunk in utils.chunk_list(edges, self.chunk_size):
+                yield self._process_edges_chunk(edge_chunk)
+
     def close(self):
         """Release resources (no-op for pure Python implementation).
 
         Kept for API compatibility with existing code.
         """
-        pass
 
     def __enter__(self):
         return self

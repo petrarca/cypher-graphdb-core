@@ -20,9 +20,11 @@ class FileExporterOptions(TypedOptionModel):
 
     Attributes:
         with_label: Include label column in exported data.
+        chunk_size: Number of entities to process in each chunk.
     """
 
     with_label: bool = True
+    chunk_size: int = 50000
 
 
 class FileExporter(BaseExporter):

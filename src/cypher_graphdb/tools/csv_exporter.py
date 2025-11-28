@@ -33,7 +33,8 @@ class CsvExporter(FileExporter):
 
         self._check_filename(items, filename)
         # Reuse one RowCollector so node cache persists across groups
-        collector = RowCollector(self.db, with_label=self.opts.with_label)
+        chunk_size = getattr(self.opts, "chunk_size", 50000)
+        collector = RowCollector(self.db, with_label=self.opts.with_label, chunk_size=chunk_size)
         try:
             for label, entities in items:
                 basename = self._resolve_basename(entities[0], label)
@@ -42,29 +43,41 @@ class CsvExporter(FileExporter):
                 if dirname:
                     target_filename = f"{dirname}/{basename}.csv"
 
-                rows = collector.collect(entities)
+                # Always use streaming for simplicity and consistency
+                self._write_streaming(collector, entities, target_filename)
 
-                self.on_export_file(rows, dirname, target_filename, None)
-
-                if rows:
-                    import csv
-
-                    # Collect all possible fieldnames from all rows
-                    all_fieldnames = set()
-                    for row in rows:
-                        all_fieldnames.update(row.keys())
-
-                    with open(target_filename, "w", newline="", encoding="utf-8") as f:
-                        writer = csv.DictWriter(f, fieldnames=sorted(all_fieldnames))
-                        writer.writeheader()
-                        writer.writerows(rows)
         finally:
             collector.close()
+
+    def _write_streaming(self, collector, entities, target_filename):
+        """Streaming export for all datasets."""
+        import csv
+
+        # Get headers from first chunk
+        chunk_generator = collector.collect_streaming(entities)
+        first_chunk = next(chunk_generator)
+        if not first_chunk:
+            return
+
+        all_fieldnames = set()
+        for row in first_chunk:
+            all_fieldnames.update(row.keys())
+
+        with open(target_filename, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=sorted(all_fieldnames))
+            writer.writeheader()
+
+            # Write first chunk
+            writer.writerows(first_chunk)
+
+            # Write remaining chunks
+            for chunk_rows in chunk_generator:
+                writer.writerows(chunk_rows)
+                f.flush()  # Ensure data is written immediately
+
+        self.on_export_file(None, None, target_filename, None)
 
     def _check_filename(self, items, filename):
         assert items
         if filename and len(items) > 1:
             raise RuntimeError("Directory is required if more than one graph object type is exported in CSV file format")
-
-            # TODO check if filename starts or ends with a prefix, based on configuation
-            # basename = "QQQ"

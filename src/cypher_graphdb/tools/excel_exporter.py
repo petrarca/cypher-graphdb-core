@@ -5,7 +5,6 @@ from a CypherGraphDB instance to Excel files, with support for multiple
 worksheets.
 """
 
-import os
 from typing import Any
 
 import openpyxl as xl
@@ -33,7 +32,8 @@ class ExcelExporter(FileExporter):
 
     def _write_to_file(self, items, dirname, filename):
         # Reuse one RowCollector so node cache persists across groups (nodes then edges)
-        collector = RowCollector(self.db, with_label=self.opts.with_label)
+        chunk_size = getattr(self.opts, "chunk_size", 50000)
+        collector = RowCollector(self.db, with_label=self.opts.with_label, chunk_size=chunk_size)
         try:
             for label, entities in items:
                 sheetname = self._resolve_basename(entities[0], label)
@@ -42,33 +42,35 @@ class ExcelExporter(FileExporter):
                 if dirname:
                     target_filename = f"{dirname}/{sheetname}.xlsx"
 
-                if not os.path.exists(target_filename):
-                    wb = xl.Workbook()
-                    wb.save(target_filename)
-                    delete_sheet = wb.sheetnames[0]
-                else:
-                    delete_sheet = None
+                # Always use chunked write-only mode for simplicity and memory efficiency
+                self._write_chunked(collector, entities, target_filename, sheetname)
 
-                rows = collector.collect(entities)
-                self.on_export_file(rows, dirname, target_filename, f"[{sheetname}]")
-
-                if rows:
-                    from openpyxl import load_workbook
-
-                    wb2 = load_workbook(target_filename)
-                    if sheetname in wb2.sheetnames:
-                        ws = wb2[sheetname]
-                        wb2.remove(ws)
-                    ws = wb2.create_sheet(sheetname)
-                    headers = list(rows[0].keys())
-                    ws.append(headers)
-                    for r in rows:
-                        ws.append([r.get(h) for h in headers])
-                    wb2.save(target_filename)
-
-                if delete_sheet is not None:
-                    wb = xl.load_workbook(target_filename)
-                    wb.remove(wb[delete_sheet])
-                    wb.save(target_filename)
         finally:
             collector.close()
+
+    def _write_chunked(self, collector, entities, target_filename, sheetname):
+        """Chunked Excel export using write-only mode for all datasets."""
+        # Create new workbook in write-only mode for memory efficiency
+        wb = xl.Workbook(write_only=True)
+        ws = wb.create_sheet(sheetname)
+
+        # Process entities and write in chunks
+        headers_written = False
+
+        for chunk_rows in collector.collect_streaming(entities):
+            if not chunk_rows:
+                continue
+
+            if not headers_written:
+                headers = list(chunk_rows[0].keys())
+                ws.append(headers)
+                headers_written = True
+
+            # Write chunk rows
+            for row_dict in chunk_rows:
+                row_data = [row_dict.get(h) for h in headers]
+                ws.append(row_data)
+
+        # Save the workbook
+        wb.save(target_filename)
+        self.on_export_file(None, None, target_filename, f"[{sheetname}]")
