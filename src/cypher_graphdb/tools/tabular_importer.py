@@ -1,4 +1,4 @@
-"""Tabular importer (DuckDB / Excel row-source based) replacing DataFrameImporter.
+"""Tabular importer (CSV / Excel row-source based) replacing DataFrameImporter.
 
 Phase 1 implementation: functional parity with existing DataFrameImporter
 using the new RowSource abstraction. Edge reference pre-resolution and
@@ -36,7 +36,7 @@ class TabularImporter:
     """Importer operating on a generic RowSource (streamed batches).
 
     Usage:
-        source = DuckDBSource("SELECT * FROM read_csv_auto('file.csv')")
+        source = CsvSource("file.csv")
         TabularImporter(db).load(source, label="Person")
     """
 
@@ -61,7 +61,7 @@ class TabularImporter:
         """Stream rows from the source into the graph database.
 
         Args:
-            source: RowSource implementation (DuckDBSource / ExcelRowSource).
+            source: RowSource implementation (CsvSource / ExcelRowSource).
             label: Fallback label if not present as column.
 
         Returns:
@@ -144,17 +144,17 @@ class TabularImporter:
     ):
         # Determine label
         row_label = fallback_label if not col_info.contains_label else row.get("label_")
-        if utils.isnan(row_label):  # handle NaN numeric from duckdb
+        if utils.isnan(row_label):  # handle NaN numeric from CSV data
             self._add_error(row, "Missing node/edge label", errors)
             return
 
         if col_info.edge_node_references:
             self._create_or_merge_edge(row, row_label, col_info, errors)
         else:
-            self._create_or_merge_node(row, row_label, errors)
+            self._create_or_merge_node(row, row_label)
 
     # ----------------------------- node logic ----------------------------
-    def _create_or_merge_node(self, row: dict[str, Any], label: str, errors: list[dict[str, Any]]):
+    def _create_or_merge_node(self, row: dict[str, Any], label: str):
         _, properties = utils.slice_model_properties(GraphNode, row)
         if (raw_props := row.get("properties_")) and isinstance(raw_props, str):
             # Expect JSON string; fallback to legacy safe eval if needed

@@ -34,8 +34,6 @@ dependencies = [
     "pymgclient",
     "typing-extensions",
     "typer",
-    "duckdb",
-    "pyarrow",
     "tenacity",
     "json-schema-to-pydantic>=0.2.0",
 ]

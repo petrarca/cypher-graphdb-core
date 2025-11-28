@@ -1,18 +1,18 @@
-"""CSV file importer using DuckDB row streaming.
+"""CSV file importer using standard library row streaming.
 
-Refactored to remove pandas usage. Utilizes DuckDBSource + TabularImporter
-to stream rows in batches.
+Refactored to remove DuckDB usage. Utilizes CsvSource + TabularImporter
+to stream rows in batches without external dependencies.
 """
 
 from cypher_graphdb import CypherGraphDB, utils
 
-from .duckdb_source import DuckDBSource
+from .csv_source import CsvSource
 from .file_importer import FileImporter
 from .tabular_importer import TabularImporter
 
 
 class CsvImporter(FileImporter):
-    """CSV file importer for graph data (DuckDB-based)."""
+    """CSV file importer for graph data (standard library-based)."""
 
     def __init__(self, db: CypherGraphDB):
         """Initialize CSV importer.
@@ -31,10 +31,7 @@ class CsvImporter(FileImporter):
         # Resolve fallback label from file basename
         _, label, _ = utils.split_path(filename)
 
-        # Escape single quotes for SQL literal
-        escaped = filename.replace("'", "''")
-        sql = f"SELECT * FROM read_csv_auto('{escaped}', HEADER=TRUE)"
-        source = DuckDBSource(sql)
+        source = CsvSource(filename)
         importer = TabularImporter(self.db)
         try:
             importer.load(source, label)

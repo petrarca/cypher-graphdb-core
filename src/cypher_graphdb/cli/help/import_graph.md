@@ -44,7 +44,7 @@ The CSV and Excel importers currently use default settings:
 - Always expects headers in the first row
 - Uses comma (`,`) as delimiter
 - Uses UTF-8 encoding
-- Uses DuckDB's auto-detection for data types
+- Uses standard library CSV parser with auto-detection for data types
 
 **Excel Import:**
 - Processes all worksheets in the file

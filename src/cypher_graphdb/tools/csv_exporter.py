@@ -49,8 +49,13 @@ class CsvExporter(FileExporter):
                 if rows:
                     import csv
 
+                    # Collect all possible fieldnames from all rows
+                    all_fieldnames = set()
+                    for row in rows:
+                        all_fieldnames.update(row.keys())
+
                     with open(target_filename, "w", newline="", encoding="utf-8") as f:
-                        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                        writer = csv.DictWriter(f, fieldnames=sorted(all_fieldnames))
                         writer.writeheader()
                         writer.writerows(rows)
         finally:
