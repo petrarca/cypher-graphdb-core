@@ -1,80 +1,86 @@
-"""Tests for proper resource management in DuckDBSource and RowCollector."""
+"""Tests for proper resource management in CsvSource and RowCollector."""
 
 import unittest
 from unittest.mock import MagicMock, patch
 
-from cypher_graphdb.tools.duckdb_source import DuckDBSource
+from cypher_graphdb.tools.csv_source import CsvSource
 from cypher_graphdb.tools.row_collector import RowCollector
 
 
-class TestDuckDBSourceResourceManagement(unittest.TestCase):
-    """Test proper resource management in DuckDBSource."""
+class TestCsvSourceResourceManagement(unittest.TestCase):
+    """Test proper resource management in CsvSource."""
 
-    @patch("cypher_graphdb.tools.duckdb_source.duckdb")
-    def test_close_method(self, mock_duckdb):
-        """Test that close() properly closes the DuckDB connection."""
+    @patch("cypher_graphdb.tools.csv_source.open", create=True)
+    @patch("cypher_graphdb.tools.csv_source.csv")
+    def test_close_method(self, mock_csv, mock_open):
+        """Test that close() properly closes the file handle."""
         # Setup
-        mock_con = MagicMock()
-        mock_duckdb.connect.return_value = mock_con
+        mock_file = MagicMock()
+        mock_open.return_value = mock_file
 
-        # Create and close DuckDBSource
-        source = DuckDBSource("SELECT 1")
+        # Mock DictReader with fieldnames attribute
+        mock_reader = MagicMock()
+        mock_reader.fieldnames = ["col1", "col2"]
+        mock_csv.DictReader.return_value = mock_reader
+        mock_csv.Sniffer.return_value.sniff.return_value = "dummy"
+
+        # Create and close CsvSource
+        source = CsvSource("dummy.csv")
         source.close()
 
-        # Verify connection was closed
-        mock_con.close.assert_called_once()
-        self.assertIsNone(source._con)
+        # Verify file was closed
+        mock_file.close.assert_called_once()
 
-    @patch("cypher_graphdb.tools.duckdb_source.duckdb")
-    def test_context_manager(self, mock_duckdb):
-        """Test that context manager properly closes the DuckDB connection."""
+    @patch("cypher_graphdb.tools.csv_source.open", create=True)
+    @patch("cypher_graphdb.tools.csv_source.csv")
+    def test_context_manager(self, mock_csv, mock_open):
+        """Test that context manager properly closes the file handle."""
         # Setup
-        mock_con = MagicMock()
-        mock_duckdb.connect.return_value = mock_con
+        mock_file = MagicMock()
+        mock_open.return_value = mock_file
 
-        # Use DuckDBSource as context manager
-        with DuckDBSource("SELECT 1") as source:
+        # Mock DictReader with fieldnames attribute
+        mock_reader = MagicMock()
+        mock_reader.fieldnames = ["col1", "col2"]
+        mock_csv.DictReader.return_value = mock_reader
+        mock_csv.Sniffer.return_value.sniff.return_value = "dummy"
+
+        # Use CsvSource as context manager
+        with CsvSource("dummy.csv"):
             pass
 
-        # Verify connection was closed
-        mock_con.close.assert_called_once()
-        self.assertIsNone(source._con)
+        # Verify file was closed
+        mock_file.close.assert_called_once()
 
 
 class TestRowCollectorResourceManagement(unittest.TestCase):
-    """Test proper resource management in RowCollector."""
+    """Test proper resource management in RowCollector (pure Python implementation)."""
 
-    @patch("cypher_graphdb.tools.row_collector.duckdb")
-    def test_close_method(self, mock_duckdb):
-        """Test that close() properly closes the DuckDB connection."""
+    def test_close_method_no_op(self):
+        """Test that close() is a no-op for pure Python implementation."""
         # Setup
-        mock_con = MagicMock()
-        mock_duckdb.connect.return_value = mock_con
         mock_db = MagicMock()
 
         # Create and close RowCollector
         collector = RowCollector(mock_db)
         collector.close()
 
-        # Verify connection was closed
-        mock_con.close.assert_called_once()
-        self.assertIsNone(collector._con)
+        # Verify no exceptions and close() is callable
+        self.assertIsNone(collector.close())
 
-    @patch("cypher_graphdb.tools.row_collector.duckdb")
-    def test_context_manager(self, mock_duckdb):
-        """Test that context manager properly closes the DuckDB connection."""
+    def test_context_manager_no_op(self):
+        """Test that context manager works for pure Python implementation."""
         # Setup
-        mock_con = MagicMock()
-        mock_duckdb.connect.return_value = mock_con
         mock_db = MagicMock()
 
         # Use RowCollector as context manager
         with RowCollector(mock_db) as collector:
-            pass
+            # Verify collector is properly initialized
+            self.assertIsNotNone(collector._node_cache)
+            self.assertEqual(collector.db, mock_db)
 
-        # Verify connection was closed
-        mock_con.close.assert_called_once()
-        self.assertIsNone(collector._con)
+        # Verify no exceptions occurred
+        self.assertTrue(True)  # If we get here, context manager worked
 
 
 if __name__ == "__main__":

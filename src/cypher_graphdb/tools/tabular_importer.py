@@ -15,7 +15,7 @@ from cypher_graphdb import config, utils
 from cypher_graphdb.cyphergraphdb import CypherGraphDB, MatchCriteria
 from cypher_graphdb.models import GraphEdge, GraphNode
 
-from .duckdb_source import RowSource
+from .row_source import RowSource
 
 
 @dataclass

@@ -3,15 +3,14 @@
 Converts GraphNode / GraphEdge collections into list-of-dict rows for CSV / Excel.
 Expands edge start/end references to gid (and optional label) matching previous
 export semantics while avoiding DataFrame overhead.
+
+Uses pure Python dictionary operations for optimal performance with zero dependencies.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import Any
-
-import duckdb
-import pyarrow as pa
 
 from cypher_graphdb import config, utils
 from cypher_graphdb.backend import BackendCapability
@@ -23,14 +22,13 @@ class RowCollector:
     """Collect graph nodes/edges into list-of-dict rows with minimal lookups.
 
     Responsibilities:
-    - Cache node (gid,label) metadata in an in-memory DuckDB table acting as a
-        lightweight, queryable cache across multiple collect() calls.
+    - Cache node (gid,label) metadata in an in-memory dictionary for fast lookups
     - Batch-fetch missing node metadata to minimize backend round-trips when
-        expanding edge start/end references.
+      expanding edge start/end references.
     - Flatten edge/node properties into a tabular friendly structure consumed
-        by CSV/Excel exporters without requiring pandas.
+      by CSV/Excel exporters without requiring pandas.
 
-    Note: Call close() when done to release DuckDB resources.
+    Note: Call close() when done to release resources (currently no-op for pure Python).
     """
 
     def __init__(self, db: CypherGraphDB, with_label: bool = True):
@@ -39,9 +37,6 @@ class RowCollector:
         self._label: str | None = None
         # node metadata cache: id -> (gid, label)
         self._node_cache: dict[int, tuple[str | None, str | None]] = {}
-        # Persistent DuckDB connection serving also as the node cache backing store
-        self._con = duckdb.connect(":memory:")
-        self._con.execute("CREATE TABLE nodes(id_ BIGINT PRIMARY KEY, gid_ VARCHAR, label_ VARCHAR)")
 
     def collect(self, entities: Iterable[GraphNode | GraphEdge]) -> list[dict[str, Any]]:
         # Reset label constraint so the same collector instance can be reused across
@@ -63,30 +58,20 @@ class RowCollector:
 
         # Process nodes first (sets self._label and caches metadata)
         if nodes:
-            # Build node rows first to avoid interleaving mutations & potential exceptions
-            node_inserts: list[tuple[int, str | None, str | None]] = []
             for n in nodes:
                 rows.append(self._row_from_entity(n))
                 gid = n.properties_.get(config.PROP_GID) if n.properties_ else None
                 self._node_cache[n.id_] = (gid, n.label_)
-                node_inserts.append((n.id_, gid, n.label_))
-            # Single batched upsert into DuckDB cache
-            try:
-                self._con.executemany("INSERT OR REPLACE INTO nodes VALUES (?, ?, ?)", node_inserts)
-            except Exception:
-                # Fallback for older DuckDB versions lacking OR REPLACE (should be rare)
-                for rid, gid, label in node_inserts:
-                    self._con.execute("DELETE FROM nodes WHERE id_ = ?", [rid])
-                    self._con.execute("INSERT INTO nodes VALUES (?, ?, ?)", [rid, gid, label])
 
         if not edges:
             return rows
 
-        rows.extend(self._collect_edges_duckdb(edges))
+        rows.extend(self._collect_edges_pure_python(edges))
 
         return rows
 
-    def _collect_edges_duckdb(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:  # pragma: no cover
+    def _collect_edges_pure_python(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:
+        """Process edges using pure Python dictionary lookups instead of SQL JOINs."""
         # Determine endpoint ids for edges; if they're already in cache, skip lookups entirely.
         endpoint_ids: set[int] = set()
         for e in edges:
@@ -100,51 +85,37 @@ class RowCollector:
         if missing_ids:
             self._bulk_populate_node_cache(missing_ids)
 
-        # Build edge temp relation (nodes table is persistent)
-        edge_rows: list[dict[str, Any]] = [e.model_dump(context={"with_type": False}) for e in edges]
-
-        # Drop any prior registered edges relation (best effort)
-        try:
-            self._con.execute("DROP VIEW IF EXISTS edges")
-            self._con.execute("DROP TABLE IF EXISTS edges")
-        except Exception:  # pragma: no cover
-            pass
-        self._con.register("edges", pa.Table.from_pylist(edge_rows))
-
-        with_label = self.with_label
-        label_cols = "sn.label_ AS start_label_, en.label_ AS end_label_," if with_label else ""
-        qry = f"""
-            SELECT
-            e.label_ AS edge_label_, e.start_id_, e.end_id_, e.properties_,
-            sn.gid_ AS start_gid_, en.gid_ AS end_gid_,
-            {label_cols}
-            e.properties_ AS edge_props
-            FROM edges e
-            LEFT JOIN nodes sn ON e.start_id_ = sn.id_
-            LEFT JOIN nodes en ON e.end_id_ = en.id_
-        """
-
-        duck_rows = self._con.execute(qry).fetchall()
-        cols = [c[0] for c in self._con.description]
         result: list[dict[str, Any]] = []
-        for row in duck_rows:
-            rec = dict(zip(cols, row, strict=False))
-            props = rec.pop("edge_props", {}) or {}
-            rec.update(props)
-            # remove raw properties_ dict column (flattened already)
-            rec.pop("properties_", None)
-            # Normalize output fields
-            rec.pop("start_id_", None)
-            rec.pop("end_id_", None)
-            rec["start_gid_"] = rec.pop("start_gid_", None)
-            rec["end_gid_"] = rec.pop("end_gid_", None)
-            # Use edge label as label_
-            rec["label_"] = rec.pop("edge_label_", None)
-            if not with_label:
-                rec.pop("start_label_", None)
-                rec.pop("end_label_", None)
-                rec.pop("label_", None)
-            result.append(rec)
+
+        for edge in edges:
+            edge_data = edge.model_dump(context={"with_type": False})
+
+            # Get start node metadata
+            start_gid, start_label = self._node_cache.get(edge.start_id_, (None, None))
+            # Get end node metadata
+            end_gid, end_label = self._node_cache.get(edge.end_id_, (None, None))
+
+            # Build result row
+            row: dict[str, Any] = {
+                "start_gid_": start_gid,
+                "end_gid_": end_gid,
+            }
+
+            # Add edge label if requested
+            if self.with_label:
+                row["label_"] = edge.label_
+
+            # Add labels if requested
+            if self.with_label:
+                row["start_label_"] = start_label
+                row["end_label_"] = end_label
+
+            # Add edge properties
+            edge_props = edge_data.pop("properties_", {}) or {}
+            row.update(edge_props)
+
+            result.append(row)
+
         return result
 
     def _row_from_entity(self, obj: GraphNode | GraphEdge) -> dict[str, Any]:
@@ -155,7 +126,15 @@ class RowCollector:
             raise RuntimeError(f"Mixed labels not supported: '{self._label}' != '{obj.label_}'")
         data = obj.model_dump(context={"with_type": False})
         self._update_references(obj, data)
-        data.update(data.pop("properties_"))
+
+        # Add properties but respect with_label setting
+        properties = data.pop("properties_", {}) or {}
+        data.update(properties)
+
+        # Ensure label_ is removed if with_label is False (might be added back from properties)
+        if not self.with_label:
+            data.pop("label_", None)
+
         self._label = obj.label_
         return data
 
@@ -205,7 +184,7 @@ class RowCollector:
         """Fetch metadata for a batch of node ids using batch API or fallback."""
         try:
             nodes = self.db.fetch_nodes_by_ids(batch) or []
-        except Exception:
+        except Exception:  # noqa: BLE001 - fallback to individual fetching on any batch API error
             self._fallback_fetch_nodes(batch)
             return
         insert_rows: list[tuple[int, str | None, str | None]] = []
@@ -241,28 +220,18 @@ class RowCollector:
             self._insert_or_replace_nodes([(nid, gid, label)])
 
     def _insert_or_replace_nodes(self, rows: list[tuple[int, str | None, str | None]]):
-        """Insert or replace node cache rows into duckdb (version tolerant)."""
+        """Insert or replace node cache rows in dictionary (pure Python)."""
         if not rows:
             return
-        try:
-            self._con.executemany("INSERT OR REPLACE INTO nodes VALUES (?, ?, ?)", rows)
-        except Exception:
-            # Older duckdb versions: emulate with delete+insert
-            for rid, gid, label in rows:
-                self._con.execute("DELETE FROM nodes WHERE id_ = ?", [rid])
-                self._con.execute("INSERT INTO nodes VALUES (?, ?, ?)", [rid, gid, label])
+        for node_id, gid, label in rows:
+            self._node_cache[node_id] = (gid, label)
 
     def close(self):
-        """Close the DuckDB connection and release resources.
+        """Release resources (no-op for pure Python implementation).
 
-        Call this method when done with the collector to ensure proper cleanup.
+        Kept for API compatibility with existing code.
         """
-        if hasattr(self, "_con") and self._con is not None:
-            try:
-                self._con.close()
-                self._con = None
-            except Exception:
-                pass
+        pass
 
     def __enter__(self):
         return self
