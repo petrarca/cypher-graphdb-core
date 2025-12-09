@@ -118,13 +118,14 @@ class HierarchicalExporter(FileExporter):
             child_node_key = f"node:{child_node.label_}"
             nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
 
-            # Add to existing list or create new one
-            if edge_key not in node_data:
-                node_data[edge_key] = {child_node_key: []}
-            if child_node_key not in node_data[edge_key]:
-                node_data[edge_key][child_node_key] = []
+            # Each edge-node pair is a separate entry with edge props + nested node
+            # Structure: edge_key -> [{gid_: ..., node:Label: {...}}, ...]
+            edge_entry = dict(edge.properties_) if edge.properties_ else {}
+            edge_entry[child_node_key] = nested_child
 
-            node_data[edge_key][child_node_key].append(nested_child)
+            if edge_key not in node_data:
+                node_data[edge_key] = []
+            node_data[edge_key].append(edge_entry)
 
         return node_data
 

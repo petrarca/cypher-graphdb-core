@@ -223,6 +223,10 @@ class HierarchicalImporter(FileImporter):
     def _create_node_from_flattened(self, flattened: DataFlattener.FlattenedNode) -> int:
         """Create a node from flattened data, preserving original GID."""
 
+        # Check if node with this GID already exists in cache - avoid duplicates
+        if flattened.source_gid and flattened.source_gid in self.node_cache:
+            return self.node_cache[flattened.source_gid]
+
         # Use the same approach as tabular importer - slice model fields from properties
         _, node_properties = utils.slice_model_properties(GraphNode, flattened.node_data)
         node_properties = utils.resolve_properties(node_properties)

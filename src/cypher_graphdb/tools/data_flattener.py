@@ -95,11 +95,23 @@ class DataFlattener:
             if cls._is_edge_field(key):
                 relation_key, direction = cls._parse_edge_direction(key.removeprefix("edge:"))
                 if isinstance(value, list):
-                    # List of explicit relations
+                    # List of relations - check each item's format
                     for relation_item in value:
-                        relations.append(
-                            {"relation_key": relation_key, "data": relation_item, "format": "explicit", "direction": direction}
-                        )
+                        if isinstance(relation_item, dict) and any(k.startswith("node:") for k in relation_item):
+                            # Nested format: {gid_: ..., node:Label: {...}}
+                            relations.append(
+                                {"relation_key": relation_key, "data": relation_item, "format": "nested", "direction": direction}
+                            )
+                        else:
+                            # Explicit format: {target_gid: ..., target_label: ...}
+                            relations.append(
+                                {
+                                    "relation_key": relation_key,
+                                    "data": relation_item,
+                                    "format": "explicit",
+                                    "direction": direction,
+                                }
+                            )
                 elif isinstance(value, dict):
                     # Check if nested format (contains node:) or explicit format
                     if any(k.startswith("node:") for k in value):
