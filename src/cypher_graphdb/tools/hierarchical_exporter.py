@@ -4,12 +4,13 @@ Handles export of graph data to JSON/YAML formats, supporting both single file
 and multiple file export modes with nested structure reconstruction.
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any
 
-from cypher_graphdb import CypherGraphDB
+import rich
+
+from cypher_graphdb import CypherGraphDB, graphops
+from cypher_graphdb.models import Graph
 
 from .file_exporter import FileExporter, FileExporterOptions
 from .json_yaml_data_source import JsonYamlDataSource
@@ -37,42 +38,116 @@ class HierarchicalExporter(FileExporter):
         self.valid_file_extensions = JsonYamlDataSource.get_file_extensions()
         self.data_handler = JsonYamlDataSource()
 
-    def _write_to_file(self, items, dirname, filename):
-        """Export to single file or multiple files.
+    def export_to_file(self, graph: Graph, filename: str, validate_filename: bool = True):
+        """Export graph to JSON/YAML file(s) with nested structure reconstruction.
 
         Args:
-            items: Graph data to export (list of (label, entities) tuples).
-            dirname: Directory path for multi-file export.
-            filename: File path for single-file export.
+            graph: The graph to export.
+            filename: Target filename or directory path.
+            validate_filename: Whether to validate the filename format.
         """
-        if not items:
-            return
-
-        if dirname:
-            # Multi-file export
-            self._export_multiple_files(items, dirname)
+        # Check if tree export is forced or if we should auto-detect
+        if self.opts.as_tree:
+            # Force tree export without expensive detection
+            tree_analysis = graphops.analyze_tree_structure(graph, skip_detection=True)
+            rich.print(f"[green]✓ Forced tree export ({tree_analysis.dominant_pattern})")
+            rich.print(f"[blue]  Direction: {tree_analysis.direction}, Roots: {len(tree_analysis.root_nodes)}")
+            nested_data = self._build_tree_structure(graph, tree_analysis)
         else:
-            # Single file export
-            self._export_single_file(items, filename)
+            # Analyze if graph can be exported as tree structure
+            tree_analysis = graphops.analyze_tree_structure(graph)
 
-    def _export_single_file(self, items, filename):
+            if tree_analysis.is_tree:
+                rich.print(f"[green]✓ Tree structure detected ({tree_analysis.dominant_pattern})")
+                rich.print(f"[blue]  Direction: {tree_analysis.direction}, Roots: {len(tree_analysis.root_nodes)}")
+
+                # Export as tree structure
+                nested_data = self._build_tree_structure(graph, tree_analysis)
+            else:
+                rich.print(f"[yellow]⚠ Graph structure detected: {tree_analysis.reason}")
+                rich.print("[blue]  Exporting in explicit format...")
+
+                # Export as explicit graph structure
+                nested_data = self._build_nested_structure(graph)
+
+        # Export based on mode (single file vs multiple files)
+        if self.is_valid_file(filename):
+            self._export_single_file(nested_data, filename, self.opts)
+        else:
+            self._export_multiple_files(nested_data, filename, self.opts)
+
+    def _build_tree_structure(self, graph: Graph, tree_analysis: graphops.TreeAnalysis) -> list[tuple[str, Any]]:
+        """Build nested tree structure for export.
+
+        Args:
+            graph: The graph to convert.
+            tree_analysis: Tree structure analysis results.
+
+        Returns:
+            List of (label, entities) tuples with nested tree structure.
+        """
+        # Build tree using existing graphops functionality
+        tree = graphops.build_tree(graph, direction=tree_analysis.direction, with_unbound_nodes=True)
+
+        # Convert tree structure to nested format
+        nested_data = []
+
+        for root_node, _edge, children in tree:
+            root_data = self._convert_tree_node_to_nested(root_node, children, tree_analysis.direction)
+            nested_data.append((f"node:{root_node.label_}", [root_data]))
+
+        return nested_data
+
+    def _convert_tree_node_to_nested(self, node, children, direction: str) -> dict[str, Any]:
+        """Convert a tree node to nested format with edges and child nodes.
+
+        Args:
+            node: Current graph node.
+            children: Child nodes from tree structure.
+            direction: Tree direction ("outgoing" or "incoming").
+
+        Returns:
+            Dictionary in nested format.
+        """
+        # Start with node properties
+        node_data = dict(node.properties_)
+        node_data["label_"] = node.label_
+
+        # Process children (edges and nested nodes)
+        for child_node, edge, grandchildren in children:
+            edge_key = f"edge:{edge.label_}"
+
+            # Determine edge direction for nested format
+            if direction == "outgoing":
+                # Normal direction: parent -> child
+                nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
+                node_data[edge_key] = {"node:Child": [nested_child]}
+            else:
+                # Reverse direction: parent <- child (use :reverse suffix)
+                edge_key_reverse = f"{edge_key}:reverse"
+                nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
+                node_data[edge_key_reverse] = {"node:Child": [nested_child]}
+
+        return node_data
+
+    def _export_single_file(self, items, filename, options: FileExporterOptions):
         """Export all data to a single JSON/YAML file.
 
         Args:
             items: Graph data to export.
             filename: Output file path.
+            options: Export options.
         """
-        nested_data = self._build_nested_structure(items)
-
         self._determine_format(filename)
-        self.data_handler.save_file(nested_data, filename)
+        self.data_handler.save_file(items, filename)
 
-    def _export_multiple_files(self, items, dirname):
+    def _export_multiple_files(self, items, dirname, options: FileExporterOptions):
         """Export data to multiple JSON/YAML files.
 
         Args:
             items: Graph data to export.
             dirname: Output directory path.
+            options: Export options.
         """
         groups = self._group_by_entity_type(items)
         format_type = self._determine_format(dirname)
@@ -199,7 +274,8 @@ class HierarchicalExporter(FileExporter):
         for label, nodes in nodes_by_label.items():
             for node in nodes:
                 # Use GID if available, otherwise ID
-                key = node.get("gid_") or node.get("id_")
+                gid = node.get("gid_")
+                key = gid if gid else node.get("id_")
                 if key:
                     lookup[key] = {"node": node, "label": label}
 
