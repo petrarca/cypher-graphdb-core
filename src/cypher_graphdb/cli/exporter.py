@@ -67,7 +67,7 @@ class GraphExporter:
             return
 
         exporter.on_export_file = self._make_callback("graph object")
-        self._run_export(exporter, lambda: exporter.export(graph, filename), "Successfully exported.")
+        self._run_export(lambda: exporter.export(graph, filename), "Successfully exported.")
 
     def export_tree(self, tree_result: TreeResult, args, kwargs):
         """Export TreeResult directly as tree structure (JSON/YAML only)."""
@@ -87,7 +87,7 @@ class GraphExporter:
 
         exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
         exporter.on_export_file = self._make_callback("root node")
-        self._run_export(exporter, lambda: exporter.export_tree_result(tree_result, filename), "Successfully exported tree.")
+        self._run_export(lambda: exporter.export_tree_result(tree_result, filename), "Successfully exported tree.")
 
     def _resolve_exporter(self, export_format, args, kwargs):
         match export_format:
