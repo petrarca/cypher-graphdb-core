@@ -19,6 +19,7 @@ import cypher_graphdb.config as config
 import cypher_graphdb.options as options
 import cypher_graphdb.utils as utils
 from cypher_graphdb import Graph, GraphEdge, GraphJSONEncoder, GraphNode, GraphPath
+from cypher_graphdb.models import TreeResult
 
 
 class ResultRenderer:
@@ -235,18 +236,29 @@ class ResultRenderer:
                 if childs:
                     walk_tree(childs, child_tree)
 
-        if not result:
+        # Handle TreeResult wrapper or raw tuple
+        if isinstance(result, TreeResult):
+            tree_structure = result.tree_structure
+            direction = result.direction
+        else:
+            tree_structure = result
+            direction = None
+
+        if not tree_structure:
             self.render_no_result(False)
             return
 
         opts = RenderTreeOpts.from_opts(args, None)
+        # Use direction from TreeResult if available, otherwise from opts
+        if direction:
+            opts.direction = direction
         left_arrow, right_arrow = {"outgoing": ("", "->"), "incoming": ("<-", "")}[opts.direction]
 
         json_highlighter = JSONHighlighter()
         tree = Tree("Result")
 
         # Every node are tuppled as (GraphNode, GraphEdge, (child, ...))
-        walk_tree(result, tree)
+        walk_tree(tree_structure, tree)
 
         rich.print("")
         rich.print(tree)

@@ -5,8 +5,9 @@ identifiers, labels, and properties management.
 """
 
 import re
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_serializer
 
@@ -559,3 +560,19 @@ class Graph(GraphObject):
     def _can_add_edge(self, value: GraphEdge) -> bool:
         """Check if edge can be added (has ID and not duplicate)."""
         return value.id_ is not None and value.id_ not in self.edges
+
+
+@dataclass
+class TreeResult:
+    """Wrapper for tree structure representation of graph data."""
+
+    tree_structure: tuple  # Nested [node, edge, children] structure
+    direction: Literal["incoming", "outgoing"]
+
+    def __bool__(self):
+        """Allow truthiness check."""
+        return bool(self.tree_structure)
+
+    def __iter__(self):
+        """Allow iteration over root nodes."""
+        return iter(self.tree_structure)

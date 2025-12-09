@@ -8,7 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from . import config
-from .models import Graph, GraphEdge, GraphNode
+from .models import Graph, GraphEdge, GraphNode, TreeResult
 
 
 @dataclass
@@ -276,12 +276,11 @@ def create_tree(
     return tuple(result)
 
 
-# TODO Type annotation for result, take from create_tree
 def build_tree(
     graph: Graph,
     direction: str = config.DEFAULT_TREE_DIRECTION,
     with_unbound_nodes: bool = True,
-):
+) -> TreeResult:
     """Build a complete tree from graph root nodes.
 
     Args:
@@ -290,14 +289,11 @@ def build_tree(
         with_unbound_nodes: Include nodes with no edges as roots.
 
     Returns:
-        Tree structure starting from all identified root nodes.
-
+        TreeResult wrapping the tree structure starting from all identified root nodes.
     """
     roots = root_nodes(graph, direction=direction, with_unbound_nodes=with_unbound_nodes)
-
-    result = create_tree(graph, roots, direction=direction) if roots else ()
-
-    return result
+    tree_structure = create_tree(graph, roots, direction=direction) if roots else ()
+    return TreeResult(tree_structure=tree_structure, direction=direction)
 
 
 def has_cycles(graph: Graph) -> bool:
