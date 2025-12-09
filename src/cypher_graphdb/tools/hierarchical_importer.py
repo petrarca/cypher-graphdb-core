@@ -266,23 +266,80 @@ class HierarchicalImporter(FileImporter):
         self.edges_created += 1
 
     def _create_relation_from_pending(self, pending: dict[str, Any]):
-        """Create a relation from pending data."""
+        """Create a relation from pending data, handling both explicit and nested formats."""
 
         source_id = pending["source_id"]
         relation_key = pending["relation_data"]["relation_key"]
         relation_data = pending["relation_data"]["data"]
+        relation_format = pending["relation_data"].get("format", "explicit")
+        direction = pending["relation_data"].get("direction", "forward")
 
-        # Resolve target node
-        target_id = self._resolve_target_node(relation_data)
-        if not target_id:
-            print(f"Warning: Could not resolve target node for relation {relation_key}")
-            return
+        if relation_format == "nested":
+            # Handle nested format: create target node inline
+            target_id = self._create_nested_node(relation_data, relation_key, source_id)
+        else:
+            # Handle explicit format: resolve existing target node
+            target_id = self._resolve_target_node(relation_data)
+            if not target_id:
+                print(f"Warning: Could not resolve target node for relation {relation_key}")
+                return
 
         # Extract edge properties
         edge_properties = DataFlattener.extract_edge_properties(relation_data)
 
-        # Create the edge
-        self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
+        # Create the edge with direction handling
+        if direction == "reverse":
+            # Reverse direction: swap source and target
+            self._create_edge_and_increment(relation_key, target_id, source_id, edge_properties)
+        else:
+            # Forward direction: normal flow
+            self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
+
+        # For nested format, recursively process nested relations
+        if relation_format == "nested":
+            self._process_nested_relations(relation_data, target_id)
+
+    def _create_nested_node(self, relation_data: dict[str, Any], relation_key: str, source_id: int) -> int:
+        """Create a nested node from relation data and return its ID."""
+        nested_nodes = DataFlattener.extract_nested_nodes(relation_data)
+
+        if not nested_nodes:
+            print(f"Warning: Nested relation {relation_key} has no node: definition")
+            return None
+
+        # Only one node allowed per edge in nested format
+        if len(nested_nodes) > 1:
+            print(f"Warning: Nested relation {relation_key} has multiple nodes, using first")
+
+        node_label, node_data = nested_nodes[0]
+
+        # Create the node
+        flattened = DataFlattener.flatten_item(node_data, node_label)
+        target_id = self._create_node_from_flattened(flattened)
+
+        return target_id
+
+    def _process_nested_relations(self, relation_data: dict[str, Any], source_id: int):
+        """Recursively process nested relations from a nested node."""
+        nested_nodes = DataFlattener.extract_nested_nodes(relation_data)
+
+        for node_label, node_data in nested_nodes:
+            # Extract relations from the nested node
+            flattened = DataFlattener.flatten_item(node_data, node_label)
+
+            # Create relations with the nested node as source
+            for relation in flattened.relations:
+                nested_pending = {
+                    "source_id": source_id,  # Use the current node as source
+                    "source_gid": flattened.source_gid,
+                    "relation_data": relation,
+                    "source_context": flattened.node_data,
+                }
+                try:
+                    self._create_relation_from_pending(nested_pending)
+                except (ValueError, KeyError, RuntimeError) as ex:
+                    print(f"Error creating nested relation: {ex}")
+                    continue
 
     def _resolve_target_node(self, relation_data: dict[str, Any]) -> int | None:
         """Resolve target node by target_gid.

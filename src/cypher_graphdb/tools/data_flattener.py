@@ -74,7 +74,14 @@ class DataFlattener:
     def _extract_relations(cls, item: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract relation data from a nested item.
 
-        Relations are identified by 'edge:' prefix.
+        Relations are identified by 'edge:' prefix and can be:
+        1. EXPLICIT format: target_gid/target_label for referencing existing nodes
+        2. NESTED format: inline node: definitions for hierarchical structures
+
+        Edge direction can be specified with suffixes:
+        - edge:RELATION: (default, forward direction: parent → child)
+        - edge:RELATION:forward (explicit forward direction: parent → child)
+        - edge:RELATION:reverse (reverse direction: parent ← child)
 
         Args:
             item: The nested item to process.
@@ -86,14 +93,42 @@ class DataFlattener:
 
         for key, value in item.items():
             if cls._is_edge_field(key):
-                relation_key = key.removeprefix("edge:")
+                relation_key, direction = cls._parse_edge_direction(key.removeprefix("edge:"))
                 if isinstance(value, list):
+                    # List of explicit relations
                     for relation_item in value:
-                        relations.append({"relation_key": relation_key, "data": relation_item})
+                        relations.append(
+                            {"relation_key": relation_key, "data": relation_item, "format": "explicit", "direction": direction}
+                        )
                 elif isinstance(value, dict):
-                    relations.append({"relation_key": relation_key, "data": value})
+                    # Check if nested format (contains node:) or explicit format
+                    if any(k.startswith("node:") for k in value):
+                        relations.append(
+                            {"relation_key": relation_key, "data": value, "format": "nested", "direction": direction}
+                        )
+                    else:
+                        relations.append(
+                            {"relation_key": relation_key, "data": value, "format": "explicit", "direction": direction}
+                        )
 
         return relations
+
+    @classmethod
+    def _parse_edge_direction(cls, edge_key: str) -> tuple[str, str]:
+        """Parse edge key to extract relation and direction.
+
+        Args:
+            edge_key: Edge key with optional direction suffix.
+
+        Returns:
+            Tuple of (relation_name, direction) where direction is "forward" or "reverse".
+        """
+        if edge_key.endswith(":reverse"):
+            return edge_key[:-8], "reverse"
+        elif edge_key.endswith(":forward"):
+            return edge_key[:-8], "forward"
+        else:
+            return edge_key, "forward"  # default direction
 
     @classmethod
     def _is_edge_field(cls, key: str) -> bool:
@@ -160,11 +195,8 @@ class DataFlattener:
         """Extract edge-specific properties from relation data.
 
         Edge properties are all properties EXCEPT:
-        - target_gid, target_label (target identification)
-        - Any property that looks like a node property (name, etc.)
-
-        In explicit format, edge properties should be clearly separated.
-        For simplicity, we include all non-target-identification properties.
+        - target_gid, target_label (target identification for explicit format)
+        - node: fields (nested nodes for nested format)
 
         Args:
             relation_data: The relation data to process.
@@ -175,13 +207,36 @@ class DataFlattener:
         edge_props = {}
 
         for key, value in relation_data.items():
-            # Skip target identification fields
-            if key in {"target_gid", "target_label"}:
+            # Skip target identification fields and nested node definitions
+            if key in {"target_gid", "target_label"} or key.startswith("node:"):
                 continue
             # Include everything else as edge property
             edge_props[key] = value
 
         return edge_props
+
+    @classmethod
+    def extract_nested_nodes(cls, relation_data: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+        """Extract nested node definitions from a relation.
+
+        Args:
+            relation_data: The relation data containing nested nodes.
+
+        Returns:
+            List of tuples (node_label, node_data) for nested nodes.
+        """
+        nested_nodes = []
+
+        for key, value in relation_data.items():
+            if key.startswith("node:"):
+                node_label = key.removeprefix("node:")
+                if isinstance(value, list):
+                    for node_data in value:
+                        nested_nodes.append((node_label, node_data))
+                elif isinstance(value, dict):
+                    nested_nodes.append((node_label, value))
+
+        return nested_nodes
 
     @classmethod
     def extract_target_node_properties(cls, relation_data: dict[str, Any]) -> dict[str, Any]:
