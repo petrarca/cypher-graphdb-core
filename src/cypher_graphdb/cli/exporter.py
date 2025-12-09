@@ -20,30 +20,43 @@ class GraphExporter:
     def __init__(self, db: CypherGraphDB) -> None:
         self.db = db
 
-    def export(self, graph: Graph, args, kwargs):
-        # rows is the number of objects (integer) for HierarchicalExporter
+    def _make_callback(self, item_type: str = "graph object"):
+        """Create export callback for progress reporting."""
+
         def on_export_file(rows, dirname, filename, partname):
             if dirname is not None:
-                rich.print(" ", f"[blue]Exporting to directory {dirname}, {rows} graph object(s).")
+                rich.print(" ", f"[blue]Exporting to directory {dirname}, {rows} {item_type}(s).")
             if filename is not None:
                 partname = partname or ""
-                rich.print(" ", f"[blue]Exporting to file {filename} {partname}, {rows} graph object(s).")
+                rich.print(" ", f"[blue]Exporting to file {filename} {partname}, {rows} {item_type}(s).")
 
+        return on_export_file
+
+    def _validate_args(self, args) -> str | None:
+        """Validate export arguments and return filename or None if invalid."""
+        if len(args) == 0:
+            rich.print("[red]Please specify a file where to export!", file=sys.stderr)
+            return None
+        return args[0]
+
+    def _run_export(self, export_fn, success_msg: str):
+        """Run export with standard error handling."""
+        try:
+            export_fn()
+            rich.print(f"[green]{success_msg}")
+        except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
+            rich.print(f"[red]Export failed: {e}")
+
+    def export(self, graph: Graph, args, kwargs):
+        """Export graph to file."""
         if graph.is_empty:
             rich.print("[yellow]Empty graph could not be exported. Add first cypher results to it (with 'add' or 'add graph').")
             return
 
-        if len(args) == 0:
-            rich.print(
-                "[red]Please specify a file or directory where to export, and an optional export format!",
-                file=sys.stderr,
-            )
+        if not (filename := self._validate_args(args)):
             return
 
-        filename = args[0]
         dirname, basename, ext = utils.split_path(filename)
-
-        # handle <dir>/*.<ext>
         if basename == "*":
             filename = dirname if dirname else "."
 
@@ -53,40 +66,18 @@ class GraphExporter:
             rich.print(f"[red]Unsupported export format: '{export_format}'", file=sys.stderr)
             return
 
-        # wire up callbacks
-        exporter.on_export_file = on_export_file
-
-        try:
-            exporter.export(graph, filename)
-            rich.print("[green]Successfully exported.")
-        except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
-            rich.print(f"[red]Export failed: {e}")
+        exporter.on_export_file = self._make_callback("graph object")
+        self._run_export(exporter, lambda: exporter.export(graph, filename), "Successfully exported.")
 
     def export_tree(self, tree_result: TreeResult, args, kwargs):
-        """Export TreeResult directly as tree structure (JSON/YAML only).
-
-        Args:
-            tree_result: TreeResult from | tree command
-            args: Export arguments (filename, etc.)
-            kwargs: Export options
-        """
-
-        def on_export_file(rows, dirname, filename, partname):
-            if dirname is not None:
-                rich.print(" ", f"[blue]Exporting tree to directory {dirname}, {rows} root node(s).")
-            if filename is not None:
-                partname = partname or ""
-                rich.print(" ", f"[blue]Exporting tree to file {filename} {partname}, {rows} root node(s).")
-
+        """Export TreeResult directly as tree structure (JSON/YAML only)."""
         if not tree_result:
             rich.print("[yellow]Empty tree could not be exported.")
             return
 
-        if len(args) == 0:
-            rich.print("[red]Please specify a file where to export!", file=sys.stderr)
+        if not (filename := self._validate_args(args)):
             return
 
-        filename = args[0]
         _, _, ext = utils.split_path(filename)
         export_format = utils.resolve_fileformat(ext)
 
@@ -95,13 +86,8 @@ class GraphExporter:
             return
 
         exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
-        exporter.on_export_file = on_export_file
-
-        try:
-            exporter.export_tree_result(tree_result, filename)
-            rich.print("[green]Successfully exported tree.")
-        except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
-            rich.print(f"[red]Export failed: {e}")
+        exporter.on_export_file = self._make_callback("root node")
+        self._run_export(exporter, lambda: exporter.export_tree_result(tree_result, filename), "Successfully exported tree.")
 
     def _resolve_exporter(self, export_format, args, kwargs):
         match export_format:
