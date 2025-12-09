@@ -9,7 +9,7 @@ import sys
 import rich
 
 from cypher_graphdb import CypherGraphDB, Graph, utils
-from cypher_graphdb.tools import CsvExporter, ExcelExporter, FileExporterOptions
+from cypher_graphdb.tools import CsvExporter, ExcelExporter, FileExporterOptions, HierarchicalExporter
 
 
 class GraphExporter:
@@ -19,13 +19,13 @@ class GraphExporter:
         self.db = db
 
     def export(self, graph: Graph, args, kwargs):
-        # rows is a list[dict] produced by RowCollector (formerly a DataFrame); using len(rows)
+        # rows is the number of objects (integer) for HierarchicalExporter
         def on_export_file(rows, dirname, filename, partname):
             if dirname is not None:
-                rich.print(" ", f"[blue]Exporting to directory {dirname}, {len(rows)} graph object(s).")
+                rich.print(" ", f"[blue]Exporting to directory {dirname}, {rows} graph object(s).")
             if filename is not None:
                 partname = partname or ""
-                rich.print(" ", f"[blue]Exporting to file {filename} {partname}, {len(rows)} graph object(s).")
+                rich.print(" ", f"[blue]Exporting to file {filename} {partname}, {rows} graph object(s).")
 
         if graph.is_empty:
             rich.print("[yellow]Empty graph could not be exported. Add first cypher results to it (with 'add' or 'add graph').")
@@ -66,8 +66,12 @@ class GraphExporter:
                 exporter = ExcelExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
             case "csv":
                 exporter = CsvExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
+            case "json":
+                exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
+            case "yaml":
+                exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
             case _:
-                rich.print(f"[red]Invalid or unsupported export format '{export_format}'")
+                rich.print(f"[red]Invalid or unsupported export format: '{export_format}'")
                 exporter = None
 
         return exporter

@@ -36,6 +36,7 @@ dependencies = [
     "typer",
     "tenacity",
     "json-schema-to-pydantic>=0.2.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

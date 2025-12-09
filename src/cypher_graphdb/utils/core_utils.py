@@ -127,6 +127,7 @@ def resolve_fileformat(file_or_dirname: str) -> str | None:
         ".json": "json",
         ".xml": "xml",
         ".yaml": "yaml",
+        ".yml": "yaml",
     }
 
     if not file_or_dirname:

@@ -11,7 +11,7 @@ from prompt_toolkit import prompt
 
 import cypher_graphdb.utils as utils
 from cypher_graphdb import CypherGraphDB
-from cypher_graphdb.tools import CsvImporter, ExcelImporter
+from cypher_graphdb.tools import CsvImporter, ExcelImporter, JsonImporter, YamlImporter
 
 
 class GraphImporter:
@@ -66,25 +66,41 @@ class GraphImporter:
         if "autoconfirm" in kwargs:
             self.autoconfirm = kwargs["autoconfirm"]
 
-        def on_import_file(filename):
-            if filename is not None:
-                rich.print(" ", f"[blue]Importing from file {filename}")
-
         import_format = utils.resolve_fileformat(file_or_dirname)
-
         if not import_format:
             import_format = kwargs.get("format", self.defaut_format)
 
-        match import_format:
-            case "excel":
-                importer = ExcelImporter(self.db)
-            case "csv":
-                importer = CsvImporter(self.db)
-            case _:
-                rich.print(f"[red]Invalid or unsupported import format: '{import_format}'")
-                importer = None
-
+        importer = self._create_importer_by_format(import_format)
         if importer is not None:
-            importer.on_import_file = on_import_file
+            importer.on_import_file = self._create_import_file_callback()
 
         return importer
+
+    def _create_import_file_callback(self):
+        """Create callback for import file progress reporting."""
+
+        def on_import_file(filename, partname, count=None):
+            if filename is not None:
+                partname = partname or ""
+                if count is not None:
+                    rich.print(" ", f"[blue]Importing from file {filename} {partname}, {count} graph object(s).")
+                else:
+                    rich.print(" ", f"[blue]Importing from file {filename} {partname}")
+
+        return on_import_file
+
+    def _create_importer_by_format(self, import_format):
+        """Create appropriate importer instance based on format."""
+        importers = {
+            "excel": ExcelImporter,
+            "csv": CsvImporter,
+            "json": JsonImporter,
+            "yaml": YamlImporter,
+        }
+
+        importer_class = importers.get(import_format)
+        if importer_class:
+            return importer_class(self.db)
+
+        rich.print(f"[red]Invalid or unsupported import format: '{import_format}'")
+        return None

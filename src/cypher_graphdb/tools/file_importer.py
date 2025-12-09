@@ -33,7 +33,7 @@ class FileImporter(BaseImporter):
         self.db = db
         self.valid_file_extensions = set()
 
-        self.on_import_file: Callable = lambda filename, partname: None
+        self.on_import_file: Callable = lambda filename, partname, count=None: None
         self.on_invalid_file: Callable = lambda filename: None
 
     def statistics(self) -> None:
@@ -86,8 +86,7 @@ class FileImporter(BaseImporter):
             To be implemented by subclasses.
 
         """
-        # needs to be implemented by subclasses
-        pass
+        raise NotImplementedError("Subclasses must implement load_from_file() method")
 
     def resolve_filenames(self, file_or_dirname: str, recursive: bool) -> list[str]:
         """Resolve file paths from file or directory specification.
