@@ -398,13 +398,7 @@ class HierarchicalExporter(FileExporter):
         }
         result.update(edge_props)
 
-        # Add target node properties (exclude identification fields already handled)
-        target_props = {k: v for k, v in target_dict.items() if k not in {"gid_", "label_"}}
-
-        # Only add target properties if there are any beyond identification
-        if target_props:
-            result.update(target_props)
-
+        # Don't include target node properties - target node data is exported separately
         return result
 
     def _serialize_edge(self, edge: Any) -> dict[str, Any]:
@@ -442,9 +436,7 @@ class HierarchicalExporter(FileExporter):
         """
         if hasattr(node, "flatten_properties"):
             node_dict = node.flatten_properties()
-            # Add label_ if node has label information
-            if hasattr(node, "label_") and node.label_:
-                node_dict["label_"] = node.label_
+            # Don't add label_ - it's already in the node:Label key
         elif isinstance(node, dict):
             node_dict = node.copy()
         else:
