@@ -349,7 +349,7 @@ class HierarchicalImporter(FileImporter):
     def _is_relation_collection(self, entity_type: str, items: Any) -> bool:
         """Determine if a collection represents relations."""
         _ = items  # Parameter kept for interface consistency
-        return entity_type.startswith("edge:") or entity_type.endswith("_relation") or entity_type.endswith("_relations")
+        return entity_type.startswith("edge:")
 
 
 __all__ = ["HierarchicalImporter"]

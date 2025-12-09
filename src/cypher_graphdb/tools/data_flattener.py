@@ -65,7 +65,7 @@ class DataFlattener:
 
         for key, value in item.items():
             # Skip relation fields and special internal fields
-            if not cls._is_relation_field(key, value) and not cls._is_internal_field(key) and cls._is_node_property(value):
+            if not cls._is_edge_field(key) and not cls._is_internal_field(key) and cls._is_node_property(value):
                 node_props[key] = value
 
         return node_props
@@ -118,24 +118,6 @@ class DataFlattener:
             True if field starts with 'node:', False otherwise.
         """
         return key.startswith("node:")
-
-    @classmethod
-    def _is_relation_field(cls, key: str, value: Any) -> bool:
-        """Determine if a field represents a relation.
-
-        DEPRECATED: Use _is_edge_field instead.
-        Kept for backward compatibility during transition.
-
-        Args:
-            key: Field name to check.
-            value: Field value to analyze (unused, kept for compatibility).
-
-        Returns:
-            True if field is a relation, False otherwise.
-        """
-        _ = value  # Mark as intentionally unused for backward compatibility
-        # Use new explicit prefix detection
-        return cls._is_edge_field(key)
 
     @classmethod
     def _is_internal_field(cls, key: str) -> bool:
