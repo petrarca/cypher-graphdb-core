@@ -121,7 +121,7 @@ class HierarchicalExporter(FileExporter):
 
         # Add nodes with attached relations
         for label, nodes in nodes_by_label.items():
-            result[label] = []
+            result[f"node:{label}"] = []
 
             for node in nodes:
                 # Serialize node
@@ -131,16 +131,16 @@ class HierarchicalExporter(FileExporter):
                 relations = self._find_relations_for_node(node, edges_by_label, node_lookup)
                 if relations:
                     for relation in relations:
-                        relation_key = relation["label_"]
+                        relation_key = f"edge:{relation['label_']}"
                         node_data[relation_key] = node_data.get(relation_key, [])
                         node_data[relation_key].append(relation["target_data"])
 
-                result[label].append(node_data)
+                result[f"node:{label}"].append(node_data)
 
         # Add standalone relation collections (those that couldn't be attached)
         standalone_relations = self._find_standalone_relations(edges_by_label, node_lookup)
         for label, relations in standalone_relations.items():
-            result[f"_{label.lower()}"] = relations
+            result[f"edge:{label}"] = relations
 
         return result
 

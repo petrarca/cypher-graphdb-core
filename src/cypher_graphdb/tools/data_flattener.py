@@ -74,6 +74,8 @@ class DataFlattener:
     def _extract_relations(cls, item: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract relation data from a nested item.
 
+        Relations are identified by 'edge:' prefix.
+
         Args:
             item: The nested item to process.
 
@@ -83,41 +85,57 @@ class DataFlattener:
         relations = []
 
         for key, value in item.items():
-            if cls._is_relation_field(key, value):
+            if cls._is_edge_field(key):
+                relation_key = key.removeprefix("edge:")
                 if isinstance(value, list):
                     for relation_item in value:
-                        relations.append({"relation_key": key, "data": relation_item})
+                        relations.append({"relation_key": relation_key, "data": relation_item})
                 elif isinstance(value, dict):
-                    relations.append({"relation_key": key, "data": value})
+                    relations.append({"relation_key": relation_key, "data": value})
 
         return relations
+
+    @classmethod
+    def _is_edge_field(cls, key: str) -> bool:
+        """Check if field represents an edge using explicit prefix.
+
+        Args:
+            key: Field name to check.
+
+        Returns:
+            True if field starts with 'edge:', False otherwise.
+        """
+        return key.startswith("edge:")
+
+    @classmethod
+    def _is_node_field(cls, key: str) -> bool:
+        """Check if field represents a node collection using explicit prefix.
+
+        Args:
+            key: Field name to check.
+
+        Returns:
+            True if field starts with 'node:', False otherwise.
+        """
+        return key.startswith("node:")
 
     @classmethod
     def _is_relation_field(cls, key: str, value: Any) -> bool:
         """Determine if a field represents a relation.
 
-        Relations are detected by structure ONLY:
-        - Dict with target_gid (new explicit format)
-        - List of objects with target_gid
+        DEPRECATED: Use _is_edge_field instead.
+        Kept for backward compatibility during transition.
 
         Args:
-            key: Field name to check (unused - structure-based detection).
-            value: Field value to analyze.
+            key: Field name to check.
+            value: Field value to analyze (unused, kept for compatibility).
 
         Returns:
             True if field is a relation, False otherwise.
         """
-        _ = key  # Parameter kept for interface consistency but unused in structural detection
-
-        # New explicit format: nested objects with target_gid are relations
-        if isinstance(value, dict) and "target_gid" in value:
-            return True
-
-        # Lists of objects with target_gid are relations
-        if isinstance(value, list) and value:
-            return all(isinstance(item, dict) and "target_gid" in item for item in value)
-
-        return False
+        _ = value  # Mark as intentionally unused for backward compatibility
+        # Use new explicit prefix detection
+        return cls._is_edge_field(key)
 
     @classmethod
     def _is_internal_field(cls, key: str) -> bool:

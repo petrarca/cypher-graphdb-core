@@ -171,10 +171,13 @@ class HierarchicalImporter(FileImporter):
     def _process_node_collection(self, entity_type: str, items: list[dict[str, Any]]):
         """Process a collection of nodes with embedded relations."""
 
+        # Extract actual label from node: prefix
+        actual_label = entity_type.removeprefix("node:") if entity_type.startswith("node:") else entity_type
+
         for item in items:
             try:
                 # Flatten the item to separate node data from relations
-                flattened = DataFlattener.flatten_item(item, entity_type)
+                flattened = DataFlattener.flatten_item(item, actual_label)
 
                 # Create the node
                 node_id = self._create_node_from_flattened(flattened)
@@ -319,6 +322,9 @@ class HierarchicalImporter(FileImporter):
     def _process_standalone_relations(self, entity_type: str, items: list[dict[str, Any]]):
         """Process standalone relation collections."""
 
+        # Extract actual label from edge: prefix
+        actual_label = entity_type.removeprefix("edge:") if entity_type.startswith("edge:") else entity_type
+
         for item in items:
             try:
                 # For standalone relations, we need to resolve both endpoints
@@ -330,7 +336,7 @@ class HierarchicalImporter(FileImporter):
                     target_id = self.node_cache.get(target_gid)
 
                     if source_id and target_id:
-                        self._create_edge_and_increment(entity_type, source_id, target_id, item)
+                        self._create_edge_and_increment(actual_label, source_id, target_id, item)
 
             except (ValueError, KeyError, RuntimeError) as ex:
                 print(f"Error processing standalone relation: {ex}")
@@ -338,12 +344,12 @@ class HierarchicalImporter(FileImporter):
 
     def _is_node_collection(self, entity_type: str, items: Any) -> bool:
         """Determine if a collection represents nodes."""
-        return not self._is_relation_collection(entity_type, items)
+        return entity_type.startswith("node:") or not self._is_relation_collection(entity_type, items)
 
     def _is_relation_collection(self, entity_type: str, items: Any) -> bool:
         """Determine if a collection represents relations."""
         _ = items  # Parameter kept for interface consistency
-        return entity_type.endswith("_relation") or entity_type.endswith("_relations")
+        return entity_type.startswith("edge:") or entity_type.endswith("_relation") or entity_type.endswith("_relations")
 
 
 __all__ = ["HierarchicalImporter"]

@@ -56,31 +56,29 @@ Product:
 
 
 def test_yaml_import_with_relationships(tmp_path):
-    """Test YAML import with embedded relationships."""
+    """Test YAML import with embedded relationships using edge: prefix."""
     db = build_db()
 
     yaml_content = """
-Product:
+node:Product:
 - gid_: iphone15
   name: iPhone 15
   price: 999
-  ipownedby:
-  - gid_: rel_iphone_apple
-    target_gid: apple
+  edge:IP_OWNED_BY:
+  - target_gid: apple
     target_label: Company
     since: 2007
-  usestechnology:
-  - gid_: rel_iphone_ios
-    target_gid: ios
+  edge:USES_TECHNOLOGY:
+  - target_gid: ios
     target_label: Technology
     version: "17"
 
-Company:
+node:Company:
 - gid_: apple
   name: Apple Inc.
   founded: 1976
 
-Technology:
+node:Technology:
 - gid_: ios
   name: iOS
   version: "17"
@@ -149,15 +147,13 @@ def test_gid_caching_for_relationship_resolution(tmp_path):
     db = build_db()
 
     yaml_content = """
-Person:
+node:Person:
 - gid_: alice
   name: Alice
-  related_to:
-  - gid_: rel_alice_bob
-    target_gid: bob
+  edge:RELATED_TO:
+  - target_gid: bob
     target_label: Person
-  - gid_: rel_alice_charlie
-    target_gid: charlie
+  - target_gid: charlie
     target_label: Person
 - gid_: bob
   name: Bob

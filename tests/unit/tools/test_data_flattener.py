@@ -26,12 +26,12 @@ def test_flatten_simple_node():
 
 
 def test_flatten_node_with_single_relationship():
-    """Test flattening node with one relationship."""
+    """Test flattening node with a single relationship using edge: prefix."""
     item = {
         "gid_": "iphone15",
         "name": "iPhone 15",
         "price": 999,
-        "ipOwnedBy": {"target_gid": "apple", "target_label": "Company", "since": 2007},
+        "edge:IP_OWNED_BY": {"target_gid": "apple", "target_label": "Company", "since": 2007},
     }
 
     flattened = DataFlattener.flatten_item(item, "Product")
@@ -44,19 +44,19 @@ def test_flatten_node_with_single_relationship():
     assert len(flattened.relations) == 1
 
     relation = flattened.relations[0]
-    assert relation["relation_key"] == "ipOwnedBy"
+    assert relation["relation_key"] == "IP_OWNED_BY"
     assert relation["data"]["target_gid"] == "apple"
     assert relation["data"]["target_label"] == "Company"
     assert relation["data"]["since"] == 2007
 
 
 def test_flatten_node_with_multiple_relationships():
-    """Test flattening node with multiple relationships."""
+    """Test flattening node with multiple relationships using edge: prefix."""
     item = {
-        "gid_": "iphone15",
-        "name": "iPhone 15",
-        "ipOwnedBy": {"target_gid": "apple", "target_label": "Company"},
-        "usesTechnology": {"target_gid": "ios", "target_label": "Technology", "version": "17"},
+        "gid_": "iphone",
+        "name": "iPhone",
+        "edge:IP_OWNED_BY": {"target_gid": "apple", "target_label": "Company", "since": 2007},
+        "edge:USES_TECHNOLOGY": {"target_gid": "ios", "target_label": "Technology", "version": "17"},
     }
 
     flattened = DataFlattener.flatten_item(item, "Product")
@@ -65,26 +65,26 @@ def test_flatten_node_with_multiple_relationships():
     assert len(flattened.relations) == 2
 
     relation_keys = {rel["relation_key"] for rel in flattened.relations}
-    assert relation_keys == {"ipOwnedBy", "usesTechnology"}
+    assert relation_keys == {"IP_OWNED_BY", "USES_TECHNOLOGY"}
 
     # Check first relationship
-    ip_owned_rel = next(rel for rel in flattened.relations if rel["relation_key"] == "ipOwnedBy")
+    ip_owned_rel = next(rel for rel in flattened.relations if rel["relation_key"] == "IP_OWNED_BY")
     assert ip_owned_rel["data"]["target_gid"] == "apple"
     assert ip_owned_rel["data"]["target_label"] == "Company"
 
     # Check second relationship
-    uses_tech_rel = next(rel for rel in flattened.relations if rel["relation_key"] == "usesTechnology")
+    uses_tech_rel = next(rel for rel in flattened.relations if rel["relation_key"] == "USES_TECHNOLOGY")
     assert uses_tech_rel["data"]["target_gid"] == "ios"
     assert uses_tech_rel["data"]["target_label"] == "Technology"
     assert uses_tech_rel["data"]["version"] == "17"
 
 
 def test_flatten_node_with_relationship_list():
-    """Test flattening node with list of relationships."""
+    """Test flattening node with list of relationships using edge: prefix."""
     item = {
         "gid_": "company",
         "name": "TechCorp",
-        "employees": [
+        "edge:EMPLOYS": [
             {"target_gid": "alice", "target_label": "Person", "role": "Engineer"},
             {"target_gid": "bob", "target_label": "Person", "role": "Manager"},
         ],
@@ -96,19 +96,19 @@ def test_flatten_node_with_relationship_list():
     assert len(flattened.relations) == 2
 
     for rel in flattened.relations:
-        assert rel["relation_key"] == "employees"
+        assert rel["relation_key"] == "EMPLOYS"
         assert "target_gid" in rel["data"]
         assert "target_label" in rel["data"]
 
 
 def test_relationship_detection_patterns():
-    """Test various relationship detection patterns."""
+    """Test various relationship detection patterns with explicit edge: prefix."""
     test_cases = [
-        ("ipownedby", True),  # dict with target_gid = relation
-        ("usestechnology", True),  # dict with target_gid = relation
-        ("ip_owned_by", True),  # dict with target_gid = relation
-        ("uses_technology", True),  # dict with target_gid = relation
-        ("owned_by", True),  # dict with target_gid = relation
+        ("edge:ipownedby", True),  # edge: prefix = relation
+        ("edge:usestechnology", True),  # edge: prefix = relation
+        ("edge:IP_OWNED_BY", True),  # edge: prefix = relation
+        ("edge:USES_TECHNOLOGY", True),  # edge: prefix = relation
+        ("edge:owned_by", True),  # edge: prefix = relation
         ("name", False),  # primitive string = not a relation
         ("description", False),  # primitive string = not a relation
         ("metadata", False),  # primitive string = not a relation
@@ -116,7 +116,7 @@ def test_relationship_detection_patterns():
 
     for field_name, should_be_relation in test_cases:
         if should_be_relation:
-            # Relationship fields have target_gid (new explicit format)
+            # Relationship fields have edge: prefix and target_gid
             item = {"gid_": "test", field_name: {"target_gid": "target", "target_label": "Entity", "since": 2007}}
         else:
             # Non-relationship fields have primitive values
@@ -126,7 +126,9 @@ def test_relationship_detection_patterns():
 
         if should_be_relation:
             assert len(flattened.relations) == 1
-            assert flattened.relations[0]["relation_key"] == field_name
+            # relation_key should have edge: prefix removed
+            expected_key = field_name.removeprefix("edge:")
+            assert flattened.relations[0]["relation_key"] == expected_key
         else:
             assert len(flattened.relations) == 0
             assert field_name in flattened.node_data
@@ -192,11 +194,11 @@ def test_empty_and_null_handling():
 
 
 def test_nested_relationship_structure():
-    """Test complex nested relationship structures."""
+    """Test complex nested relationship structures using edge: prefix."""
     item = {
         "gid_": "complex",
         "name": "Complex Node",
-        "hasParts": {
+        "edge:HAS_PARTS": {
             "target_gid": "part1",
             "target_label": "Part",
             "subcomponents": {"target_gid": "sub1", "target_label": "SubComponent"},
@@ -209,7 +211,7 @@ def test_nested_relationship_structure():
     assert len(flattened.relations) == 1
 
     relation = flattened.relations[0]
-    assert relation["relation_key"] == "hasParts"
+    assert relation["relation_key"] == "HAS_PARTS"
     assert relation["data"]["target_gid"] == "part1"
     assert relation["data"]["target_label"] == "Part"
     assert "subcomponents" in relation["data"]
