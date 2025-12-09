@@ -8,7 +8,7 @@ import os
 from typing import Any
 
 from cypher_graphdb import CypherGraphDB, graphops
-from cypher_graphdb.models import Graph
+from cypher_graphdb.models import Graph, TreeResult
 
 from .file_exporter import FileExporter, FileExporterOptions
 from .json_yaml_data_source import JsonYamlDataSource
@@ -75,6 +75,45 @@ class HierarchicalExporter(FileExporter):
         else:
             self._export_multiple_files(nested_data, filename, self.opts)
 
+    def export_tree_result(self, tree_result: TreeResult, filename: str):
+        """Export TreeResult directly to JSON/YAML file.
+
+        This method exports a TreeResult (from | tree command) directly,
+        without re-analyzing the graph for tree structure.
+
+        Args:
+            tree_result: TreeResult containing tree structure and direction.
+            filename: Target filename for export.
+        """
+        # Convert tree structure to nested format for export
+        nested_data = self._convert_tree_result_to_nested(tree_result)
+
+        # Export to single file (tree export doesn't support multiple files)
+        self._export_single_file(nested_data, filename, self.opts)
+
+    def _convert_tree_result_to_nested(self, tree_result: TreeResult) -> list[tuple[str, Any]]:
+        """Convert TreeResult to nested export format.
+
+        Args:
+            tree_result: TreeResult containing tree structure.
+
+        Returns:
+            List of (label, entities) tuples with nested tree structure.
+        """
+
+        # Build dict structure: {node:Label: [root_data, ...]}
+        nested_data = {}
+
+        for root_node, _edge, children in tree_result.tree_structure:
+            root_data = self._convert_tree_node_to_nested(root_node, children, tree_result.direction)
+            root_key = f"node:{root_node.label_}"
+
+            if root_key not in nested_data:
+                nested_data[root_key] = []
+            nested_data[root_key].append(root_data)
+
+        return nested_data
+
     def _build_tree_structure(self, graph: Graph, tree_analysis: graphops.TreeAnalysis) -> list[tuple[str, Any]]:
         """Build nested tree structure for export.
 
@@ -102,7 +141,7 @@ class HierarchicalExporter(FileExporter):
 
         Args:
             node: Current graph node.
-            children: Child nodes from tree structure.
+            children: Child nodes from tree structure (already properly organized).
             direction: Tree direction ("outgoing" or "incoming").
 
         Returns:
@@ -110,22 +149,23 @@ class HierarchicalExporter(FileExporter):
         """
         # Start with node properties
         node_data = dict(node.properties_)
-        node_data["label_"] = node.label_
 
-        # Process children (edges and nested nodes)
+        # Convert each child directly - tree structure already has all children
         for child_node, edge, grandchildren in children:
             edge_key = f"edge:{edge.label_}"
+            if direction == "incoming":
+                edge_key = f"{edge_key}:reverse"
 
-            # Determine edge direction for nested format
-            if direction == "outgoing":
-                # Normal direction: parent -> child
-                nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
-                node_data[edge_key] = {"node:Child": [nested_child]}
-            else:
-                # Reverse direction: parent <- child (use :reverse suffix)
-                edge_key_reverse = f"{edge_key}:reverse"
-                nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
-                node_data[edge_key_reverse] = {"node:Child": [nested_child]}
+            child_node_key = f"node:{child_node.label_}"
+            nested_child = self._convert_tree_node_to_nested(child_node, grandchildren, direction)
+
+            # Add to existing list or create new one
+            if edge_key not in node_data:
+                node_data[edge_key] = {child_node_key: []}
+            if child_node_key not in node_data[edge_key]:
+                node_data[edge_key][child_node_key] = []
+
+            node_data[edge_key][child_node_key].append(nested_child)
 
         return node_data
 

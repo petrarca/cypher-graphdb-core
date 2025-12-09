@@ -275,8 +275,23 @@ class HierarchicalImporter(FileImporter):
         direction = pending["relation_data"].get("direction", "forward")
 
         if relation_format == "nested":
-            # Handle nested format: create target node inline
-            target_id = self._create_nested_node(relation_data, relation_key, source_id)
+            # Handle nested format: create target nodes inline (may be multiple)
+            target_ids = self._create_nested_node(relation_data, relation_key)
+            if not target_ids:
+                return
+
+            # Extract edge properties
+            edge_properties = DataFlattener.extract_edge_properties(relation_data)
+
+            # Create edges for all target nodes
+            for target_id in target_ids:
+                if direction == "reverse":
+                    self._create_edge_and_increment(relation_key, target_id, source_id, edge_properties)
+                else:
+                    self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
+
+            # Recursively process nested relations for all target nodes
+            self._process_nested_relations(relation_data, target_ids)
         else:
             # Handle explicit format: resolve existing target node
             target_id = self._resolve_target_node(relation_data)
@@ -284,46 +299,46 @@ class HierarchicalImporter(FileImporter):
                 print(f"Warning: Could not resolve target node for relation {relation_key}")
                 return
 
-        # Extract edge properties
-        edge_properties = DataFlattener.extract_edge_properties(relation_data)
+            # Extract edge properties
+            edge_properties = DataFlattener.extract_edge_properties(relation_data)
 
-        # Create the edge with direction handling
-        if direction == "reverse":
-            # Reverse direction: swap source and target
-            self._create_edge_and_increment(relation_key, target_id, source_id, edge_properties)
-        else:
-            # Forward direction: normal flow
-            self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
+            # Create the edge with direction handling
+            if direction == "reverse":
+                self._create_edge_and_increment(relation_key, target_id, source_id, edge_properties)
+            else:
+                self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
 
-        # For nested format, recursively process nested relations
-        if relation_format == "nested":
-            self._process_nested_relations(relation_data, target_id)
+    def _create_nested_node(self, relation_data: dict[str, Any], relation_key: str) -> list[int]:
+        """Create nested nodes from relation data and return their IDs.
 
-    def _create_nested_node(self, relation_data: dict[str, Any], relation_key: str, source_id: int) -> int:
-        """Create a nested node from relation data and return its ID."""
+        Handles multiple nodes under the same label (e.g., from tree export).
+        """
         nested_nodes = DataFlattener.extract_nested_nodes(relation_data)
 
         if not nested_nodes:
             print(f"Warning: Nested relation {relation_key} has no node: definition")
-            return None
+            return []
 
-        # Only one node allowed per edge in nested format
-        if len(nested_nodes) > 1:
-            print(f"Warning: Nested relation {relation_key} has multiple nodes, using first")
+        target_ids = []
+        for node_label, node_data in nested_nodes:
+            # Create the node
+            flattened = DataFlattener.flatten_item(node_data, node_label)
+            target_id = self._create_node_from_flattened(flattened)
+            target_ids.append(target_id)
 
-        node_label, node_data = nested_nodes[0]
+        return target_ids
 
-        # Create the node
-        flattened = DataFlattener.flatten_item(node_data, node_label)
-        target_id = self._create_node_from_flattened(flattened)
+    def _process_nested_relations(self, relation_data: dict[str, Any], source_ids: list[int]):
+        """Recursively process nested relations from nested nodes.
 
-        return target_id
-
-    def _process_nested_relations(self, relation_data: dict[str, Any], source_id: int):
-        """Recursively process nested relations from a nested node."""
+        Args:
+            relation_data: The relation data containing nested nodes.
+            source_ids: List of IDs for the created nodes (parallel to nested_nodes).
+        """
         nested_nodes = DataFlattener.extract_nested_nodes(relation_data)
 
-        for node_label, node_data in nested_nodes:
+        # Pair each node with its corresponding ID
+        for (node_label, node_data), source_id in zip(nested_nodes, source_ids, strict=False):
             # Extract relations from the nested node
             flattened = DataFlattener.flatten_item(node_data, node_label)
 

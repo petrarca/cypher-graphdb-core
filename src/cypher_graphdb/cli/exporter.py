@@ -10,6 +10,7 @@ import sys
 import rich
 
 from cypher_graphdb import CypherGraphDB, Graph, utils
+from cypher_graphdb.models import TreeResult
 from cypher_graphdb.tools import CsvExporter, ExcelExporter, FileExporterOptions, HierarchicalExporter
 
 
@@ -58,6 +59,47 @@ class GraphExporter:
         try:
             exporter.export(graph, filename)
             rich.print("[green]Successfully exported.")
+        except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
+            rich.print(f"[red]Export failed: {e}")
+
+    def export_tree(self, tree_result: TreeResult, args, kwargs):
+        """Export TreeResult directly as tree structure (JSON/YAML only).
+
+        Args:
+            tree_result: TreeResult from | tree command
+            args: Export arguments (filename, etc.)
+            kwargs: Export options
+        """
+
+        def on_export_file(rows, dirname, filename, partname):
+            if dirname is not None:
+                rich.print(" ", f"[blue]Exporting tree to directory {dirname}, {rows} root node(s).")
+            if filename is not None:
+                partname = partname or ""
+                rich.print(" ", f"[blue]Exporting tree to file {filename} {partname}, {rows} root node(s).")
+
+        if not tree_result:
+            rich.print("[yellow]Empty tree could not be exported.")
+            return
+
+        if len(args) == 0:
+            rich.print("[red]Please specify a file where to export!", file=sys.stderr)
+            return
+
+        filename = args[0]
+        _, _, ext = utils.split_path(filename)
+        export_format = utils.resolve_fileformat(ext)
+
+        if export_format not in ("json", "yaml"):
+            rich.print(f"[red]'{export_format.upper()}' does not support tree exports.", file=sys.stderr)
+            return
+
+        exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
+        exporter.on_export_file = on_export_file
+
+        try:
+            exporter.export_tree_result(tree_result, filename)
+            rich.print("[green]Successfully exported tree.")
         except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
             rich.print(f"[red]Export failed: {e}")
 
