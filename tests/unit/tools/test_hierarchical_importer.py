@@ -6,9 +6,6 @@ Tests cover:
 - Two-phase processing
 - Data flattening integration
 - Error handling
-
-Note: Access to _backend is intentional in tests - we need to verify
-internal mock state for proper test coverage.
 """
 
 from cypher_graphdb.tools import HierarchicalImporter
@@ -45,13 +42,13 @@ Product:
 
     # Verify
     assert len(files_processed) == 1
-    assert len(db._backend.nodes) == 3  # noqa: W0212
+    assert db.node_count() == 3
     assert importer.nodes_created == 3
     assert importer.edges_created == 0
 
     # Check GIDs preserved
-    nodes = list(db._backend.nodes.values())  # noqa: W0212
-    node_gids = {node.properties_.get("gid_") for node in nodes}  # noqa: W0212
+    nodes = db.get_nodes()
+    node_gids = {node.properties_.get("gid_") for node in nodes}
     assert node_gids == {"apple", "google", "iphone15"}
 
 
@@ -92,13 +89,13 @@ node:Technology:
     importer.load(str(yaml_file))
 
     # Verify nodes and edges
-    assert len(db._backend.nodes) == 3  # iPhone + Apple + iOS
-    assert len(db._backend.edges) == 2  # ipOwnedBy + usesTechnology
+    assert db.node_count() == 3  # iPhone + Apple + iOS
+    assert db.edge_count() == 2  # ipOwnedBy + usesTechnology
     assert importer.nodes_created == 3
     assert importer.edges_created == 2
 
     # Check relationship properties
-    edge_props = [e.properties_ for e in db._backend.edges.values()]
+    edge_props = [e.properties_ for e in db.get_edges()]
     assert any("since" in props and props["since"] == 2007 for props in edge_props)
 
 
@@ -130,12 +127,12 @@ def test_json_import_equivalent_behavior(tmp_path):
     importer2.load(str(yaml_file))
 
     # Should produce identical results
-    assert len(db1._backend.nodes) == len(db2._backend.nodes)
+    assert db1.node_count() == db2.node_count()
     assert importer1.nodes_created == importer2.nodes_created
 
     # Check node properties are identical
-    nodes1 = list(db1._backend.nodes.values())
-    nodes2 = list(db2._backend.nodes.values())
+    nodes1 = db1.get_nodes()
+    nodes2 = db2.get_nodes()
 
     for n1, n2 in zip(nodes1, nodes2, strict=False):
         assert n1.label_ == n2.label_
@@ -169,10 +166,10 @@ node:Person:
     importer.load(str(yaml_file))
 
     # Verify all nodes created
-    assert len(db._backend.nodes) == 3
+    assert db.node_count() == 3
 
     # Verify relationships created (Alice knows Bob and Charlie)
-    assert len(db._backend.edges) == 2
+    assert db.edge_count() == 2
 
     # Check that GID cache was used
     assert len(importer.node_cache) == 3
@@ -203,7 +200,7 @@ Company:
 
     # Should return empty list due to error
     assert len(files_processed) == 0
-    assert len(db._backend.nodes) == 0
+    assert db.node_count() == 0
 
 
 def test_data_type_preservation(tmp_path):
@@ -228,7 +225,7 @@ Product:
     importer.load(str(yaml_file))
 
     # Verify data types preserved
-    node = list(db._backend.nodes.values())[0]
+    node = db.get_nodes()[0]
     props = node.properties_
 
     assert isinstance(props["price"], float)
@@ -264,7 +261,7 @@ Company:
     importer.load(str(yaml_file))
 
     # Should create nodes but no edges
-    assert len(db._backend.nodes) == 2
-    assert len(db._backend.edges) == 0
+    assert db.node_count() == 2
+    assert db.edge_count() == 0
     assert importer.nodes_created == 2
     assert importer.edges_created == 0

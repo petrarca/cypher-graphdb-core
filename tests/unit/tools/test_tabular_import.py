@@ -20,8 +20,8 @@ def test_csv_node_import(tmp_path):
     rows = [["g1", json.dumps({"age": 30})], ["g2", json.dumps({"age": 40})]]
     filename = write_csv(tmp_path, "person.csv", header, rows)
     CsvImporter(db).load(filename)
-    assert len(db._backend.nodes) == 2
-    assert {n.properties_["gid_"] for n in db._backend.nodes.values()} == {"g1", "g2"}
+    assert db.node_count() == 2
+    assert {n.properties_["gid_"] for n in db.get_nodes()} == {"g1", "g2"}
 
 
 def test_csv_node_import_with_label_column(tmp_path):
@@ -30,8 +30,8 @@ def test_csv_node_import_with_label_column(tmp_path):
     rows = [["Person", "g1", json.dumps({"age": 22})]]
     filename = write_csv(tmp_path, "ignoredlabel.csv", header, rows)
     CsvImporter(db).load(filename)
-    assert len(db._backend.nodes) == 1
-    node = list(db._backend.nodes.values())[0]
+    assert db.node_count() == 1
+    node = db.get_nodes()[0]
     assert node.label_ == "Person"
     assert node.properties_["age"] == 22
 
@@ -48,7 +48,7 @@ def test_csv_edge_import_by_gid(tmp_path):
     edge_file = write_csv(tmp_path, "_knows.csv", header_edge, rows_edge)
     CsvImporter(db).load(edge_file)
 
-    assert len(db._backend.edges) == 1
-    edge = list(db._backend.edges.values())[0]
+    assert db.edge_count() == 1
+    edge = db.get_edges()[0]
     assert edge.label_ == "Knows"
     assert edge.properties_["since"] == 2020

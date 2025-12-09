@@ -133,6 +133,23 @@ class MockGraphDB(CypherGraphDB):
                 return None
         return results
 
+    # --- Test helper methods for accessing mock state ---
+    def get_nodes(self) -> list[GraphNode]:
+        """Return all nodes in the mock backend."""
+        return list(self._backend.nodes.values())  # type: ignore[attr-defined]
+
+    def get_edges(self) -> list[GraphEdge]:
+        """Return all edges in the mock backend."""
+        return list(self._backend.edges.values())  # type: ignore[attr-defined]
+
+    def node_count(self) -> int:
+        """Return the number of nodes in the mock backend."""
+        return len(self._backend.nodes)  # type: ignore[attr-defined]
+
+    def edge_count(self) -> int:
+        """Return the number of edges in the mock backend."""
+        return len(self._backend.edges)  # type: ignore[attr-defined]
+
 
 def build_db() -> MockGraphDB:
     """Return a fresh isolated `MockGraphDB` instance for a test."""
