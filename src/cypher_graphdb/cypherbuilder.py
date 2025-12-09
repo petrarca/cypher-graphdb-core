@@ -139,7 +139,7 @@ class CypherBuilder:
         if end_criteria[0] is not None:
             ids.append(end_criteria[0])
 
-        where_condition = "WHERE " + ", ".join(ids) if len(ids) > 0 else ""
+        where_condition = "WHERE " + " AND ".join(ids) if len(ids) > 0 else ""
 
         edge_part = f"{edge_criteria[2]}{edge_criteria[1]}"
         start_node_part = f"{start_criteria[2]}{start_criteria[1]}"

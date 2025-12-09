@@ -130,7 +130,7 @@ def test_fetch_edge_by_criteria_with_nodes():
     )
     cypher = CypherBuilder.fetch_edge_by_criteria(criteria)
     assert "RETURN s,v,e" in cypher
-    assert "WHERE id(v)=101, id(s)=1, id(e)=2" in cypher
+    assert "WHERE id(v)=101 AND id(s)=1 AND id(e)=2" in cypher
 
 
 # ---------------------------------------------------------------------------
