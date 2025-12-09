@@ -34,13 +34,26 @@ class ExportGraphCommand(BaseCommand):
             # Export input data
             if isinstance(parsed_cmd.input, Graph):
                 graph = parsed_cmd.input
+                is_tree_input = False
+            elif self._is_tree_structure(parsed_cmd.input):
+                # Input is already a tree structure - convert to graph but skip tree analysis
+                graph = Graph()
+                graph.merge(parsed_cmd.input)
+                is_tree_input = True
             else:
                 # Convert input to graph format
                 graph = Graph()
                 graph.merge(parsed_cmd.input)
+                is_tree_input = False
 
         # Perform the export using GraphExporter
-        GraphExporter(self.graphdb.db).export(graph, parsed_cmd.args, parsed_cmd.kwargs)
+        if is_tree_input:
+            # Skip tree analysis for pre-built tree structures
+            kwargs = parsed_cmd.kwargs.copy()
+            kwargs["skip_tree_analysis"] = True
+            GraphExporter(self.graphdb.db).export(graph, parsed_cmd.args, kwargs)
+        else:
+            GraphExporter(self.graphdb.db).export(graph, parsed_cmd.args, parsed_cmd.kwargs)
 
         # Set output to input for potential chaining
         parsed_cmd.set_output_to_input()

@@ -7,8 +7,6 @@ and multiple file export modes with nested structure reconstruction.
 import os
 from typing import Any
 
-import rich
-
 from cypher_graphdb import CypherGraphDB, graphops
 from cypher_graphdb.models import Graph
 
@@ -45,30 +43,31 @@ class HierarchicalExporter(FileExporter):
             graph: The graph to export.
             filename: Target filename or directory path.
             validate_filename: Whether to validate the filename format.
+
+        Raises:
+            ValueError: If tree export is requested but graph is not a valid tree.
         """
-        # Check if tree export is forced or if we should auto-detect
+        # Check if user explicitly requested tree export OR auto-detect tree structure
         if self.opts.as_tree:
-            # Force tree export without expensive detection
-            tree_analysis = graphops.analyze_tree_structure(graph, skip_detection=True)
-            rich.print(f"[green]✓ Forced tree export ({tree_analysis.dominant_pattern})")
-            rich.print(f"[blue]  Direction: {tree_analysis.direction}, Roots: {len(tree_analysis.root_nodes)}")
-            nested_data = self._build_tree_structure(graph, tree_analysis)
-        else:
-            # Analyze if graph can be exported as tree structure
+            # User wants tree export - validate that it's actually a tree
             tree_analysis = graphops.analyze_tree_structure(graph)
 
             if tree_analysis.is_tree:
-                rich.print(f"[green]✓ Tree structure detected ({tree_analysis.dominant_pattern})")
-                rich.print(f"[blue]  Direction: {tree_analysis.direction}, Roots: {len(tree_analysis.root_nodes)}")
-
-                # Export as tree structure
+                # Valid tree structure - proceed with tree export
                 nested_data = self._build_tree_structure(graph, tree_analysis)
             else:
-                rich.print(f"[yellow]⚠ Graph structure detected: {tree_analysis.reason}")
-                rich.print("[blue]  Exporting in explicit format...")
+                # Not a valid tree structure - raise exception
+                raise ValueError(f"Cannot export as tree: {tree_analysis.reason}")
+        else:
+            # Default behavior - auto-detect if graph is a tree structure
+            tree_analysis = graphops.analyze_tree_structure(graph)
 
-                # Export as explicit graph structure
-                nested_data = self._build_nested_structure(graph)
+            if tree_analysis.is_tree:
+                # Auto-detected tree structure - use tree export
+                nested_data = self._build_tree_structure(graph, tree_analysis)
+            else:
+                # Not a tree - use explicit format
+                nested_data = self._build_nested_structure(graph.grouped_entities().items())
 
         # Export based on mode (single file vs multiple files)
         if self.is_valid_file(filename):
@@ -274,8 +273,7 @@ class HierarchicalExporter(FileExporter):
         for label, nodes in nodes_by_label.items():
             for node in nodes:
                 # Use GID if available, otherwise ID
-                gid = node.get("gid_")
-                key = gid if gid else node.get("id_")
+                key = node.get("gid_") or node.get("id_")
                 if key:
                     lookup[key] = {"node": node, "label": label}
 

@@ -4,6 +4,7 @@ This module provides functionality for exporting graph data to various formats
 through the command-line interface.
 """
 
+import json
 import sys
 
 import rich
@@ -47,18 +48,18 @@ class GraphExporter:
 
         export_format = utils.resolve_fileformat(ext)
 
-        if not export_format:
-            export_format = kwargs.get("format", None)
-
         if not (exporter := self._resolve_exporter(export_format, args, kwargs)):
+            rich.print(f"[red]Unsupported export format: '{export_format}'", file=sys.stderr)
             return
 
         # wire up callbacks
         exporter.on_export_file = on_export_file
 
-        exporter.export(graph, filename)
-
-        rich.print("[green]Successfully exported.")
+        try:
+            exporter.export(graph, filename)
+            rich.print("[green]Successfully exported.")
+        except (ValueError, RuntimeError, FileNotFoundError, OSError, json.JSONDecodeError) as e:
+            rich.print(f"[red]Export failed: {e}")
 
     def _resolve_exporter(self, export_format, args, kwargs):
         match export_format:
