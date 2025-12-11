@@ -7,7 +7,15 @@ Apache AGE (Age Graph Extension) for PostgreSQL.
 
 from .backendprovider import backend_provider
 from .cardinality import Cardinality
-from .cyphergraphdb import CypherGraphDB, MatchCriteria, MatchEdgeById, MatchEdgeCriteria, MatchNodeById, MatchNodeCriteria
+from .cyphergraphdb import (
+    CypherGraphDB,
+    MatchCriteria,
+    MatchEdgeById,
+    MatchEdgeCriteria,
+    MatchNodeById,
+    MatchNodeCriteria,
+    QueryResult,
+)
 from .cypherjson import GraphJSONEncoder
 from .dbpool import CypherGraphDBPool
 from .decorators import edge, node, relation
@@ -32,6 +40,7 @@ __all__ = [
     "GraphEdgeInfo",
     "GraphStatistics",
     "CypherGraphDB",
+    "QueryResult",
     "MatchCriteria",
     "MatchEdgeCriteria",
     "MatchEdgeById",
