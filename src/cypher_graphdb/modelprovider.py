@@ -500,7 +500,7 @@ class ModelProvider(collections.abc.Collection):
 
         return typed_model
 
-    def _clear_models_by_source(self, source: str | None) -> int:
+    def clear_models_by_source(self, source: str | None) -> int:
         """Remove all models with matching source.
 
         Args:
@@ -510,12 +510,13 @@ class ModelProvider(collections.abc.Collection):
         Returns:
             Number of models removed
         """
-        removed_count = 0
-        for _label, info in list(self.items()):
-            if info.source == source:
-                self.remove(info)
+        with self._lock:
+            removed_count = 0
+            labels_to_remove = [label for label, info in self._models.items() if info.source == source]
+            for label in labels_to_remove:
+                self._models.pop(label, None)
                 removed_count += 1
-        return removed_count
+            return removed_count
 
     def load_from_json_schemas(self, schemas: list[dict[str, Any]], replace_existing: bool = False) -> list[GraphModelInfo]:
         """Load models from JSON schemas with x-graph extensions.
@@ -575,7 +576,7 @@ class ModelProvider(collections.abc.Collection):
         with self._lock:
             # Clear existing models from JSON schemas (source=None) if requested
             if replace_existing:
-                removed_count = self._clear_models_by_source(None)
+                removed_count = self.clear_models_by_source(None)
                 if removed_count > 0:
                     logger.debug(f"Removed {removed_count} existing schema-based model(s)")
 
