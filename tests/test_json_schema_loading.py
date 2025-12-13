@@ -371,7 +371,7 @@ class TestModelProviderIntegration:
         provider.load_from_json_schemas(schemas)
 
         # Create node using provider
-        node = provider.create_node("Person", {"name": "Alice", "age": 30}, id=1)
+        node = provider.create_node("Person", {"name": "Alice", "age": 30}, id_=1)
 
         assert node.label_ == "Person"
         assert node.id_ == 1
@@ -392,7 +392,7 @@ class TestModelProviderIntegration:
         provider.load_from_json_schemas(schemas)
 
         # Create edge using provider
-        edge = provider.create_edge("KNOWS", start_id=1, end_id=2, props={"since": 2020}, id=10)
+        edge = provider.create_edge("KNOWS", start_id=1, end_id=2, props={"since": 2020}, id_=10)
 
         assert edge.label_ == "KNOWS"
         assert edge.id_ == 10

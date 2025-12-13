@@ -161,8 +161,8 @@ class TestDecoratorVsSchemaEquivalence:
         provider.load_from_json_schemas([schema])
 
         # Create nodes using provider
-        node_decorator = provider.create_node("PersonDecorator", {"name": "Alice", "age": 30}, id=1)
-        node_schema = provider.create_node("PersonSchema", {"name": "Bob", "age": 25}, id=2)
+        node_decorator = provider.create_node("PersonDecorator", {"name": "Alice", "age": 30}, id_=1)
+        node_schema = provider.create_node("PersonSchema", {"name": "Bob", "age": 25}, id_=2)
 
         # Both should have same structure
         assert node_decorator.label_ == "PersonDecorator"
@@ -191,8 +191,8 @@ class TestDecoratorVsSchemaEquivalence:
         provider.load_from_json_schemas([schema])
 
         # Create edges using provider
-        edge_decorator = provider.create_edge("KNOWS_DECORATOR", start_id=1, end_id=2, props={"since": 2020}, id=10)
-        edge_schema = provider.create_edge("KNOWS_SCHEMA", start_id=3, end_id=4, props={"since": 2021}, id=11)
+        edge_decorator = provider.create_edge("KNOWS_DECORATOR", start_id=1, end_id=2, props={"since": 2020}, id_=10)
+        edge_schema = provider.create_edge("KNOWS_SCHEMA", start_id=3, end_id=4, props={"since": 2021}, id_=11)
 
         # Both should have same structure
         assert edge_decorator.label_ == "KNOWS_DECORATOR"

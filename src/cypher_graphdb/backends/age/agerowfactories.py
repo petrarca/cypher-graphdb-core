@@ -19,14 +19,14 @@ from cypher_graphdb.models import GraphEdge, GraphNode, GraphPath
 
 def _create_graph_node(value: age.models.Vertex, stats: ExecStatistics, provider: ModelProvider) -> GraphNode:
     """Create a GraphNode from an AGE Vertex."""
-    node = provider.create_node(value.label, value.properties, id=value.id)
+    node = provider.create_node(value.label, value.properties, id_=value.id)
     stats.track_node(node)
     return node
 
 
 def _create_graph_edge(value: age.models.Edge, stats: ExecStatistics, provider: ModelProvider) -> GraphEdge:
     """Create a GraphEdge from an AGE Edge."""
-    edge = provider.create_edge(value.label, value.start_id, value.end_id, value.properties, id=value.id)
+    edge = provider.create_edge(value.label, value.start_id, value.end_id, value.properties, id_=value.id)
     stats.track_edge(edge)
     return edge
 
@@ -38,11 +38,11 @@ def _create_graph_path(value, stats: ExecStatistics, provider: ModelProvider) ->
     for entity in value.entities:
         if isinstance(entity, age.models.Vertex):
             # Don't update stats here, will be updated when path stats are updated
-            node = provider.create_node(entity.label, entity.properties, id=entity.id)
+            node = provider.create_node(entity.label, entity.properties, id_=entity.id)
             path.append(node)
         elif isinstance(entity, age.models.Edge):
             # Don't update stats here, will be updated when path stats are updated
-            edge = provider.create_edge(entity.label, entity.start_id, entity.end_id, entity.properties, id=entity.id)
+            edge = provider.create_edge(entity.label, entity.start_id, entity.end_id, entity.properties, id_=entity.id)
             path.append(edge)
         else:
             path.append(entity)

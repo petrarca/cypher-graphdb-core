@@ -118,17 +118,17 @@ class ModelProvider(collections.abc.Collection):
 
         return cls, field_values, properties
 
-    def create_node(self, label: str, props: dict[str, Any], id: int | None = None) -> GraphNode:
+    def create_node(self, label: str, props: dict[str, Any], id_: int | None = None) -> GraphNode:
         """Create a typed GraphNode instance using registered model class."""
         cls, field_values, properties = self.prepare_model_class(label, props, GraphNode)
 
-        return cls(id_=id, label_=label, properties_=properties, **field_values)
+        return cls(id_=id_, label_=label, properties_=properties, **field_values)
 
-    def create_edge(self, label: str, start_id: int, end_id: int, props: dict[str, Any], id: int | None = None) -> GraphEdge:
+    def create_edge(self, label: str, start_id: int, end_id: int, props: dict[str, Any], id_: int | None = None) -> GraphEdge:
         """Create a typed GraphEdge instance using registered model class."""
         cls, field_values, properties = self.prepare_model_class(label, props, GraphEdge)
 
-        return cls(id_=id, label_=label, start_id_=start_id, end_id_=end_id, properties_=properties, **field_values)
+        return cls(id_=id_, label_=label, start_id_=start_id, end_id_=end_id, properties_=properties, **field_values)
 
     def find(
         self, label: str, case_insenstive: bool = True, graph_objectype: GraphObjectType = None
@@ -334,6 +334,49 @@ class ModelProvider(collections.abc.Collection):
 
             return sorted_model_infos
 
+    def generate_schemas_from_path(self, models_path: str, combine: bool = False) -> list[dict[str, Any]] | dict[str, Any]:
+        """Generate JSON schemas from Python models at given path.
+
+        Loads models from the specified path (file or directory) and extracts
+        their JSON schemas. Optionally combines them into a single enriched schema.
+
+        Args:
+            models_path: Path to Python file or directory with models
+            combine: If True, return combined schema with $defs format.
+                    If False (default), return list of individual schemas.
+
+        Returns:
+            List of individual JSON schemas, or combined schema if combine=True.
+            Returns empty list/dict if no models found.
+
+        Raises:
+            FileNotFoundError: If models_path does not exist.
+            ValueError: If models_path is neither a file nor a directory,
+                       or if a model has no JSON schema.
+
+        Examples:
+            Generate individual schemas:
+            >>> schemas = model_provider.generate_schemas_from_path("./models.py")
+            >>> len(schemas)
+            3
+
+            Generate combined schema:
+            >>> combined = model_provider.generate_schemas_from_path("./models/", combine=True)
+            >>> combined["$defs"]["Product"]["title"]
+            'Product'
+        """
+        from .utils.schema_utils import combine_schemas, extract_schemas_from_model_infos
+
+        loaded_models = self.try_to_load_models(None, models_path)
+        if not loaded_models:
+            return {} if combine else []
+
+        schemas = extract_schemas_from_model_infos(loaded_models)
+
+        if combine:
+            return combine_schemas(schemas)
+        return schemas
+
     def model_dump(self, context: Any = None) -> dict[str, GraphModelInfo]:
         """Export all model info as a serializable dictionary."""
         model_names = self.sort_model_names(self._models.keys())
@@ -372,7 +415,7 @@ class ModelProvider(collections.abc.Collection):
 
         try:
             return DisplayConfig(**display_data)
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             logger.warning(f"Failed to parse display config: {e}")
             return None
 
@@ -409,7 +452,7 @@ class ModelProvider(collections.abc.Collection):
             for rel_data in x_graph.get("relations", []):
                 try:
                     relations.append(GraphRelationInfo(**rel_data))
-                except Exception as e:
+                except (TypeError, ValueError) as e:
                     logger.warning(f"Failed to parse relation {rel_data}: {e}")
 
         # Extract display config
@@ -446,7 +489,7 @@ class ModelProvider(collections.abc.Collection):
         try:
             # Generate base Pydantic model from schema
             base_model = create_model(clean_schema)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - third-party library can raise various exceptions
             raise ValueError(f"Failed to generate Pydantic model from schema: {e}") from e
 
         # Create typed model class inheriting from GraphNode or GraphEdge
@@ -575,7 +618,7 @@ class ModelProvider(collections.abc.Collection):
 
                     logger.debug(f"Successfully loaded {graph_type} model '{label}' from schema")
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - continue processing other schemas on failure
                     schema_title = schema.get("title", "unknown")
                     logger.error(f"Failed to load schema '{schema_title}': {e}")
                     # Continue processing other schemas

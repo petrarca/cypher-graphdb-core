@@ -78,9 +78,9 @@ def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Nod
     # Create the node using model provider if available
     if model_provider:
         return model_provider.create_node(
-            id=node_id,
             label=labels[0] if labels else None,
             props=properties,
+            id_=node_id,
         )
 
     # Create a standard Node
@@ -110,11 +110,11 @@ def _convert_relationship(rel: Any, model_provider: ModelProvider | None = None)
     # Create the edge using model provider if available
     if model_provider:
         return model_provider.create_edge(
-            id=rel_id,
             label=rel_type,
             start_id=start_id,
             end_id=end_id,
             props=properties,
+            id_=rel_id,
         )
 
     # Create a standard Edge

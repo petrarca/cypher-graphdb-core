@@ -30,6 +30,7 @@ from .connection_utils import (
 )
 from .conversion_utils import isnan, resolve_properties, to_collection, type_to_default_value
 from .core_utils import SCALAR_TYPES, generate_unique_string_id, is_scalar_type, resolve_fileformat, split_path
+from .schema_utils import combine_schemas, extract_schemas_from_model_infos
 from .string_utils import (
     StringMatch,
     args_to_dict,
@@ -97,4 +98,7 @@ __all__ = [
     "sanitize_connection_params_for_logging",
     "sanitize_connection_string_for_logging",
     "log_env",
+    # Schema utilities
+    "combine_schemas",
+    "extract_schemas_from_model_infos",
 ]
