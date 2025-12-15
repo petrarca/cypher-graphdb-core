@@ -1,6 +1,15 @@
-"""Test relation inheritance creates identical metadata to manual definition."""
+"""Test model inheritance: relation inheritance and schema description merging."""
+
+import pytest
 
 from cypher_graphdb import GraphNode, node, relation
+from cypher_graphdb.utils import combine_schemas
+
+
+@pytest.fixture(autouse=True)
+def _cleanup(cleanup_model_provider):
+    """Auto-use the shared cleanup fixture."""
+    pass
 
 
 class TestRelationInheritance:
@@ -162,3 +171,74 @@ class TestRelationInheritance:
                 == techproduct_relations[0]["to_type_name"]
                 == manualproduct_relations[0]["to_type_name"]
             )
+
+    def test_schema_description_merging(self):
+        """Test that schema-level descriptions are merged during schema combination."""
+        # Two schemas with different descriptions for the same title
+        schemas = [
+            {
+                "title": "Product",
+                "description": "A product in the catalog",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+            },
+            {
+                "title": "Product",
+                "description": "Technology-specific product",
+                "type": "object",
+                "properties": {"tech_stack": {"type": "string"}},
+            },
+        ]
+
+        merged = combine_schemas(schemas)
+        product_def = merged["$defs"]["Product"]
+
+        # Descriptions should be merged
+        assert "A product in the catalog" in product_def["description"]
+        assert "Technology-specific product" in product_def["description"]
+
+    def test_schema_description_no_duplication(self):
+        """Test that identical descriptions are not duplicated."""
+        schemas = [
+            {
+                "title": "Company",
+                "description": "A company entity",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+            },
+            {
+                "title": "Company",
+                "description": "A company entity",  # Same description
+                "type": "object",
+                "properties": {"industry": {"type": "string"}},
+            },
+        ]
+
+        merged = combine_schemas(schemas)
+        company_def = merged["$defs"]["Company"]
+
+        # Should not duplicate
+        assert company_def["description"] == "A company entity"
+
+    def test_schema_description_partial(self):
+        """Test that missing descriptions are handled gracefully."""
+        schemas = [
+            {
+                "title": "Category",
+                "description": "Product category",
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+            },
+            {
+                "title": "Category",
+                # No description
+                "type": "object",
+                "properties": {"code": {"type": "string"}},
+            },
+        ]
+
+        merged = combine_schemas(schemas)
+        category_def = merged["$defs"]["Category"]
+
+        # Should keep the existing description
+        assert category_def["description"] == "Product category"

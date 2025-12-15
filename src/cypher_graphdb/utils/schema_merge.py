@@ -5,6 +5,7 @@ into a single unified schema, with conflict detection and detailed reporting.
 """
 
 import json
+import warnings
 from typing import Any
 
 
@@ -61,6 +62,7 @@ def _merge_individual_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
 
     Takes the union of all properties, required fields, and other schema elements.
     The first schema provides the base structure (type, etc.).
+    Schema-level descriptions are merged (concatenated) to preserve context from all sources.
     """
     if not schemas:
         raise ValueError("Cannot merge empty list of schemas")
@@ -70,6 +72,11 @@ def _merge_individual_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
 
     # Start with the first schema as base
     merged = schemas[0].copy()
+
+    # Merge schema-level descriptions
+    merged_description = _merge_descriptions(schemas)
+    if merged_description:
+        merged["description"] = merged_description
 
     # Merge properties
     merged["properties"] = _merge_properties(schemas)
@@ -83,6 +90,46 @@ def _merge_individual_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
         merged["x-graph"] = x_graph
 
     return merged
+
+
+def _merge_descriptions(schemas: list[dict[str, Any]]) -> str | None:
+    """Merge schema-level descriptions from multiple schemas.
+
+    Collects unique descriptions and concatenates them with '. ' separator.
+    This preserves context from derived classes that add domain-specific information.
+
+    Args:
+        schemas: List of schemas to merge descriptions from
+
+    Returns:
+        Merged description string or None if no descriptions found
+    """
+    descriptions = []
+    seen = set()
+
+    for schema in schemas:
+        desc = schema.get("description")
+        if desc and desc not in seen:
+            descriptions.append(desc)
+            seen.add(desc)
+
+    if not descriptions:
+        return None
+
+    if len(descriptions) == 1:
+        return descriptions[0]
+
+    # Concatenate descriptions, ensuring proper sentence separation
+    merged = []
+    for desc in descriptions:
+        desc = desc.strip()
+        if desc:
+            # Add period if not present
+            if not desc.endswith((".", "!", "?")):
+                desc += "."
+            merged.append(desc)
+
+    return " ".join(merged) if merged else None
 
 
 def _merge_properties(schemas: list[dict[str, Any]]) -> dict[str, Any]:
@@ -109,8 +156,6 @@ def _merge_properties(schemas: list[dict[str, Any]]) -> dict[str, Any]:
     # Report conflicts
     if conflicts:
         conflict_msg = "Property conflicts detected during schema merging:\n" + "\n".join(f"  - {c}" for c in conflicts)
-        import warnings
-
         warnings.warn(conflict_msg, UserWarning, stacklevel=3)
 
     return all_properties
@@ -196,7 +241,7 @@ def _merge_relations(relations: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     for rel in relations:
         # Create a unique key for deduplication
-        key = (rel.get("rel_type"), rel.get("to_type"))
+        key = (rel.get("rel_type_name"), rel.get("to_type_name"))
 
         if key in seen:
             # Check for conflicts
@@ -213,8 +258,6 @@ def _merge_relations(relations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # Report conflicts
     if conflicts:
         conflict_msg = "Relation conflicts detected during schema merging:\n" + "\n".join(f"  - {c}" for c in conflicts)
-        import warnings
-
         warnings.warn(conflict_msg, UserWarning, stacklevel=3)
 
     return merged_relations
