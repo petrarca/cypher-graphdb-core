@@ -4,7 +4,7 @@ Provides @node, @edge, and @relation decorators to register GraphNode and GraphE
 subclasses with the global model provider.
 """
 
-from typing import Any
+from typing import Any, TypedDict
 
 from . import config
 from .cardinality import Cardinality
@@ -122,8 +122,8 @@ def edge(
 
 
 def relation(
-    rel_type: GraphEdge | str,
-    to_type: Any = GraphNode | str,
+    rel_type: type[GraphEdge] | str,
+    to_type: type[GraphNode] | str,
     cardinality: Cardinality = Cardinality.ONE_TO_MANY,
     form_field: bool = False,
     description: str | None = None,
@@ -174,38 +174,17 @@ def relation(
     return decorator
 
 
-def extend_relations(
-    target_label: str,
-    relations: list[GraphRelationInfo],
-    provider: ModelProvider = None,
-) -> None:
-    """Add relations to an already-registered node type.
+def _resolve_label(target: type[GraphNode] | type[GraphEdge] | str, kind: str) -> str:
+    """Resolve a class or string to its label."""
+    if isinstance(target, str):
+        return target
+    if hasattr(target, "graph_info_") and target.graph_info_ is not None:
+        return target.graph_info_.label_
+    raise ValueError(f"Cannot resolve {kind} label from {target}. Ensure it's decorated with @node or @edge.")
 
-    This function allows extending a node's relations without redefining the class.
-    Useful for modular schema composition where extensions add relations to base models.
 
-    Args:
-        target_label: Label of the node type to extend.
-        relations: List of GraphRelationInfo objects to add.
-        provider: ModelProvider instance (defaults to global model_provider).
-
-    Raises:
-        ValueError: If target_label is not a registered node.
-
-    Example:
-        >>> import shared_model.graph_model  # Triggers base registration
-        >>> extend_relations("Product", [
-        ...     GraphRelationInfo(
-        ...         rel_type_name="HAS_TECH_STACK",
-        ...         to_type_name="TechnologyStack",
-        ...         cardinality=Cardinality.ONE_TO_ONE,
-        ...         description="Links product to its technology stack",
-        ...     ),
-        ... ])
-    """
-    if provider is None:
-        provider = model_provider
-
+def _get_validated_node_info(target_label: str, provider: ModelProvider) -> GraphNodeInfo:
+    """Get and validate that target is a registered node."""
     node_info = provider.get(target_label)
 
     if node_info is None:
@@ -216,11 +195,143 @@ def extend_relations(
         msg = f"'{target_label}' is not a node type (found {type(node_info).__name__})."
         raise ValueError(msg)
 
-    # Add relations, deduplicating by (rel_type_name, to_type_name)
+    return node_info
+
+
+def _add_relation_if_not_exists(
+    node_info: GraphNodeInfo,
+    rel_type_name: str,
+    to_type_name: str,
+    cardinality: Cardinality = Cardinality.ONE_TO_MANY,
+    form_field: bool = False,
+    description: str | None = None,
+) -> bool:
+    """Add relation to node info if it doesn't already exist. Returns True if added."""
+    # Check for duplicate
     existing_keys = {(r.rel_type_name, r.to_type_name) for r in node_info.relations}
+    key = (rel_type_name, to_type_name)
+
+    if key not in existing_keys:
+        rel_info = GraphRelationInfo(
+            rel_type_name=rel_type_name,
+            to_type_name=to_type_name,
+            cardinality=cardinality,
+            form_field=form_field,
+            description=description,
+        )
+        node_info.relations.append(rel_info)
+        return True
+
+    return False
+
+
+def extend_relation(
+    target: type[GraphNode] | str,
+    rel_type: type[GraphEdge] | str,
+    to_type: type[GraphNode] | str,
+    cardinality: Cardinality = Cardinality.ONE_TO_MANY,
+    form_field: bool = False,
+    description: str | None = None,
+    provider: ModelProvider = None,
+) -> None:
+    """Add a single relation to an already-registered node type.
+
+    This function allows extending a node's relations without redefining the class.
+    Useful for modular schema composition where extensions add relations to base models.
+
+    Args:
+        target: GraphNode class or string label of the node type to extend.
+        rel_type: GraphEdge class or string label for the relationship type.
+        to_type: GraphNode class or string label for the target node type.
+        cardinality: Relationship cardinality (ONE_TO_ONE or ONE_TO_MANY).
+        form_field: Whether relation appears as form field (default: False).
+        description: Optional description of the relationship.
+        provider: ModelProvider instance (defaults to global model_provider).
+
+    Raises:
+        ValueError: If target is not a registered node.
+
+    Example:
+        >>> import shared_model.graph_model  # Triggers base registration
+        >>> extend_relation(
+        ...     Product,  # or "Product"
+        ...     rel_type=HasTechStack,  # or "HAS_TECH_STACK"
+        ...     to_type=TechnologyStack,  # or "TechnologyStack"
+        ...     cardinality=Cardinality.ONE_TO_ONE,
+        ...     description="Links product to its technology stack",
+        ... )
+    """
+    if provider is None:
+        provider = model_provider
+
+    target_label = _resolve_label(target, "target")
+    rel_type_name = _resolve_label(rel_type, "rel_type")
+    to_type_name = _resolve_label(to_type, "to_type")
+
+    node_info = _get_validated_node_info(target_label, provider)
+    _add_relation_if_not_exists(node_info, rel_type_name, to_type_name, cardinality, form_field, description)
+
+
+class RelationSpec(TypedDict, total=False):
+    """Specification for a relation, supporting classes or strings."""
+
+    rel_type: type[GraphEdge] | str
+    to_type: type[GraphNode] | str
+    cardinality: Cardinality
+    form_field: bool
+    description: str | None
+
+
+def extend_relations(
+    target: type[GraphNode] | str,
+    relations: list[GraphRelationInfo | RelationSpec],
+    provider: ModelProvider = None,
+) -> None:
+    """Add multiple relations to an already-registered node type.
+
+    This function allows extending a node's relations without redefining the class.
+    Useful for modular schema composition where extensions add relations to base models.
+
+    Args:
+        target: GraphNode class or string label of the node type to extend.
+        relations: List of GraphRelationInfo objects or RelationSpec dicts.
+            RelationSpec dicts can use classes for rel_type and to_type.
+        provider: ModelProvider instance (defaults to global model_provider).
+
+    Raises:
+        ValueError: If target is not a registered node.
+
+    Example:
+        >>> extend_relations(Product, [
+        ...     {"rel_type": HasTechStack, "to_type": TechnologyStack},
+        ...     {"rel_type": "OWNED_BY", "to_type": Company, "cardinality": Cardinality.ONE_TO_ONE},
+        ... ])
+    """
+    if provider is None:
+        provider = model_provider
+
+    target_label = _resolve_label(target, "target")
+    node_info = _get_validated_node_info(target_label, provider)
 
     for rel in relations:
-        key = (rel.rel_type_name, rel.to_type_name)
-        if key not in existing_keys:
-            node_info.relations.append(rel)
-            existing_keys.add(key)
+        if isinstance(rel, GraphRelationInfo):
+            _add_relation_if_not_exists(
+                node_info,
+                rel.rel_type_name,
+                rel.to_type_name,
+                rel.cardinality,
+                rel.form_field,
+                rel.description,
+            )
+        else:
+            # RelationSpec dict - resolve classes if needed
+            rel_type_name = _resolve_label(rel["rel_type"], "rel_type")
+            to_type_name = _resolve_label(rel["to_type"], "to_type")
+            _add_relation_if_not_exists(
+                node_info,
+                rel_type_name,
+                to_type_name,
+                rel.get("cardinality", Cardinality.ONE_TO_MANY),
+                rel.get("form_field", False),
+                rel.get("description"),
+            )

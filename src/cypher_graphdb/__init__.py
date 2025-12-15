@@ -18,7 +18,7 @@ from .cyphergraphdb import (
 )
 from .cypherjson import GraphJSONEncoder
 from .dbpool import CypherGraphDBPool
-from .decorators import edge, extend_relations, node, relation
+from .decorators import edge, extend_relation, extend_relations, node, relation
 from .exceptions import ReadOnlyModeError
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 from .modelprovider import ModelProvider, model_provider
@@ -56,6 +56,7 @@ __all__ = [
     "edge",
     "relation",
     "extend_relations",
+    "extend_relation",
     "Cardinality",
     "graphops",
     "backends",

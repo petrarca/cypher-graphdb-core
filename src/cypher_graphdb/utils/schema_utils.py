@@ -6,26 +6,58 @@ Provides functions for combining and extracting JSON schemas from graph models.
 import json
 from typing import Any
 
+from .schema_merge import merge_schemas_by_title
+
+
+def wrap_in_defs(
+    schemas: dict[str, dict[str, Any]],
+    schema_id: str = "https://cypher-graphdb.com/schemas/graph.schema.json",
+    title: str = "Graph Data Model",
+    description: str = "Combined graph schema with node and edge definitions",
+) -> dict[str, Any]:
+    """Wrap merged schemas in $defs structure.
+
+    Takes a dictionary of merged schemas and wraps them in a JSON Schema
+    with $defs structure.
+
+    Args:
+        schemas: Dictionary mapping title to merged schema
+        schema_id: URI identifier for the combined schema
+        title: Title for the combined schema
+        description: Description for the combined schema
+
+    Returns:
+        Combined schema dictionary with $defs structure
+    """
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": schema_id,
+        "title": title,
+        "description": description,
+        "$defs": schemas,
+    }
+
 
 def combine_schemas(
     schemas: list[dict[str, Any]],
-    title: str = "Graph Data Model",
-    description: str = "Complete data model for graph management including nodes, edges, and their relationships.",
     schema_id: str = "https://cypher-graphdb.com/schemas/graph.schema.json",
+    title: str = "Graph Data Model",
+    description: str = "Combined graph schema with node and edge definitions",
 ) -> dict[str, Any]:
-    """Combine multiple JSON schemas into a single enriched schema using $defs format.
+    """Combine multiple JSON schemas into a single enriched schema.
 
-    This function creates an enriched JSON Schema Draft 2020-12 compliant schema
-    that nests all individual schemas under the $defs property.
+    This function takes a list of JSON schemas and combines them into a single
+    schema using the $defs format for better organization and validation.
+    Schemas with the same title are properly merged (union of properties).
 
     Args:
-        schemas: List of individual JSON schema objects to combine
-        title: Title for the combined schema (default: "Graph Data Model")
+        schemas: List of JSON schema dictionaries to combine
+        schema_id: URI identifier for the combined schema
+        title: Title for the combined schema
         description: Description for the combined schema
-        schema_id: $id value for the combined schema
 
     Returns:
-        Combined schema in enriched $defs format
+        Combined schema dictionary with $defs structure
 
     Example:
         >>> schemas = [{"title": "Product", "type": "object", ...}, {"title": "Company", "type": "object", ...}]
@@ -35,20 +67,11 @@ def combine_schemas(
         >>> combined["$defs"]["Product"]["title"]
         'Product'
     """
-    enriched_schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": schema_id,
-        "title": title,
-        "description": description,
-        "$defs": {},
-    }
+    # Step 1: Merge schemas by title
+    merged_schemas = merge_schemas_by_title(schemas)
 
-    for schema in schemas:
-        schema_title = schema.get("title")
-        if schema_title:
-            enriched_schema["$defs"][schema_title] = schema
-
-    return enriched_schema
+    # Step 2: Wrap in $defs structure
+    return wrap_in_defs(merged_schemas, schema_id, title, description)
 
 
 def extract_schemas_from_model_infos(model_infos: list[Any]) -> list[dict[str, Any]]:

@@ -1,8 +1,8 @@
-"""Tests for extend_relations function."""
+"""Tests for extend_relations and extend_relation functions."""
 
 import pytest
 
-from cypher_graphdb import Cardinality, GraphNode, extend_relations, node
+from cypher_graphdb import Cardinality, GraphEdge, GraphNode, edge, extend_relation, extend_relations, node
 from cypher_graphdb.modelinfo import GraphNodeInfo, GraphRelationInfo
 from cypher_graphdb.modelprovider import ModelProvider
 
@@ -119,7 +119,6 @@ class TestExtendRelations:
 
     def test_extend_relations_raises_for_edge_type(self):
         """Test that extend_relations raises ValueError when target is an edge."""
-        from cypher_graphdb import GraphEdge, edge
 
         provider = ModelProvider()
 
@@ -131,5 +130,107 @@ class TestExtendRelations:
             extend_relations(
                 "MyEdge",
                 [GraphRelationInfo(rel_type_name="REL", to_type_name="Target")],
+                provider=provider,
+            )
+
+    def test_extend_relations_with_class_target(self):
+        """Test that extend_relations accepts a class as target."""
+        provider = ModelProvider()
+
+        @node(provider=provider)
+        class Product(GraphNode):
+            name: str
+
+        extend_relations(
+            Product,  # Class instead of string
+            [GraphRelationInfo(rel_type_name="HAS_CATEGORY", to_type_name="Category")],
+            provider=provider,
+        )
+
+        node_info = provider.get("Product")
+        assert len(node_info.relations) == 1
+        assert node_info.relations[0].rel_type_name == "HAS_CATEGORY"
+
+
+class TestExtendRelation:
+    """Tests for the extend_relation function (singular)."""
+
+    def test_extend_relation_with_strings(self):
+        """Test extend_relation with all string arguments."""
+        provider = ModelProvider()
+
+        @node(provider=provider)
+        class Product(GraphNode):
+            name: str
+
+        extend_relation(
+            "Product",
+            rel_type="HAS_CATEGORY",
+            to_type="Category",
+            cardinality=Cardinality.ONE_TO_ONE,
+            description="Product category",
+            provider=provider,
+        )
+
+        node_info = provider.get("Product")
+        assert len(node_info.relations) == 1
+        rel = node_info.relations[0]
+        assert rel.rel_type_name == "HAS_CATEGORY"
+        assert rel.to_type_name == "Category"
+        assert rel.cardinality == Cardinality.ONE_TO_ONE
+        assert rel.description == "Product category"
+
+    def test_extend_relation_with_classes(self):
+        """Test extend_relation with class arguments."""
+        provider = ModelProvider()
+
+        @node(provider=provider)
+        class Category(GraphNode):
+            name: str
+
+        @edge(provider=provider)
+        class HasCategory(GraphEdge):
+            pass
+
+        @node(provider=provider)
+        class Product(GraphNode):
+            name: str
+
+        extend_relation(
+            Product,
+            rel_type=HasCategory,
+            to_type=Category,
+            provider=provider,
+        )
+
+        node_info = provider.get("Product")
+        assert len(node_info.relations) == 1
+        rel = node_info.relations[0]
+        assert rel.rel_type_name == "HasCategory"
+        assert rel.to_type_name == "Category"
+
+    def test_extend_relation_deduplicates(self):
+        """Test that extend_relation doesn't add duplicate relations."""
+        provider = ModelProvider()
+
+        @node(provider=provider)
+        class Product(GraphNode):
+            name: str
+
+        extend_relation("Product", rel_type="HAS_CAT", to_type="Cat", provider=provider)
+        extend_relation("Product", rel_type="HAS_CAT", to_type="Cat", provider=provider)
+
+        node_info = provider.get("Product")
+        assert len(node_info.relations) == 1
+
+    def test_extend_relation_raises_for_unregistered_label(self):
+        """Test that extend_relation raises ValueError for unregistered label."""
+        provider = ModelProvider()
+
+        with pytest.raises(ValueError, match="'UnknownNode' is not registered"):
+            extend_relation(
+                "UnknownNode",
+                rel_type="REL",
+                to_type="Target",
                 provider=provider,
             )

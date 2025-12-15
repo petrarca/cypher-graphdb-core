@@ -13,6 +13,242 @@ def _deep_copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(schema))
 
 
+def merge_schemas_by_title(schemas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Merge individual schemas by title.
+
+    Takes a list of individual schemas and merges schemas with the same title.
+    Returns a dictionary mapping title to merged schema.
+
+    Args:
+        schemas: List of individual JSON schema dictionaries
+
+    Returns:
+        Dictionary mapping title to merged schema
+
+    Example:
+        >>> schemas = [
+        ...     {"title": "Product", "properties": {"name": {}}},
+        ...     {"title": "Product", "properties": {"price": {}}}
+        ... ]
+        >>> merged = merge_schemas_by_title(schemas)
+        >>> merged["Product"]["properties"]
+        {"name": {}, "price": {}}
+    """
+    # Group schemas by title
+    schemas_by_title: dict[str, list[dict[str, Any]]] = {}
+    for schema in schemas:
+        schema_title = schema.get("title")
+        if schema_title:
+            if schema_title not in schemas_by_title:
+                schemas_by_title[schema_title] = []
+            schemas_by_title[schema_title].append(schema)
+
+    # Merge schemas with the same title
+    merged_schemas: dict[str, dict[str, Any]] = {}
+    for title, schema_list in schemas_by_title.items():
+        if len(schema_list) == 1:
+            # Single schema - use as-is
+            merged_schemas[title] = schema_list[0]
+        else:
+            # Multiple schemas with same title - merge them
+            merged_schemas[title] = _merge_individual_schemas(schema_list)
+
+    return merged_schemas
+
+
+def _merge_individual_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge multiple individual schemas with the same title.
+
+    Takes the union of all properties, required fields, and other schema elements.
+    The first schema provides the base structure (type, etc.).
+    """
+    if not schemas:
+        raise ValueError("Cannot merge empty list of schemas")
+
+    if len(schemas) == 1:
+        return schemas[0]
+
+    # Start with the first schema as base
+    merged = schemas[0].copy()
+
+    # Merge properties
+    merged["properties"] = _merge_properties(schemas)
+
+    # Merge required fields
+    merged["required"] = _merge_required_fields(schemas)
+
+    # Merge x-graph extensions
+    x_graph = _merge_x_graph_extensions(schemas)
+    if x_graph:
+        merged["x-graph"] = x_graph
+
+    return merged
+
+
+def _merge_properties(schemas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge properties from multiple schemas (union) with conflict detection."""
+    all_properties = {}
+    conflicts = []
+
+    for schema_idx, schema in enumerate(schemas):
+        properties = schema.get("properties", {})
+        schema_source = f"schema {schema_idx + 1}"
+
+        for prop_name, prop_def in properties.items():
+            if prop_name in all_properties:
+                # Check for conflicts
+                existing_def = all_properties[prop_name]
+                conflict = _detect_property_conflict(prop_name, existing_def, prop_def, schema_source)
+                if conflict:
+                    conflicts.append(conflict)
+                # Last wins behavior (keep existing for now, could be changed)
+                continue
+
+            all_properties[prop_name] = prop_def
+
+    # Report conflicts
+    if conflicts:
+        conflict_msg = "Property conflicts detected during schema merging:\n" + "\n".join(f"  - {c}" for c in conflicts)
+        import warnings
+
+        warnings.warn(conflict_msg, UserWarning, stacklevel=3)
+
+    return all_properties
+
+
+def _detect_property_conflict(prop_name: str, existing_def: dict[str, Any], new_def: dict[str, Any], source: str) -> str | None:
+    """Detect conflicts between property definitions."""
+    conflicts = []
+
+    # Type conflict
+    existing_type = existing_def.get("type")
+    new_type = new_def.get("type")
+    if existing_type and new_type and existing_type != new_type:
+        conflicts.append(f"type: {existing_type} vs {new_type}")
+
+    # Format conflict
+    existing_format = existing_def.get("format")
+    new_format = new_def.get("format")
+    if existing_format and new_format and existing_format != new_format:
+        conflicts.append(f"format: {existing_format} vs {new_format}")
+
+    # Description conflict
+    existing_desc = existing_def.get("description")
+    new_desc = new_def.get("description")
+    if existing_desc and new_desc and existing_desc != new_desc:
+        conflicts.append(f"description: '{existing_desc}' vs '{new_desc}'")
+
+    # Constraint conflicts (maxLength, minLength, etc.)
+    for constraint in ["maxLength", "minLength", "minimum", "maximum", "pattern"]:
+        existing_val = existing_def.get(constraint)
+        new_val = new_def.get(constraint)
+        if existing_val is not None and new_val is not None and existing_val != new_val:
+            conflicts.append(f"{constraint}: {existing_val} vs {new_val}")
+
+    if conflicts:
+        return f"Property '{prop_name}' conflict in {source}: " + ", ".join(conflicts)
+
+    return None
+
+
+def _merge_required_fields(schemas: list[dict[str, Any]]) -> list[str]:
+    """Merge required fields from multiple schemas (union)."""
+    all_required = set()
+    for schema in schemas:
+        required = schema.get("required", [])
+        all_required.update(required)
+    return sorted(all_required)
+
+
+def _merge_x_graph_extensions(schemas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge x-graph extensions from multiple schemas."""
+    x_graph_merged = {}
+    all_relations = []
+
+    for schema in schemas:
+        x_graph = schema.get("x-graph", {})
+        for key, value in x_graph.items():
+            if key in ["label", "type"]:
+                # These should be the same, use the first non-empty value
+                if key not in x_graph_merged and value:
+                    x_graph_merged[key] = value
+            elif key == "relations":
+                # Collect all relations for merging
+                relations = value if isinstance(value, list) else []
+                all_relations.extend(relations)
+            else:
+                # For other fields, take the last non-empty value
+                if value:
+                    x_graph_merged[key] = value
+
+    # Merge relations (deduplicate by rel_type and to_type)
+    if all_relations:
+        x_graph_merged["relations"] = _merge_relations(all_relations)
+
+    return x_graph_merged
+
+
+def _merge_relations(relations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge relations from multiple schemas with conflict detection."""
+    seen = {}
+    merged_relations = []
+    conflicts = []
+
+    for rel in relations:
+        # Create a unique key for deduplication
+        key = (rel.get("rel_type"), rel.get("to_type"))
+
+        if key in seen:
+            # Check for conflicts
+            existing_rel = seen[key]
+            conflict = _detect_relation_conflict(key, existing_rel, rel)
+            if conflict:
+                conflicts.append(conflict)
+            # Skip duplicate (keep first one)
+            continue
+
+        seen[key] = rel
+        merged_relations.append(rel)
+
+    # Report conflicts
+    if conflicts:
+        conflict_msg = "Relation conflicts detected during schema merging:\n" + "\n".join(f"  - {c}" for c in conflicts)
+        import warnings
+
+        warnings.warn(conflict_msg, UserWarning, stacklevel=3)
+
+    return merged_relations
+
+
+def _detect_relation_conflict(key: tuple[str, str], existing_rel: dict[str, Any], new_rel: dict[str, Any]) -> str | None:
+    """Detect conflicts between relation definitions."""
+    rel_type, to_type = key
+    conflicts = []
+
+    # Cardinality conflict
+    existing_card = existing_rel.get("cardinality")
+    new_card = new_rel.get("cardinality")
+    if existing_card and new_card and existing_card != new_card:
+        conflicts.append(f"cardinality: {existing_card} vs {new_card}")
+
+    # Description conflict
+    existing_desc = existing_rel.get("description")
+    new_desc = new_rel.get("description")
+    if existing_desc and new_desc and existing_desc != new_desc:
+        conflicts.append(f"description: '{existing_desc}' vs '{new_desc}'")
+
+    # Form field conflict
+    existing_form = existing_rel.get("form_field")
+    new_form = new_rel.get("form_field")
+    if existing_form is not None and new_form is not None and existing_form != new_form:
+        conflicts.append(f"form_field: {existing_form} vs {new_form}")
+
+    if conflicts:
+        return f"Relation '{rel_type}' -> '{to_type}' conflict: " + ", ".join(conflicts)
+
+    return None
+
+
 class MergeAction:
     """Represents a single merge action performed during schema merging."""
 
