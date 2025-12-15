@@ -1092,4 +1092,32 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
                 obj.id_ = id_
                 return True
 
+        # For edges, look up by pattern (start_id + end_id + edge_type)
+        # Note: This adds an extra DB query - only triggered when edge has no ID but has start/end node IDs
+        if isinstance(obj, GraphEdge) and hasattr(obj, "start_id_") and hasattr(obj, "end_id_"):
+            criteria = MatchEdgeCriteria(
+                prefix_="r",
+                label_=obj.label_,
+                start_criteria_=MatchNodeCriteria(id_=obj.start_id_),
+                end_criteria_=MatchNodeCriteria(id_=obj.end_id_),
+                projection_=["id(r)"],
+            )
+
+            # fetch_func(criteria, unnest_result, fetch_one)
+            # - unnest_result=True: returns scalar (1 match), list (>1), or None (0)
+            # - fetch_one=False: fetch all to detect multiple edges of same type between same nodes
+            result = fetch_func(criteria, True, False)
+            if result is not None:
+                if not isinstance(result, list):
+                    # Exactly one match - safe to resolve
+                    obj.id_ = result
+                    return True
+                else:
+                    # Multiple matches - ambiguous, cannot resolve to single edge
+                    logger.warning(
+                        f"Found {len(result)} edges of type '{obj.label_}' between "
+                        f"nodes {obj.start_id_} and {obj.end_id_}. Cannot resolve unique edge ID."
+                    )
+            # If None (0 matches) or list (>1 matches), don't resolve - not found or ambiguous
+
         return False

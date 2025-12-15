@@ -45,10 +45,15 @@ class CypherBuilder:
         # create value pairs with prefix "e."
         values = dict_to_value_pairs(properties, "e.")
 
+        if values:
+            set_clause = f"SET {values}"
+        else:
+            set_clause = ""
+
         return f"""
             MATCH (s)-[e]->(t)
             WHERE id(e) = {edge_id}
-            SET {values}
+            {set_clause}
             RETURN e
         """
 
