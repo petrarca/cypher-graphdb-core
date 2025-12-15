@@ -8,6 +8,7 @@ import collections.abc
 import importlib.util
 import os
 import re
+import sys
 import threading
 import traceback
 from typing import Any, Final
@@ -200,8 +201,60 @@ class ModelProvider(collections.abc.Collection):
             logger.debug(f"Line: {root_cause.lineno}: {root_cause.line}")
             return (False, [])
 
+    def _load_as_package(self, dir_path: str, package_name: str) -> tuple[bool, list[str]]:
+        """Load a directory as a Python package with proper relative import support.
+
+        Note: Caller must verify __init__.py exists before calling this method.
+
+        Args:
+            dir_path: Path to the package directory (must contain __init__.py)
+            package_name: Name to use for the package
+
+        Returns:
+            Tuple of (success, list_of_newly_loaded_model_labels)
+        """
+        # Track models before loading
+        before = set(self._models.keys())
+
+        # Add parent directory to sys.path so relative imports work
+        parent_dir = os.path.dirname(dir_path)
+        path_added = False
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+            path_added = True
+
+        try:
+            # Import the package using standard import mechanism
+            if package_name in sys.modules:
+                # Reload if already imported
+                importlib.reload(sys.modules[package_name])
+            else:
+                importlib.import_module(package_name)
+
+            logger.debug(f"Successfully loaded package {package_name} from {dir_path}")
+
+            # Get newly loaded models
+            newly_loaded = list(set(self._models.keys()) - before)
+            return (True, newly_loaded)
+        except Exception as e:
+            logger.debug(f"Package could not be loaded. Reason {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            if tb:
+                root_cause = tb[-1]
+                logger.debug(f"File: {root_cause.filename}")
+                logger.debug(f"Line: {root_cause.lineno}: {root_cause.line}")
+            return (False, [])
+        finally:
+            # Clean up sys.path
+            if path_added and parent_dir in sys.path:
+                sys.path.remove(parent_dir)
+
     def _load_from_directory(self, path: str) -> tuple[bool, dict[str, list[str]]]:
         """Load all Python files from a directory.
+
+        If the directory contains an __init__.py, it will be loaded as a package
+        to support relative imports between modules. Otherwise, files are loaded
+        individually.
 
         Args:
             path: Directory path to load models from
@@ -210,6 +263,23 @@ class ModelProvider(collections.abc.Collection):
             Tuple of (success, dict mapping file_path to list of model labels)
         """
         logger.debug(f"Loading all model files from directory: {path}")
+
+        # If directory has __init__.py, try loading as a package first
+        init_file = os.path.join(path, "__init__.py")
+        if os.path.exists(init_file):
+            package_name = os.path.basename(path)
+            logger.debug(f"Found __init__.py, loading as package: {package_name}")
+            success, newly_loaded = self._load_as_package(path, package_name)
+            if success and newly_loaded:
+                # Package loaded successfully and registered models
+                file_to_models = {init_file: newly_loaded}
+                return (True, file_to_models)
+            if not newly_loaded:
+                logger.debug("Package loaded but no models registered, falling back to individual file loading")
+            else:
+                logger.debug("Package loading failed, falling back to individual file loading")
+
+        # Fall back to loading individual files
         py_files = sorted([f for f in os.listdir(path) if f.endswith(".py") and not f.startswith("__")])
 
         if not py_files:

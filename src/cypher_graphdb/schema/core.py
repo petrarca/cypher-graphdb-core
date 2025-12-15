@@ -10,8 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_serializer
 
-from . import utils
-from .models import GraphEdge, GraphNode, GraphObjectType
+from .. import utils
+from ..models import GraphEdge, GraphNode, GraphObjectType
 
 
 @dataclass
@@ -36,7 +36,7 @@ def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext 
     Returns:
         Filtered schema with internal fields removed.
     """
-    from . import config
+    from .. import config
 
     if not isinstance(schema, dict) or "properties" not in schema:
         return schema

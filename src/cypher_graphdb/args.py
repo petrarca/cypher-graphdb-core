@@ -20,15 +20,22 @@ def version_callback(value: bool) -> None:
 
 def create_main_app() -> typer.Typer:
     """Create the main Typer application for use as the console script entry point."""
+    from cypher_graphdb.cli import schema_cmd
+
     app = typer.Typer(
         name="cypher-graphdb",
         help="CypherGraph CLI - A command-line interface for graph databases",
         add_completion=False,
         rich_markup_mode="markdown",
+        invoke_without_command=True,
     )
 
-    @app.command()
+    # Add schema subcommand
+    app.add_typer(schema_cmd.app, name="schema")
+
+    @app.callback(invoke_without_command=True)
     def main(
+        ctx: typer.Context,
         version: Annotated[  # noqa: ARG001
             bool | None,
             typer.Option("--version", "-v", callback=version_callback, is_eager=True, help="Show version and exit"),
@@ -98,6 +105,10 @@ def create_main_app() -> typer.Typer:
         ] = False,
     ) -> None:
         """CypherGraph CLI - A command-line interface for graph databases."""
+        # Only run interactive CLI if no subcommand was invoked
+        if ctx.invoked_subcommand is not None:
+            return
+
         # Import here to avoid circular imports
         from cypher_graphdb.main import main as main_func
 

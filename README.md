@@ -296,6 +296,9 @@ task run:cli
 - `import_graph` – Load data from CSV, Excel, JSON files
 - `export_graph` – Export graph data to various formats
 
+**Schema Generation:**
+- `schema generate` – Generate JSON schema from Python models (standalone, no DB required)
+
 **Transaction Control:**
 - `commit` – Commit current transaction
 - `rollback` – Rollback current transaction
@@ -307,6 +310,36 @@ task run:cli
 - `graph_to_tree` – Visualize graph structure as tree
 
 > **Vendor Neutrality:** All CLI commands work identically across Apache AGE, Memgraph, and any other supported backend.
+
+### Schema Generation (Standalone)
+
+Generate JSON schema files from Python graph models without requiring a database connection:
+
+```bash
+# Generate from a single Python file
+cypher-graphdb schema generate --models ./models.py --output ./schemas/
+
+# Generate from a package directory (with __init__.py)
+cypher-graphdb schema generate -m ./graph_models/ -o ./output/
+
+# Specify output filename
+cypher-graphdb schema generate -m ./models.py -o ./my-schema.json
+
+# With verbose output
+cypher-graphdb schema generate -m ./models.py -o ./schemas/ --verbose
+
+# Skip confirmation prompt
+cypher-graphdb schema generate -m ./models.py -o ./schemas/ --yes
+```
+
+**Options:**
+- `-m, --models` – Path to Python file or directory with `@node`/`@edge` decorated models
+- `-o, --output` – Output path (directory uses `graph.schema.json`, or specify filename)
+- `-v, --verbose` – Show detailed output
+- `--overwrite` – Overwrite existing file without prompting
+- `-y, --yes` – Skip confirmation prompt
+
+**Package Support:** Directories with `__init__.py` are loaded as packages, enabling relative imports between model files.
 
 ## 2. Typed ORM-Like Access Layer
 
