@@ -7,9 +7,8 @@ from cypher_graphdb.utils import combine_schemas
 
 
 @pytest.fixture(autouse=True)
-def _cleanup(cleanup_model_provider):
+def _cleanup(cleanup_model_provider):  # noqa: ARG001 - fixture parameter intentionally unused
     """Auto-use the shared cleanup fixture."""
-    pass
 
 
 class TestRelationInheritance:

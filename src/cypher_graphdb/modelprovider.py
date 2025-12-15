@@ -619,7 +619,7 @@ class ModelProvider(collections.abc.Collection):
 
                     logger.debug(f"Successfully loaded {graph_type} model '{label}' from schema")
 
-                except Exception as e:  # noqa: BLE001 - continue processing other schemas on failure
+                except (ValueError, ImportError) as e:  # Specific exceptions from schema loading
                     schema_title = schema.get("title", "unknown")
                     logger.error(f"Failed to load schema '{schema_title}': {e}")
                     # Continue processing other schemas

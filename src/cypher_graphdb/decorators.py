@@ -327,7 +327,7 @@ def _add_relation_if_not_exists(
     return False
 
 
-def extend_relation(
+def _extend_relation_impl(
     target: type[GraphNode] | str,
     rel_type: type[GraphEdge] | str,
     to_type: type[GraphNode] | str,
@@ -335,34 +335,8 @@ def extend_relation(
     form_field: bool = False,
     description: str | None = None,
     provider: ModelProvider = None,
-) -> None:
-    """Add a single relation to an already-registered node type.
-
-    This function allows extending a node's relations without redefining the class.
-    Useful for modular schema composition where extensions add relations to base models.
-
-    Args:
-        target: GraphNode class or string label of the node type to extend.
-        rel_type: GraphEdge class or string label for the relationship type.
-        to_type: GraphNode class or string label for the target node type.
-        cardinality: Relationship cardinality (ONE_TO_ONE or ONE_TO_MANY).
-        form_field: Whether relation appears as form field (default: False).
-        description: Optional description of the relationship.
-        provider: ModelProvider instance (defaults to global model_provider).
-
-    Raises:
-        ValueError: If target is not a registered node.
-
-    Example:
-        >>> import shared_model.graph_model  # Triggers base registration
-        >>> extend_relation(
-        ...     Product,  # or "Product"
-        ...     rel_type=HasTechStack,  # or "HAS_TECH_STACK"
-        ...     to_type=TechnologyStack,  # or "TechnologyStack"
-        ...     cardinality=Cardinality.ONE_TO_ONE,
-        ...     description="Links product to its technology stack",
-        ... )
-    """
+):
+    """Internal implementation for extending a single relation."""
     if provider is None:
         provider = model_provider
 
@@ -372,6 +346,68 @@ def extend_relation(
 
     node_info = _get_validated_node_info(target_label, provider)
     _add_relation_if_not_exists(node_info, rel_type_name, to_type_name, cardinality, form_field, description)
+
+
+def extend_relation(
+    target: type[GraphNode] | str,
+    rel_type: type[GraphEdge] | str,
+    to_type: type[GraphNode] | str = None,
+    cardinality: Cardinality = Cardinality.ONE_TO_MANY,
+    form_field: bool = False,
+    description: str | None = None,
+    provider: ModelProvider = None,
+):
+    """Add a relation to an already-registered node type OR use as decorator.
+
+    Can be used in two ways:
+    1. Function: extend_relation(Product, "HAS_TECH_STACK", TechnologyStack)
+    2. Decorator: @extend_relation(Product, "HAS_TECH_STACK") on TechnologyStack class
+
+    Args:
+        target: Source node class that points TO this class (for decorator use)
+            or the target node class (for function use)
+        rel_type: Relationship type (edge class or string)
+        to_type: Target node class (only for function use, inferred from decorated class)
+        cardinality: Relationship cardinality
+        form_field: Whether appears as form field
+        description: Optional description
+        provider: ModelProvider instance
+
+    Returns:
+        None for function use, or decorator function for decorator use
+    """
+    # Check if being used as decorator (to_type not provided)
+    if to_type is None:
+        # Return decorator function
+        def decorator(cls):
+            # Apply @node if not already applied
+            if not hasattr(cls, "graph_info_"):
+                node()(cls)
+
+            # Use the internal implementation with cls as to_type
+            _extend_relation_impl(
+                target=target,
+                rel_type=rel_type,
+                to_type=cls,
+                cardinality=cardinality,
+                form_field=form_field,
+                description=description,
+                provider=provider,
+            )
+            return cls
+
+        return decorator
+    else:
+        # Function usage - call the implementation
+        _extend_relation_impl(
+            target=target,
+            rel_type=rel_type,
+            to_type=to_type,
+            cardinality=cardinality,
+            form_field=form_field,
+            description=description,
+            provider=provider,
+        )
 
 
 class RelationSpec(TypedDict, total=False):
