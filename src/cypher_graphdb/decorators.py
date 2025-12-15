@@ -126,6 +126,7 @@ def relation(
     to_type: Any = GraphNode | str,
     cardinality: Cardinality = Cardinality.ONE_TO_MANY,
     form_field: bool = False,
+    description: str | None = None,
 ) -> Any:
     """Decorator to define relationships from a node type to other node types.
 
@@ -135,6 +136,7 @@ def relation(
         cardinality: Relationship cardinality (ONE_TO_ONE or ONE_TO_MANY),
             defaults to ONE_TO_MANY.
         form_field: Whether relation appears as form field (default: False).
+        description: Optional description of the relationship.
 
     Returns:
         Class decorator that adds relationship info to the node's metadata.
@@ -162,6 +164,7 @@ def relation(
             to_type_name=to_type_name,
             cardinality=cardinality,
             form_field=form_field,
+            description=description,
         )
 
         node_info.relations.append(rel_info)
@@ -169,3 +172,55 @@ def relation(
         return cls
 
     return decorator
+
+
+def extend_relations(
+    target_label: str,
+    relations: list[GraphRelationInfo],
+    provider: ModelProvider = None,
+) -> None:
+    """Add relations to an already-registered node type.
+
+    This function allows extending a node's relations without redefining the class.
+    Useful for modular schema composition where extensions add relations to base models.
+
+    Args:
+        target_label: Label of the node type to extend.
+        relations: List of GraphRelationInfo objects to add.
+        provider: ModelProvider instance (defaults to global model_provider).
+
+    Raises:
+        ValueError: If target_label is not a registered node.
+
+    Example:
+        >>> import shared_model.graph_model  # Triggers base registration
+        >>> extend_relations("Product", [
+        ...     GraphRelationInfo(
+        ...         rel_type_name="HAS_TECH_STACK",
+        ...         to_type_name="TechnologyStack",
+        ...         cardinality=Cardinality.ONE_TO_ONE,
+        ...         description="Links product to its technology stack",
+        ...     ),
+        ... ])
+    """
+    if provider is None:
+        provider = model_provider
+
+    node_info = provider.get(target_label)
+
+    if node_info is None:
+        msg = f"'{target_label}' is not registered. Import the base model first."
+        raise ValueError(msg)
+
+    if not isinstance(node_info, GraphNodeInfo):
+        msg = f"'{target_label}' is not a node type (found {type(node_info).__name__})."
+        raise ValueError(msg)
+
+    # Add relations, deduplicating by (rel_type_name, to_type_name)
+    existing_keys = {(r.rel_type_name, r.to_type_name) for r in node_info.relations}
+
+    for rel in relations:
+        key = (rel.rel_type_name, rel.to_type_name)
+        if key not in existing_keys:
+            node_info.relations.append(rel)
+            existing_keys.add(key)

@@ -169,12 +169,14 @@ class GraphRelationInfo(BaseModel):
         cardinality: Relationship cardinality (ONE_TO_ONE or ONE_TO_MANY),
             defaults to ONE_TO_MANY.
         form_field: Whether this relation appears as a field in forms.
+        description: Optional description of the relationship.
     """
 
     rel_type_name: str
     to_type_name: str
     cardinality: Cardinality = Cardinality.ONE_TO_MANY
     form_field: bool = False
+    description: str | None = None
 
 
 class GraphNodeInfo(GraphModelInfo):

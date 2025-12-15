@@ -30,6 +30,7 @@ from .connection_utils import (
 )
 from .conversion_utils import isnan, resolve_properties, to_collection, type_to_default_value
 from .core_utils import SCALAR_TYPES, generate_unique_string_id, is_scalar_type, resolve_fileformat, split_path
+from .schema_merge import MergeAction, MergeConflict, SchemaMergeResult, merge_combined_schemas
 from .schema_utils import combine_schemas, extract_schemas_from_model_infos
 from .string_utils import (
     StringMatch,
@@ -101,4 +102,8 @@ __all__ = [
     # Schema utilities
     "combine_schemas",
     "extract_schemas_from_model_infos",
+    "merge_combined_schemas",
+    "SchemaMergeResult",
+    "MergeAction",
+    "MergeConflict",
 ]

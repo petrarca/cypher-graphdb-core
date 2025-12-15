@@ -1,7 +1,6 @@
 """Schema utilities for JSON schema manipulation.
 
-Provides functions for combining, extracting, and manipulating
-JSON schemas from graph models.
+Provides functions for combining and extracting JSON schemas from graph models.
 """
 
 import json
