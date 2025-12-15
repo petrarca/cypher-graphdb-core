@@ -92,13 +92,11 @@ def test_graph_node_info_json_schema_with_extensions():
     rels = [GraphRelationInfo(rel_type_name="KNOWS", to_type_name="Person")]
     info = GraphNodeInfo(label_="Person", graph_model=GraphNode, relations=rels)
 
-    graph_model_ref = f"{info.graph_model.__module__}.{info.graph_model.__name__}"
     context = GraphSchemaContext(
         label=info.label_,
         metadata={},
         graph_type=GraphObjectType.NODE,
         relations=info.relations,
-        graph_model_ref=graph_model_ref,
     )
     schema = build_json_schema(info.graph_model, context=context)
 
@@ -107,7 +105,6 @@ def test_graph_node_info_json_schema_with_extensions():
     assert extension["type"] == GraphObjectType.NODE.name
     assert extension["label"] == "Person"
     assert extension["metadata"] == {}
-    assert extension["graph_model"].endswith("GraphNode")
     assert extension["relations"][0] == rels[0].model_dump()
 
     schema_from_property = info.graph_schema.json_schema

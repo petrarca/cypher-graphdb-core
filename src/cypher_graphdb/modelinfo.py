@@ -50,16 +50,12 @@ class GraphModelInfo(BaseModel):
     def _build_schema_context(self) -> GraphSchemaContext:
         """Assemble schema context metadata used by `GraphObjectSchema`."""
         relations = getattr(self, "relations", None)
-        graph_model_ref = None
-        if self.graph_model is not None:
-            graph_model_ref = f"{self.graph_model.__module__}.{self.graph_model.__name__}"
 
         return GraphSchemaContext(
             label=self.label_,
             metadata={},
             graph_type=self.type_,
             relations=list(relations or []),
-            graph_model_ref=graph_model_ref,
             display=self.display,
             source=self.source,
         )

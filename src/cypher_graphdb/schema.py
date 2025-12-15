@@ -22,7 +22,6 @@ class GraphSchemaContext:
     metadata: dict[str, Any]
     graph_type: GraphObjectType
     relations: list[Any]
-    graph_model_ref: str | None = None
     display: Any | None = None  # DisplayConfig to avoid circular import
     source: str | None = None  # Source type: "model" (Python) or "schema" (JSON)
 
@@ -75,9 +74,6 @@ def _build_graph_extension(context: GraphSchemaContext) -> dict[str, Any]:
         "label": context.label,
         "metadata": utils.to_collection(context.metadata or {}),
     }
-
-    if context.graph_model_ref is not None:
-        extension["graph_model"] = context.graph_model_ref
 
     if hasattr(context, "source") and context.source is not None:
         extension["source"] = context.source
