@@ -14,10 +14,98 @@ from .modelprovider import ModelProvider, model_provider
 from .models import GraphEdge, GraphNode
 
 
+def _collect_inherited_relations(cls: type[GraphNode]) -> list[GraphRelationInfo]:
+    """Collect relations from all parent classes in inheritance hierarchy.
+
+    Args:
+        cls: The class to collect inherited relations for
+
+    Returns:
+        List of relation info objects from all parent classes
+    """
+    inherited_relations = []
+
+    # Walk through inheritance hierarchy (skip self)
+    for base in cls.__mro__[1:]:
+        if hasattr(base, "graph_info_") and base.graph_info_:
+            parent_relations = base.graph_info_.relations
+            inherited_relations.extend(parent_relations)
+
+    return inherited_relations
+
+
+def _detect_relation_conflicts(
+    inherited_relations: list[GraphRelationInfo], current_relations: list[GraphRelationInfo], class_name: str
+) -> list[str]:
+    """Detect conflicts between inherited and current relations.
+
+    Args:
+        inherited_relations: Relations inherited from parent classes
+        current_relations: Relations defined on current class
+        class_name: Name of the class for error reporting
+
+    Returns:
+        List of conflict description strings
+    """
+    conflicts = []
+
+    # Create lookup for inherited relations
+    inherited_lookup = {(rel.rel_type_name, rel.to_type_name): rel for rel in inherited_relations}
+
+    # Check each current relation against inherited ones
+    for current_rel in current_relations:
+        key = (current_rel.rel_type_name, current_rel.to_type_name)
+        if key in inherited_lookup:
+            inherited_rel = inherited_lookup[key]
+            conflict = _detect_relation_conflict_detail(current_rel, inherited_rel, class_name)
+            if conflict:
+                conflicts.append(conflict)
+
+    return conflicts
+
+
+def _detect_relation_conflict_detail(
+    current_rel: GraphRelationInfo, inherited_rel: GraphRelationInfo, class_name: str
+) -> str | None:
+    """Detect specific conflicts between two relations."""
+    conflicts = []
+
+    # Cardinality conflict
+    if current_rel.cardinality != inherited_rel.cardinality:
+        conflicts.append(f"cardinality: {inherited_rel.cardinality} (inherited) vs {current_rel.cardinality} (current)")
+
+    # Description conflict
+    if current_rel.description and inherited_rel.description and current_rel.description != inherited_rel.description:
+        conflicts.append(f"description: '{inherited_rel.description}' (inherited) vs '{current_rel.description}' (current)")
+
+    # Form field conflict
+    if current_rel.form_field != inherited_rel.form_field:
+        conflicts.append(f"form_field: {inherited_rel.form_field} (inherited) vs {current_rel.form_field} (current)")
+
+    if conflicts:
+        return f"Relation '{current_rel.rel_type_name}' -> '{current_rel.to_type_name}' conflict in {class_name}: " + ", ".join(
+            conflicts
+        )
+
+    return None
+
+
+def _warn_relation_conflicts(conflicts: list[str], class_name: str, stacklevel: int = 3) -> None:
+    """Emit warnings for relation conflicts."""
+    if conflicts:
+        import warnings
+
+        conflict_msg = f"Relation inheritance conflicts detected in {class_name}:\n" + "\n".join(
+            f"  - {conflict}" for conflict in conflicts
+        )
+        warnings.warn(conflict_msg, UserWarning, stacklevel=stacklevel)
+
+
 def node(
     label: str = None,
     display: DisplayConfig = None,
     provider: ModelProvider = None,
+    inherit_relations: bool = True,
 ) -> Any:
     """Decorator to register a GraphNode subclass with optional label.
 
@@ -25,6 +113,7 @@ def node(
         label: Graph label for this node type (defaults to class name).
         display: Display configuration for UI rendering.
         provider: Model provider to register with (defaults to global).
+        inherit_relations: Whether to inherit relations from parent classes (defaults to True).
 
     Returns:
         Class decorator that registers the node class.
@@ -47,6 +136,9 @@ def node(
         if provider is None:
             provider = model_provider
 
+        # Collect inherited relations from parent classes (if enabled)
+        inherited_relations = _collect_inherited_relations(cls) if inherit_relations else []
+
         if node_info:
             # Occurs when @relation is used after @node, so relation
             # decorator is called before (!) @node.
@@ -58,12 +150,16 @@ def node(
             node_info.label_ = label_
             node_info.display = display
             node_info.source = config.MODEL_SOURCE_MODEL
+
+            # Add inherited relations to existing relations
+            node_info.relations = inherited_relations + node_info.relations
         else:
             node_info = GraphNodeInfo(
                 label_=label_,
                 graph_model=cls,
                 display=display,
                 source=config.MODEL_SOURCE_MODEL,
+                relations=inherited_relations,  # Include inherited relations
             )
             cls.graph_info_ = node_info
 
@@ -166,6 +262,12 @@ def relation(
             form_field=form_field,
             description=description,
         )
+
+        # Check for conflicts with inherited relations
+        inherited_relations = _collect_inherited_relations(cls)
+        if inherited_relations:
+            conflicts = _detect_relation_conflicts(inherited_relations, [rel_info], cls.__name__)
+            _warn_relation_conflicts(conflicts, cls.__name__, stacklevel=4)
 
         node_info.relations.append(rel_info)
 
