@@ -191,12 +191,15 @@ class MemgraphDB(CypherBackend):
         return self._execute_query(query, fetch_one, raw_data)
 
     def fulltext_search(
-        self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
-    ) -> tuple[TabularResult, ExecStatistics]:
-        """Perform full-text search on graph data.
+        self,
+        cypher_query: ParsedCypherQuery,
+        fts_query: str,
+        language: str | None = None,
+    ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
+        """Perform full-text search using Cypher queries.
 
         Args:
-            cypher_query: Base Cypher query to modify for full-text search.
+            cypher_query: Parsed Cypher query to execute.
             fts_query: Full-text search query string.
             language: Language for text search.
 
@@ -205,6 +208,62 @@ class MemgraphDB(CypherBackend):
         """
         # Implementation will be added later
         return ([], ExecStatistics())
+
+    def execute_cypher_stream(
+        self,
+        cypher_query: ParsedCypherQuery,
+        chunk_size: int = 1000,
+        raw_data: bool = False,
+    ):
+        """Execute a Cypher query and yield results in chunks.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            chunk_size: Number of rows to fetch per chunk.
+            raw_data: If True, return raw data without processing.
+
+        Yields:
+            Lists of result rows (chunks).
+        """
+        assert isinstance(cypher_query, ParsedCypherQuery)
+
+        # Validate read-only mode
+        self._validate_read_only(cypher_query)
+
+        query = cypher_query.parsed_query
+        self._require_connection()
+
+        logger.debug(f"Memgraph execute stream (chunk_size={chunk_size}): {query}")
+
+        from .memgraphrowfactories import memgraph_row_factory
+
+        cursor = self._connection.cursor()
+        try:
+            # Execute the query
+            cursor.execute(query)
+
+            # Set up row factory if not raw data
+            exec_stats = ExecStatistics()
+            row_factory = None
+            if not raw_data:
+                row_factory = memgraph_row_factory(exec_stats, self._model_provider)
+
+            # Stream results in chunks
+            while True:
+                chunk = cursor.fetchmany(chunk_size)
+                if not chunk:
+                    break
+
+                if raw_data:
+                    yield chunk
+                else:
+                    # Apply row factory to each row in chunk
+                    processed_chunk = [row_factory(row) for row in chunk]
+                    yield processed_chunk
+
+        finally:
+            # Always close cursor
+            cursor.close()
 
     def graphs(self) -> list[str]:
         """Get list of all graphs in the database.

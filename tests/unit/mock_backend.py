@@ -30,7 +30,7 @@ class MockBackend(CypherBackend):
         self._commits = 0
 
     # ---- abstract method implementations (no-op/trivial) ----
-    def connect(self, *a, **k):  # noqa: D401
+    def connect(self, *args, **kwargs):  # noqa: D401
         return None
 
     def disconnect(self):  # noqa: D401
@@ -47,6 +47,11 @@ class MockBackend(CypherBackend):
 
     def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False):  # noqa: D401
         return [], None
+
+    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False):  # noqa: D401
+        """Mock streaming implementation - yields empty chunks."""
+        return
+        yield  # Empty generator for mock
 
     def fulltext_search(self, cypher_query, fts_query, language=None):  # noqa: D401
         return [], None
@@ -100,7 +105,7 @@ class MockGraphDB(CypherGraphDB):
         super().__init__(backend or MockBackend())
 
     # --- public API used by tests / importers / exporters ---
-    def create_or_merge(self, obj):  # type: ignore  # noqa: D401
+    def create_or_merge(self, obj, strategy="merge"):  # type: ignore  # noqa: D401
         if isinstance(obj, GraphNode):
             return self._backend.create_or_merge_node(obj)  # type: ignore[attr-defined]
         if isinstance(obj, GraphEdge):

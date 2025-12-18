@@ -30,6 +30,11 @@ class MockBackendForTesting(CypherBackend):
     def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False):
         return [], None
 
+    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False):
+        """Mock streaming implementation - yields empty chunks."""
+        return
+        yield  # Empty generator for mock
+
     def fulltext_search(self, cypher_query, fts_query, language=None):
         return [], None
 
@@ -79,6 +84,11 @@ class BareBackend(CypherBackend):
     def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False):
         return [], None
 
+    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False):
+        """Mock streaming implementation - yields empty chunks."""
+        return
+        yield  # Empty generator for mock
+
     def fulltext_search(self, cypher_query, fts_query, language=None):
         return [], None
 
@@ -97,8 +107,8 @@ class BareBackend(CypherBackend):
 
 def test_backend_capability_enum():
     """Test that BackendCapability enum has expected values."""
-    assert BackendCapability.LABEL_FUNCTION.value == "label_function"
-    assert BackendCapability.SUPPORT_MULTIPLE_LABELS.value == "support_multiple_labels"
+    assert BackendCapability.LABEL_FUNCTION.value == 1
+    assert BackendCapability.SUPPORT_MULTIPLE_LABELS.value == 2
 
 
 def test_base_capability_not_implemented():

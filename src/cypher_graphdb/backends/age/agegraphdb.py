@@ -9,6 +9,8 @@ Classes:
 """
 
 import time
+import warnings
+from collections.abc import Iterator
 from typing import Any
 
 import psycopg
@@ -30,6 +32,12 @@ from .agerowfactories import age_row_factory
 from .agesearch import convert_to_fts_query
 from .agesqlbuilder import SQLBuilder
 from .agtype import AgTypeLoader
+
+
+class AGEExecutionError(Exception):
+    """Exception raised for errors during AGE query execution."""
+
+    pass
 
 
 class AGEGraphDB(CypherBackend):
@@ -77,9 +85,11 @@ class AGEGraphDB(CypherBackend):
     def connect(
         self,
         cinfo: str | None = None,
+        *args: Any,
         graph_name: str | None = None,
         create_graph: bool = False,
         cursor_factory: Any = ClientCursor,
+        autocommit: bool | None = None,
         check_graph_exists: bool = True,
         **kwargs: Any,
     ) -> "AGEGraphDB":
@@ -90,6 +100,7 @@ class AGEGraphDB(CypherBackend):
             graph_name: Name of the graph to use. If None, loads from env.
             create_graph: Whether to create the graph if it doesn't exist.
             cursor_factory: Factory class for creating database cursors.
+            autocommit: Whether to use autocommit mode.
             check_graph_exists: Whether to verify graph existence.
             **kwargs: Additional connection parameters.
 
@@ -168,6 +179,36 @@ class AGEGraphDB(CypherBackend):
 
         return (result, execute_stats)
 
+    def execute_cypher_stream(
+        self,
+        cypher_query: ParsedCypherQuery,
+        chunk_size: int = 1000,
+        raw_data: bool = False,
+    ) -> Iterator[list[Any]]:
+        """Execute a Cypher query and yield results in chunks.
+
+        AGE does not support true streaming due to server-side cursor limitations
+        with complex Cypher queries. This implementation provides a fallback
+        that executes the query normally and yields results in chunks.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            chunk_size: Number of rows to fetch per chunk.
+            raw_data: If True, return raw data without processing.
+
+        Yields:
+            Lists of result rows (chunks).
+        """
+        warnings.warn("AGE backend does not support true streaming. Using chunked fallback execution.", UserWarning, stacklevel=3)
+
+        # Execute query normally
+        result, _ = self.execute_cypher(cypher_query, raw_data=raw_data)
+
+        # Yield results in chunks to simulate streaming
+        for i in range(0, len(result), chunk_size):
+            chunk = result[i : i + chunk_size]
+            yield chunk
+
     def fulltext_search(
         self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
     ) -> tuple[TabularResult, ExecStatistics]:
@@ -225,7 +266,6 @@ class AGEGraphDB(CypherBackend):
         (result,), _, _ = self._execute_sql(sql, raw_data=True)
 
         return list(result)
-        # TODO: remove C408: return [graph_name for graph_name in result]
 
     def labels(self) -> list[LabelStatistics]:
         """Get statistics for all labels in the current graph.
@@ -469,8 +509,7 @@ class AGEGraphDB(CypherBackend):
                 # In that case as reconnect is forced
                 self._connection.close()
                 self._connection = None
-                # TODO: Raise own exception
-                raise e
+                raise AGEExecutionError(f"AGE query execution failed: {e}") from e
 
         # measure executing time
         exec_stats.exec_time = time.perf_counter() - start_time

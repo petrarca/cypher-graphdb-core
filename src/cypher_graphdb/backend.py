@@ -6,7 +6,7 @@ CypherBackend: Abstract base class for implementing graph database backends.
 """
 
 import abc
-from enum import Enum
+from enum import Enum, auto
 from typing import Any
 
 from loguru import logger
@@ -20,10 +20,10 @@ from .statistics import GraphStatistics, LabelStatistics
 
 
 class BackendCapability(Enum):
-    """Enumeration of backend capabilities that can be queried."""
+    """Enumeration of backend capabilities for feature detection."""
 
-    LABEL_FUNCTION = "label_function"
-    SUPPORT_MULTIPLE_LABELS = "support_multiple_labels"
+    LABEL_FUNCTION = auto()  # Function to get node labels
+    SUPPORT_MULTIPLE_LABELS = auto()  # Support for multiple labels per node
 
 
 class ExecStatistics(GraphStatistics):
@@ -199,6 +199,25 @@ class CypherBackend(abc.ABC):
         raw_data: bool = False,
     ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a parsed Cypher query and return results and execution stats."""
+        pass
+
+    @abc.abstractmethod
+    def execute_cypher_stream(
+        self,
+        cypher_query: ParsedCypherQuery,
+        chunk_size: int = 1000,
+        raw_data: bool = False,
+    ):
+        """Execute a parsed Cypher query and yield results in chunks.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute
+            chunk_size: Number of rows to fetch per chunk
+            raw_data: If True, return raw data without processing
+
+        Yields:
+            Lists of result rows (TabularResult chunks)
+        """
         pass
 
     @abc.abstractmethod
