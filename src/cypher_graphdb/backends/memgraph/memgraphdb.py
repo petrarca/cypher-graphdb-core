@@ -447,6 +447,9 @@ class MemgraphDB(CypherBackend):
             case BackendCapability.SUPPORT_MULTIPLE_LABELS:
                 # Memgraph support multiple labels per node
                 return True
+            case BackendCapability.STREAMING_SUPPORT:
+                # Memgraph supports native streaming via fetchmany()
+                return True
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)

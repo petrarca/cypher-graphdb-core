@@ -24,6 +24,7 @@ class BackendCapability(Enum):
 
     LABEL_FUNCTION = auto()  # Function to get node labels
     SUPPORT_MULTIPLE_LABELS = auto()  # Support for multiple labels per node
+    STREAMING_SUPPORT = auto()  # Native streaming support via server-side cursors
 
 
 class ExecStatistics(GraphStatistics):

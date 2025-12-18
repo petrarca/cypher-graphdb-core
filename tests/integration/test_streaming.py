@@ -1,12 +1,17 @@
 """Integration tests for streaming functionality.
 
-Tests streaming read operations for Memgraph backend, including:
+Tests streaming read operations for Memgraph and AGE backends, including:
 - Basic chunked streaming
 - Early termination
 - Memory efficiency
 - Error handling
 - Various query types
+
+For Memgraph: Uses native streaming via server-side cursors.
+For AGE: Uses fallback chunking handled by StreamMixin.
 """
+
+import warnings
 
 import pytest
 
@@ -195,3 +200,119 @@ class TestMemgraphStreaming:
         for chunk in chunks:
             for row in chunk:
                 assert isinstance(row, tuple)
+
+
+@pytest.fixture
+def age_with_data(age_db):
+    """Create test data in AGE for streaming tests."""
+    # Create test data
+    age_db.execute("""
+        CREATE (p1:Person {name: 'Alice', age: 30, city: 'New York'})
+        CREATE (p2:Person {name: 'Bob', age: 25, city: 'San Francisco'})
+        CREATE (p3:Person {name: 'Charlie', age: 35, city: 'Chicago'})
+        CREATE (p4:Person {name: 'Diana', age: 28, city: 'Boston'})
+        CREATE (p5:Person {name: 'Eve', age: 32, city: 'Seattle'})
+    """)
+    yield age_db
+    # Cleanup
+    age_db.execute("MATCH (n) DETACH DELETE n")
+
+
+class TestAGEStreaming:
+    """Test streaming read functionality for AGE backend (fallback mode)."""
+
+    def test_stream_emits_fallback_warning(self, age_with_data):
+        """Test that AGE streaming emits a fallback warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p", chunk_size=2))
+
+            # Should have emitted a warning about fallback
+            assert len(w) == 1
+            assert "does not support native streaming" in str(w[0].message)
+            assert issubclass(w[0].category, UserWarning)
+
+            # Should still return data
+            total_rows = sum(len(chunk) for chunk in chunks)
+            assert total_rows == 5
+
+    def test_stream_nodes_basic(self, age_with_data):
+        """Test basic streaming of nodes with small chunks."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Ignore fallback warning for this test
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p ORDER BY p.name", chunk_size=2))
+
+        # Should get 3 chunks: 2, 2, 1 persons
+        assert len(chunks) == 3
+        assert len(chunks[0]) == 2
+        assert len(chunks[1]) == 2
+        assert len(chunks[2]) == 1
+
+        # Verify total count
+        total_rows = sum(len(chunk) for chunk in chunks)
+        assert total_rows == 5
+
+    def test_stream_early_termination(self, age_with_data):
+        """Test early termination of streaming."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            chunk_count = 0
+            total_rows = 0
+
+            for chunk in age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p ORDER BY p.name", chunk_size=2):
+                chunk_count += 1
+                total_rows += len(chunk)
+
+                # Stop after 2 chunks
+                if chunk_count >= 2:
+                    break
+
+        # Should have processed only first 2 chunks (4 persons)
+        assert chunk_count == 2
+        assert total_rows == 4
+
+    def test_stream_large_chunks(self, age_with_data):
+        """Test streaming with chunk size larger than result."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p ORDER BY p.name", chunk_size=10))
+
+        # Should get 1 chunk with all data
+        assert len(chunks) == 1
+        assert len(chunks[0]) == 5
+
+    def test_stream_empty_result(self, age_with_data):
+        """Test streaming with empty result set."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person {name: 'NonExistent'}) RETURN p", chunk_size=5))
+
+        # Should get empty list (no chunks yielded)
+        assert len(chunks) == 0
+
+    def test_stream_with_age_filter(self, age_with_data):
+        """Test streaming queries with age filtering."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            chunks = list(
+                age_with_data.execute_cypher_stream("MATCH (p:Person) WHERE p.age >= 30 RETURN p ORDER BY p.name", chunk_size=2)
+            )
+
+        # Should get persons aged 30+: Alice (30), Charlie (35), Eve (32)
+        total_rows = sum(len(chunk) for chunk in chunks)
+        assert total_rows == 3
+
+    def test_stream_different_chunk_sizes(self, age_with_data):
+        """Test streaming with various chunk sizes."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            # Test chunk size of 1
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p ORDER BY p.name LIMIT 3", chunk_size=1))
+            assert len(chunks) == 3
+            assert all(len(chunk) == 1 for chunk in chunks)
+
+            # Test chunk size of 3
+            chunks = list(age_with_data.execute_cypher_stream("MATCH (p:Person) RETURN p ORDER BY p.name LIMIT 3", chunk_size=3))
+            assert len(chunks) == 1
+            assert len(chunks[0]) == 3

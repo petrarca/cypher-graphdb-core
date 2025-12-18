@@ -9,7 +9,6 @@ Classes:
 """
 
 import time
-import warnings
 from collections.abc import Iterator
 from typing import Any
 
@@ -36,8 +35,6 @@ from .agtype import AgTypeLoader
 
 class AGEExecutionError(Exception):
     """Exception raised for errors during AGE query execution."""
-
-    pass
 
 
 class AGEGraphDB(CypherBackend):
@@ -89,7 +86,6 @@ class AGEGraphDB(CypherBackend):
         graph_name: str | None = None,
         create_graph: bool = False,
         cursor_factory: Any = ClientCursor,
-        autocommit: bool | None = None,
         check_graph_exists: bool = True,
         **kwargs: Any,
     ) -> "AGEGraphDB":
@@ -100,9 +96,8 @@ class AGEGraphDB(CypherBackend):
             graph_name: Name of the graph to use. If None, loads from env.
             create_graph: Whether to create the graph if it doesn't exist.
             cursor_factory: Factory class for creating database cursors.
-            autocommit: Whether to use autocommit mode.
             check_graph_exists: Whether to verify graph existence.
-            **kwargs: Additional connection parameters.
+            **kwargs: Additional connection parameters (including autocommit, read_only).
 
         Returns:
             Self for method chaining.
@@ -187,27 +182,18 @@ class AGEGraphDB(CypherBackend):
     ) -> Iterator[list[Any]]:
         """Execute a Cypher query and yield results in chunks.
 
-        AGE does not support true streaming due to server-side cursor limitations
-        with complex Cypher queries. This implementation provides a fallback
-        that executes the query normally and yields results in chunks.
+        AGE does not support native streaming. The StreamMixin handles
+        fallback execution for backends that don't support streaming.
 
         Args:
             cypher_query: Parsed Cypher query to execute.
             chunk_size: Number of rows to fetch per chunk.
             raw_data: If True, return raw data without processing.
 
-        Yields:
-            Lists of result rows (chunks).
+        Raises:
+            NotImplementedError: AGE does not support native streaming.
         """
-        warnings.warn("AGE backend does not support true streaming. Using chunked fallback execution.", UserWarning, stacklevel=3)
-
-        # Execute query normally
-        result, _ = self.execute_cypher(cypher_query, raw_data=raw_data)
-
-        # Yield results in chunks to simulate streaming
-        for i in range(0, len(result), chunk_size):
-            chunk = result[i : i + chunk_size]
-            yield chunk
+        raise NotImplementedError("AGE backend does not support native streaming. Use StreamMixin for fallback.")
 
     def fulltext_search(
         self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
@@ -394,6 +380,9 @@ class AGEGraphDB(CypherBackend):
                 return "label({node})"
             case BackendCapability.SUPPORT_MULTIPLE_LABELS:
                 # AGE does not support multiple labels per node
+                return False
+            case BackendCapability.STREAMING_SUPPORT:
+                # AGE does not support native streaming
                 return False
             case _:
                 # Delegate unknown capabilities to superclass

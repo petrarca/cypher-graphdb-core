@@ -109,6 +109,7 @@ def test_backend_capability_enum():
     """Test that BackendCapability enum has expected values."""
     assert BackendCapability.LABEL_FUNCTION.value == 1
     assert BackendCapability.SUPPORT_MULTIPLE_LABELS.value == 2
+    assert BackendCapability.STREAMING_SUPPORT.value == 3
 
 
 def test_base_capability_not_implemented():
