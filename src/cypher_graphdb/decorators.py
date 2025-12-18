@@ -4,7 +4,8 @@ Provides @node, @edge, and @relation decorators to register GraphNode and GraphE
 subclasses with the global model provider.
 """
 
-from typing import Any, TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict, TypeVar
 
 from . import config
 from .cardinality import Cardinality
@@ -12,6 +13,8 @@ from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, model_provider
 from .models import GraphEdge, GraphNode
+
+T = TypeVar("T")
 
 
 def _collect_inherited_relations(cls: type[GraphNode]) -> list[GraphRelationInfo]:
@@ -356,7 +359,7 @@ def extend_relation(
     form_field: bool = False,
     description: str | None = None,
     provider: ModelProvider = None,
-):
+) -> Callable[[type[T]], type[T]] | None:
     """Add a relation to an already-registered node type OR use as decorator.
 
     Can be used in two ways:
