@@ -13,6 +13,9 @@ from .cypher.CypherLexer import CypherLexer
 from .cypher.CypherListener import CypherListener
 from .cypher.CypherParser import CypherParser
 
+# Pre-compiled regex for parameter extraction
+_PARAM_PATTERN = re.compile(r"\$\w+")
+
 
 class CypherClausePart(BaseModel):
     """Represents a part of a Cypher clause (node, edge, etc.).
@@ -22,7 +25,7 @@ class CypherClausePart(BaseModel):
         part_type: Type of the part (NODE, EDGE, SET_ITEM, etc.).
         varname: Variable name used in the query.
         labels: List of labels associated with this part.
-        properties: Properties specification as a string.
+        parameters: List of parameter names (e.g., ['$key', '$name']) extracted from properties.
 
     """
 
@@ -30,7 +33,7 @@ class CypherClausePart(BaseModel):
     part_type: str
     varname: str = None
     labels: list[str] = []
-    properties: str = None
+    parameters: list[str] = []
 
 
 class CypherClause(BaseModel):
@@ -245,7 +248,7 @@ class CypherQueryListener(CypherListener):
 
     def exitOC_Properties(self, ctx: CypherParser.OC_PropertiesContext):
         if self._current_clause_part:
-            self._current_clause_part.properties = ctx.getText()
+            self._current_clause_part.parameters = _PARAM_PATTERN.findall(ctx.getText())
 
     def enterOC_SetItem(self, ctx: CypherParser.OC_SetItemContext):
         if self._current_clause:
