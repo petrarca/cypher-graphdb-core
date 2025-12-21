@@ -198,8 +198,16 @@ class CypherBackend(abc.ABC):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> tuple[TabularResult, ExecStatistics]:
-        """Execute a parsed Cypher query and return results and execution stats."""
+        """Execute a parsed Cypher query and return results and execution stats.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            fetch_one: If True, return only the first result row.
+            raw_data: If True, return raw data without processing.
+            params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
+        """
         pass
 
     @abc.abstractmethod
@@ -208,6 +216,7 @@ class CypherBackend(abc.ABC):
         cypher_query: ParsedCypherQuery,
         chunk_size: int = 1000,
         raw_data: bool = False,
+        params: dict | None = None,
     ):
         """Execute a parsed Cypher query and yield results in chunks.
 
@@ -215,6 +224,7 @@ class CypherBackend(abc.ABC):
             cypher_query: Parsed Cypher query to execute
             chunk_size: Number of rows to fetch per chunk
             raw_data: If True, return raw data without processing
+            params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
 
         Yields:
             Lists of result rows (TabularResult chunks)

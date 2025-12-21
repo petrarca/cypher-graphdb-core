@@ -744,6 +744,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         unnest_result: str | bool = None,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> Any | TabularResult:
         """Execute a Cypher command and return results with flexible formatting options.
 
@@ -817,7 +818,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         assert self._backend
 
         logger.debug(f"Execute cypher {unnest_result=}, {fetch_one=}): \n{cypher_cmd}")
-        result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data)
+        result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
 
         return utils.unnest_result(result, unnest_result)
 
@@ -827,6 +828,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         unnest_result: str | bool = None,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> QueryResult:
         """Execute a Cypher command and return immutable QueryResult with statistics.
 
@@ -873,7 +875,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         parsed_query = self._parse_cypher(cypher_cmd)
 
         # Execute the query and get statistics
-        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data)
+        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         # Create immutable QueryResult
         return QueryResult(
@@ -1051,6 +1053,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         cypher_cmd: str | ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> TabularResult | None:
         if isinstance(cypher_cmd, str):
             if not (parsed_query := self._parse_cypher(cypher_cmd)):
@@ -1063,7 +1066,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
             logger.debug("Cancelled execution due failure of before_execute hook!")
             return None
 
-        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data)
+        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         self._after_execute(result, parsed_query)
 

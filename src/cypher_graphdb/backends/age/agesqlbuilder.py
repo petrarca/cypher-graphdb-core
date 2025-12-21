@@ -51,7 +51,21 @@ class SQLBuilder:
         )
 
     @classmethod
-    def create_cypher_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery) -> sql.SQL:
+    def create_cypher_sql(
+        cls, graph_name: str, cypher_query: ParsedCypherQuery, params: dict | None = None
+    ) -> tuple[sql.SQL, tuple | None]:
+        """Create SQL for executing a Cypher query via AGE.
+
+        Args:
+            graph_name: Name of the graph.
+            cypher_query: Parsed Cypher query.
+            params: Optional dictionary of parameters.
+
+        Returns:
+            Tuple of (SQL statement, params tuple for psycopg execute).
+            For prepared statements, returns SQL with $1 placeholder.
+            For regular queries, returns SQL with %s placeholder and params as tuple.
+        """
         assert isinstance(cypher_query, ParsedCypherQuery)
 
         return_arguments = {}
@@ -80,12 +94,19 @@ class SQLBuilder:
         # Strip trailing semicolon from Cypher query - AGE doesn't accept it in cypher() function
         cypher_clean = cypher_query.parsed_query.rstrip(";").strip()
 
+        # Build cypher() function call with optional params
+        # For prepared statements, use $1 placeholder for agtype parameter
+        if params:
+            cypher_call = f"cypher('{graph_name}', $$ {cypher_clean} $$, $1)"
+        else:
+            cypher_call = f"cypher('{graph_name}', $$ {cypher_clean} $$)"
+
         # TODO: select explicit fields from return argmentents: select p1, ..
-        return sql.SQL(f"SELECT {column_list} FROM cypher('{graph_name}', $$ {cypher_clean} $$) as ({result_types})")
+        return (sql.SQL(f"SELECT {column_list} FROM {cypher_call} as ({result_types})"), None)
 
     @classmethod
     def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.SQL:
-        sql_ = cls.create_cypher_sql(graph_name, cypher_query)
+        sql_, _ = cls.create_cypher_sql(graph_name, cypher_query)
 
         where_parts = []
         for k, v in cypher_query.return_arguments.items():
@@ -99,7 +120,7 @@ class SQLBuilder:
         return sql_
 
     @classmethod
-    def resolve_graphs(cls, graph_name: str) -> sql.SQL:
+    def resolve_graphs(cls) -> sql.SQL:
         return sql.SQL("SELECT name FROM ag_catalog.ag_graph")
 
     @classmethod

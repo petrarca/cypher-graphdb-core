@@ -165,6 +165,7 @@ class MemgraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a Cypher query against the graph database.
 
@@ -172,6 +173,7 @@ class MemgraphDB(CypherBackend):
             cypher_query: Parsed Cypher query to execute.
             fetch_one: If True, return only the first result row.
             raw_data: If True, return raw data without processing.
+            params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
 
         Returns:
             Tuple of (query results, execution statistics).
@@ -188,7 +190,7 @@ class MemgraphDB(CypherBackend):
         # Get the query string
         query = cypher_query.parsed_query
 
-        return self._execute_query(query, fetch_one, raw_data)
+        return self._execute_query(query, fetch_one, raw_data, params)
 
     def fulltext_search(
         self,
@@ -214,6 +216,7 @@ class MemgraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         chunk_size: int = 1000,
         raw_data: bool = False,
+        params: dict | None = None,
     ):
         """Execute a Cypher query and yield results in chunks.
 
@@ -221,6 +224,7 @@ class MemgraphDB(CypherBackend):
             cypher_query: Parsed Cypher query to execute.
             chunk_size: Number of rows to fetch per chunk.
             raw_data: If True, return raw data without processing.
+            params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
 
         Yields:
             Lists of result rows (chunks).
@@ -233,14 +237,14 @@ class MemgraphDB(CypherBackend):
         query = cypher_query.parsed_query
         self._require_connection()
 
-        logger.debug(f"Memgraph execute stream (chunk_size={chunk_size}): {query}")
+        logger.debug("Memgraph execute stream (chunk_size={}): {}", chunk_size, query)
 
         from .memgraphrowfactories import memgraph_row_factory
 
         cursor = self._connection.cursor()
         try:
-            # Execute the query
-            cursor.execute(query)
+            # Execute the query with optional params
+            cursor.execute(query, params or {})
 
             # Set up row factory if not raw data
             exec_stats = ExecStatistics()
@@ -455,7 +459,7 @@ class MemgraphDB(CypherBackend):
                 return super().get_capability(capability)
 
     def _execute_query(
-        self, query: str, fetch_one: bool = False, raw_data: bool = False
+        self, query: str, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
     ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
         """Execute a Cypher query and process the results.
 
@@ -463,6 +467,7 @@ class MemgraphDB(CypherBackend):
             query: Cypher query string to execute.
             fetch_one: If True, return only the first result row.
             raw_data: If True, return raw data without processing.
+            params: Optional dictionary of parameter values to bind.
 
         Returns:
             Tuple of (query results, execution statistics).
@@ -474,7 +479,7 @@ class MemgraphDB(CypherBackend):
         self._require_connection()
 
         start_time = time.perf_counter()
-        logger.debug(f"Memgraph execute: {query}")
+        logger.debug("Memgraph execute: {}", query)
 
         exec_stats = ExecStatistics()
         result = []
@@ -483,8 +488,8 @@ class MemgraphDB(CypherBackend):
             # Get cursor from connection
             cursor = self._connection.cursor()
 
-            # Execute the query
-            cursor.execute(query)
+            # Execute the query with optional params
+            cursor.execute(query, params or {})
 
             # Process results
             if not raw_data:
@@ -510,25 +515,22 @@ class MemgraphDB(CypherBackend):
                 self._connection.commit()
 
         except mgclient.DatabaseError as e:
-            logger.error(f"Memgraph database error: {e}")
+            logger.error("Memgraph database error: {}", e)
             raise
         except ValueError as e:
-            logger.error(f"Value error in Memgraph query: {e}")
+            logger.error("Value error in Memgraph query: {}", e)
             raise
         except Exception as e:
-            logger.error(f"Unexpected error executing Memgraph query: {e}")
+            logger.error("Unexpected error executing Memgraph query: {}", e)
             raise
 
         # Record execution time
         exec_stats.exec_time = time.perf_counter() - start_time
-        logger.debug(f"exec_time={exec_stats.exec_time:.4f}s")
+        logger.debug("exec_time={:.4f}s", exec_stats.exec_time)
 
         # Calculate column count from the result
         # If result is not empty, use the length of the first row as column count
         if result and len(result) > 0 and isinstance(result[0], tuple):
             exec_stats.col_count = len(result[0])
 
-        return (result, exec_stats)
-        return (result, exec_stats)
-        return (result, exec_stats)
         return (result, exec_stats)

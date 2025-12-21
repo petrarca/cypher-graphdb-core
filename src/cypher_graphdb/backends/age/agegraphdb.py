@@ -8,6 +8,8 @@ Classes:
     AGEGraphDB: Main backend class for Apache AGE database operations.
 """
 
+import hashlib
+import json
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -16,7 +18,7 @@ import psycopg
 import psycopg.conninfo as conninfo
 from loguru import logger
 from psycopg.client_cursor import ClientCursor
-from psycopg.sql import SQL
+from psycopg.sql import SQL, Identifier
 from psycopg.types import TypeInfo
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -76,6 +78,10 @@ class AGEGraphDB(CypherBackend):
         self._cursor_factory = None
         self._set_graph_if_not_exists = True
 
+        # prepared statement cache for parameterized queries
+        self._prepared_statements = {}  # query_hash -> stmt_name
+        self._max_cached_statements = 10
+
         if args or kwargs:
             self.connect(*args, **kwargs)
 
@@ -88,7 +94,7 @@ class AGEGraphDB(CypherBackend):
         cursor_factory: Any = ClientCursor,
         check_graph_exists: bool = True,
         **kwargs: Any,
-    ) -> "AGEGraphDB":
+    ) -> "AGEGraphDB":  # noqa: W504
         """Connect to PostgreSQL database with Apache AGE extension.
 
         Args:
@@ -148,6 +154,7 @@ class AGEGraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a Cypher query against the graph database.
 
@@ -168,17 +175,130 @@ class AGEGraphDB(CypherBackend):
         # Validate read-only mode FIRST
         self._validate_read_only(cypher_query)
 
-        sql = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query)
-
-        (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data)
+        if params:
+            # Use prepared statement for parameterized queries
+            (result, execute_stats, _) = self._execute_prepared(cypher_query, fetch_one, raw_data, params)
+        else:
+            # Use regular execution for non-parameterized queries
+            sql, sql_params = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query, params)
+            (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data, sql_params)
 
         return (result, execute_stats)
+
+    def _get_query_hash(self, query: str) -> str:
+        """Generate consistent hash for query string."""
+        return hashlib.md5(query.encode()).hexdigest()[:8]
+
+    def _get_or_prepare_statement(self, cypher_sql, query: str) -> str:
+        """Get existing prepared statement or create a new one."""
+        query_hash = self._get_query_hash(query)
+
+        if query_hash not in self._prepared_statements:
+            logger.trace("Cache miss for query hash {}: creating new prepared statement", query_hash)
+
+            # Remove oldest statement if cache is full
+            if len(self._prepared_statements) >= self._max_cached_statements:
+                oldest_hash = next(iter(self._prepared_statements))
+                oldest_stmt = self._prepared_statements[oldest_hash]
+
+                logger.trace("Cache full: deallocating oldest statement {} (hash {})", oldest_stmt, oldest_hash)
+
+                # Deallocate old statement
+                with self._fetch_cursor(row_factory=None) as cursor:
+                    cursor.execute(SQL("DEALLOCATE {}").format(Identifier(oldest_stmt)))
+
+                del self._prepared_statements[oldest_hash]
+
+            # Create new prepared statement
+            stmt_name = f"cypher_stmt_{query_hash}"
+            logger.trace("Creating new prepared statement {} for query hash {}", stmt_name, query_hash)
+
+            with self._fetch_cursor(row_factory=None) as cursor:
+                prepare_sql = SQL("PREPARE {} AS {}").format(Identifier(stmt_name), cypher_sql)
+                cursor.execute(prepare_sql)
+
+            self._prepared_statements[query_hash] = stmt_name
+            logger.trace("Prepared statement cached. Total cached: {}", len(self._prepared_statements))
+        else:
+            stmt_name = self._prepared_statements[query_hash]
+            logger.trace("Cache hit for query hash {}: using prepared statement {}", query_hash, stmt_name)
+
+        return self._prepared_statements[query_hash]
+
+    def _execute_prepared(
+        self, cypher_query: ParsedCypherQuery, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
+    ) -> tuple[list[tuple[GraphObject]], ExecStatistics, SqlStatistics]:
+        """Execute a parameterized Cypher query using PostgreSQL prepared statements."""
+        start_time = time.perf_counter()
+        logger.debug("AGE execute prepared with params: {}", params)
+
+        exec_stats = ExecStatistics()
+        sql_stats = None
+        result = None
+
+        # Build the cypher SQL with parameter placeholder
+        cypher_sql, _ = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query, params)
+
+        # Get or create cached prepared statement
+        stmt_name = self._get_or_prepare_statement(cypher_sql, cypher_query.parsed_query)
+
+        # Convert params to agtype JSON string
+        params_json = json.dumps(params)
+
+        # Execute the prepared statement
+        execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+
+        try:
+            with self._fetch_cursor(
+                row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
+            ) as exec_cursor:
+                exec_cursor.execute(execute_sql, (params_json,))
+
+                if fetch_one:
+                    row = exec_cursor.fetchone()
+                    result = [row] if row is not None else []
+                else:
+                    result = exec_cursor.fetchall()
+
+                col_names = [col.name for col in exec_cursor.description] if exec_cursor.description else []
+                sql_stats = SqlStatistics(sql_stmt=cypher_sql.as_string(), col_names=col_names)
+
+            if self.autocommit:
+                self._connection.commit()
+
+        except Exception as e:
+            error_details = f"AGE query execution failed: {e}"
+            self._connection.close()
+            self._connection = None
+            raise AGEExecutionError(error_details) from e
+
+        exec_stats.exec_time = time.perf_counter() - start_time
+        logger.debug("AGE exec_time={:.4f}s", exec_stats.exec_time)
+
+        return (result, exec_stats, sql_stats)
+
+    def _cleanup_prepared_statements(self):
+        """Deallocate all cached prepared statements."""
+        if not self._connection or not self._prepared_statements:
+            return
+
+        try:
+            with self._fetch_cursor(row_factory=None) as cursor:
+                for stmt_name in self._prepared_statements.values():
+                    logger.trace("Deallocating prepared statement {} on disconnect", stmt_name)
+                    cursor.execute(SQL("DEALLOCATE {}").format(Identifier(stmt_name)))
+            self._prepared_statements.clear()
+            logger.debug("Deallocated all cached prepared statements")
+        except (psycopg.errors.DatabaseError, psycopg.errors.OperationalError) as e:
+            logger.warning("Error deallocating prepared statements: {}", e)
+            self._prepared_statements.clear()
 
     def execute_cypher_stream(
         self,
         cypher_query: ParsedCypherQuery,
         chunk_size: int = 1000,
         raw_data: bool = False,
+        params: dict | None = None,
     ) -> Iterator[list[Any]]:
         """Execute a Cypher query and yield results in chunks.
 
@@ -247,7 +367,7 @@ class AGEGraphDB(CypherBackend):
             List of graph names.
 
         """
-        sql = SQLBuilder.resolve_graphs(self._graph_name)
+        sql = SQLBuilder.resolve_graphs()
 
         (result,), _, _ = self._execute_sql(sql, raw_data=True)
 
@@ -284,6 +404,8 @@ class AGEGraphDB(CypherBackend):
     def disconnect(self):
         """Close the database connection and clear connection info."""
         if self._connection:
+            # Deallocate all cached prepared statements
+            self._cleanup_prepared_statements()
             self._connection.close()
             self._connection = None
         self._cinfo = None
@@ -456,7 +578,7 @@ class AGEGraphDB(CypherBackend):
             raise
 
     def _execute_sql(
-        self, sql: SQL, fetch_one: bool = False, raw_data: bool = False
+        self, sql: SQL, fetch_one: bool = False, raw_data: bool = False, params: tuple | None = None
     ) -> tuple[list[tuple[GraphObject]], ExecStatistics, SqlStatistics]:
         """Execute SQL statement and return results with statistics.
 
@@ -482,11 +604,11 @@ class AGEGraphDB(CypherBackend):
         ) as cursor:
             try:
                 if fetch_one:
-                    row = cursor.execute(sql).fetchone()
+                    row = cursor.execute(sql, params).fetchone()
                     # Wrap single row in a list to match Memgraph's return format
                     result = [row] if row is not None else []
                 else:
-                    result = cursor.execute(sql).fetchall()
+                    result = cursor.execute(sql, params).fetchall()
 
                 col_names = [col.name for col in cursor.description]
                 sql_stats = SqlStatistics(sql_stmt=sql.as_string(), col_names=col_names)
