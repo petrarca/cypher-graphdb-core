@@ -63,6 +63,7 @@ class ParsedCypherQuery(BaseModel):
         clauses: List of parsed clauses in the query.
         return_arguments: Dictionary of return clause arguments.
         var_to_labels: Mapping of variables to their labels.
+        parameters: List of parameter names found in the query (e.g., ['$name', '$age']).
         parse_tree: The ANTLR parse tree (excluded from serialization).
 
     """
@@ -71,6 +72,7 @@ class ParsedCypherQuery(BaseModel):
     clauses: list[CypherClause]
     return_arguments: dict = {}
     var_to_labels: dict = {}
+    parameters: list[str] = []
     parse_tree: object = Field(exclude=True)
 
     @property
@@ -95,6 +97,25 @@ class ParsedCypherQuery(BaseModel):
 
         """
         return any(c.updating_clause for c in self.clauses)
+
+    def get_parameters(self) -> list[str]:
+        """Extract all parameter names from the query.
+
+        Returns:
+            List of parameter names (e.g., ['$name', '$age']) found in the query.
+            Parameters are deduplicated while preserving order.
+
+        """
+        parameters = []
+        for clause in self.clauses:
+            for part in clause.parts:
+                if part.parameters:
+                    parameters.extend(part.parameters)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_parameters = [p for p in parameters if not (p in seen or seen.add(p))]
+        return unique_parameters
 
     def find_clause_parts(self, part_types: tuple[str]) -> tuple[CypherClausePart]:
         """Find clause parts of specified types.
@@ -125,6 +146,9 @@ class ParsedCypherQuery(BaseModel):
             for p in c.parts:
                 labels = set(list(labels) + p.labels)
             c.labels = list(labels)
+
+        # Extract and populate parameters
+        self.parameters = self.get_parameters()
 
     def is_valid_syntax(self) -> bool:
         """Check if the parsed query has valid Cypher syntax.
