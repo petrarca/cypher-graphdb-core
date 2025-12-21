@@ -17,6 +17,7 @@ from .cyphergraphdb import (
     QueryResult,
 )
 from .cypherjson import GraphJSONEncoder
+from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
 from .decorators import edge, extend_relation, extend_relations, node, relation
 from .exceptions import ReadOnlyModeError
@@ -60,6 +61,8 @@ __all__ = [
     "Cardinality",
     "graphops",
     "backends",
+    "ParsedCypherQuery",
+    "parse_cypher_query",
 ]
 
 # logger.disable(__name__)

@@ -123,6 +123,23 @@ class ParsedCypherQuery(BaseModel):
                 labels = set(list(labels) + p.labels)
             c.labels = list(labels)
 
+    def is_valid_syntax(self) -> bool:
+        """Check if the parsed query has valid Cypher syntax.
+
+        ANTLR is lenient and parses invalid syntax into empty structures.
+        This method determines if the query actually contains meaningful
+        Cypher clauses or if it's essentially invalid.
+
+        Returns:
+            True if the query contains valid Cypher clauses, False otherwise.
+        """
+        # Consider invalid if no clauses were parsed but query isn't empty
+        if not self.submitted_query.strip():
+            return False
+
+        # Valid if we found at least one clause or return arguments
+        return len(self.clauses) > 0 or bool(self.return_arguments)
+
 
 class CypherQueryListener(CypherListener):
     """ANTLR listener for parsing Cypher queries.
