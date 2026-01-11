@@ -817,7 +817,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         """
         assert self._backend
 
-        logger.debug(f"Execute cypher {unnest_result=}, {fetch_one=}): \n{cypher_cmd}")
+        logger.debug("Execute cypher (unnest_result={}, fetch_one={}): {}", unnest_result, fetch_one, cypher_cmd)
         result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
 
         return utils.unnest_result(result, unnest_result)
