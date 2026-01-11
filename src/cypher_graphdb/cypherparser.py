@@ -76,7 +76,7 @@ class ParsedCypherQuery(BaseModel):
     parse_tree: object = Field(exclude=True)
 
     @property
-    def parsed_query(self):
+    def parsed_query(self) -> str:
         """Get the parsed query text without EOF marker.
 
         Returns:
@@ -312,7 +312,7 @@ class CypherQueryListener(CypherListener):
         self._current_clause_part = None
 
 
-def parse_cypher_query(cypher_str, listener: CypherQueryListener = None):
+def parse_cypher_query(cypher_str: str, listener: CypherQueryListener | None = None) -> "ParsedCypherQuery":
     """Parse a Cypher query string into a structured representation.
 
     Args:

@@ -8,6 +8,7 @@ Classes:
 """
 
 import contextlib
+from collections.abc import Generator
 from typing import Any
 
 import mgclient
@@ -217,7 +218,7 @@ class MemgraphDB(CypherBackend):
         chunk_size: int = 1000,
         raw_data: bool = False,
         params: dict | None = None,
-    ):
+    ) -> Generator[list[list[Any]]]:
         """Execute a Cypher query and yield results in chunks.
 
         Args:
@@ -227,7 +228,7 @@ class MemgraphDB(CypherBackend):
             params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
 
         Yields:
-            Lists of result rows (chunks).
+            list[list[Any]]: Lists of result rows (chunks).
         """
         assert isinstance(cypher_query, ParsedCypherQuery)
 

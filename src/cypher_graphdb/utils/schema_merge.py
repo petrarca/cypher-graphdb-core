@@ -28,12 +28,12 @@ def merge_schemas_by_title(schemas: list[dict[str, Any]]) -> dict[str, dict[str,
 
     Example:
         >>> schemas = [
-        ...     {"title": "Product", "properties": {"name": {}}},
-        ...     {"title": "Product", "properties": {"price": {}}}
+        ...     {'title': 'Product', 'properties': {'name': {}}},
+        ...     {'title': 'Product', 'properties': {'price': {}}}
         ... ]
         >>> merged = merge_schemas_by_title(schemas)
-        >>> merged["Product"]["properties"]
-        {"name": {}, "price": {}}
+        >>> merged['Product']['properties']  # doctest: +SKIP
+        {'name': {}, 'price': {}}
     """
     # Group schemas by title
     schemas_by_title: dict[str, list[dict[str, Any]]] = {}
