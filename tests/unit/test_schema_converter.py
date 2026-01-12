@@ -54,12 +54,61 @@ def test_creates_node_for_each_schema(sample_schemas):
     assert "Organization" in node_names
 
 
-def test_nodes_have_graphnode_label(sample_schemas):
-    """Test that all nodes have label 'GraphNode'."""
+def test_node_schemas_have_graphnode_label(sample_schemas):
+    """Test that NODE type schemas have label 'GraphNode'."""
     graph = json_schemas_to_graph(sample_schemas)
 
     for node in graph.nodes.values():
         assert node.label_ == "GraphNode"
+
+
+def test_edge_schemas_have_graphedge_label():
+    """Test that EDGE type schemas have label 'GraphEdge'."""
+    schemas = [
+        {
+            "title": "KNOWS",
+            "type": "object",
+            "properties": {"since": {"type": "string", "format": "date"}, "strength": {"type": "integer"}},
+            "x-graph": {"type": "EDGE"},
+        }
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 1
+    node = list(graph.nodes.values())[0]
+    assert node.label_ == "GraphEdge"
+    assert node.properties_["name"] == "KNOWS"
+
+
+def test_mixed_node_and_edge_schemas():
+    """Test that NODE and EDGE schemas get appropriate labels."""
+    schemas = [
+        {
+            "title": "Person",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": [{"rel_type_name": "KNOWS", "to_type_name": "Person"}]},
+        },
+        {
+            "title": "KNOWS",
+            "type": "object",
+            "properties": {"since": {"type": "string"}},
+            "x-graph": {"type": "EDGE"},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    # Should have 2 nodes: Person (GraphNode) and KNOWS (GraphEdge)
+    assert len(graph.nodes) == 2
+
+    node_labels = {n.properties_["name"]: n.label_ for n in graph.nodes.values()}
+    assert node_labels["Person"] == "GraphNode"
+    assert node_labels["KNOWS"] == "GraphEdge"
+
+    # Should have 1 edge from relations
+    assert len(graph.edges) == 1
 
 
 def test_nodes_have_stable_numeric_ids(sample_schemas):

@@ -85,13 +85,23 @@ def _create_schema_node(schema: dict[str, Any]) -> tuple[str, int, GraphNode]:
     Returns:
         Tuple of (schema_name, node_id, GraphNode instance)
     """
-    schema_name = schema.get("title", "Unknown")
+    # Determine label based on x-graph.type: NODE -> GraphNode, EDGE -> GraphEdge
+    xgraph = schema.get("x-graph", {})
+    xgraph_type = xgraph.get("type", "NODE")
+    label = "GraphEdge" if xgraph_type == "EDGE" else "GraphNode"
+
+    # For EDGE schemas, prefer x-graph.label (e.g., "BELONGS_TO") over title (e.g., "BelongsTo")
+    # For NODE schemas, use title as the name
+    if xgraph_type == "EDGE" and xgraph.get("label"):
+        schema_name = xgraph.get("label")
+    else:
+        schema_name = schema.get("title", "Unknown")
 
     # Generate stable IDs
     node_id = _generate_node_id(schema_name)
 
     # Create GraphNode instance
-    node = GraphNode(id_=node_id, label_="GraphNode", properties_={})
+    node = GraphNode(id_=node_id, label_=label, properties_={})
 
     # Set string-based gid_
     node.properties_["gid_"] = _generate_node_gid(schema_name)
@@ -168,9 +178,9 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
     """Convert JSON Schemas to schema graph representation.
 
     Transforms JSON Schema definitions into a graph structure where:
-    - Each NODE schema type becomes a GraphNode with label "GraphNode"
-    - EDGE schema types are excluded (relations are shown as GraphEdge from NODE schemas)
-    - Relations between types become GraphEdge with the relation name as label
+    - Each NODE schema type becomes a GraphNode with label_ "GraphNode"
+    - Each EDGE schema type becomes a GraphNode with label_ "GraphEdge"
+    - Relations between NODE types become GraphEdge with the relation name as label
     - IDs are deterministic (hash-based from UUID5) for stable caching
     - gid_ uses string prefix to distinguish from real data
 
@@ -213,14 +223,15 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
     """
     g = Graph()
 
-    # Filter out EDGE schemas - they don't have source/target info
-    # Relations are defined in NODE schemas' x-graph.relations array
+    # Separate NODE and EDGE schemas
+    # NODE schemas define types with relations, EDGE schemas define relationship properties
     node_schemas = [s for s in schemas if s.get("x-graph", {}).get("type") != "EDGE"]
+    edge_schemas = [s for s in schemas if s.get("x-graph", {}).get("type") == "EDGE"]
 
     # Create node lookup by schema name for edge generation
     schema_lookup: dict[str, tuple[int, dict[str, Any]]] = {}
 
-    # First pass: Create all nodes (only NODE types)
+    # First pass: Create nodes from NODE schemas
     for schema in node_schemas:
         schema_name, node_id, node = _create_schema_node(schema)
         g.nodes[node_id] = node
@@ -231,5 +242,11 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
         edges = _create_schema_edges(schema_name, source_id, schema, schema_lookup)
         for edge in edges:
             g.edges[edge.id_] = edge
+
+    # Third pass: Create nodes from EDGE schemas (with label_ "GraphEdge")
+    # These represent relationship type definitions, not connected to other nodes
+    for schema in edge_schemas:
+        schema_name, node_id, node = _create_schema_node(schema)
+        g.nodes[node_id] = node
 
     return g
