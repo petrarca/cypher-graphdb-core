@@ -109,12 +109,13 @@ def test_creates_edges_from_relations(sample_schemas):
     assert len(graph.edges) == 2
 
 
-def test_edges_have_graphrelation_label(sample_schemas):
-    """Test that all edges have label 'GraphRelation'."""
+def test_edges_have_relation_name_as_label(sample_schemas):
+    """Test that edge labels use the actual relation name."""
     graph = json_schemas_to_graph(sample_schemas)
 
-    for edge in graph.edges.values():
-        assert edge.label_ == "GraphRelation"
+    edge_labels = {edge.label_ for edge in graph.edges.values()}
+    assert "KNOWS" in edge_labels
+    assert "WORKS_FOR" in edge_labels
 
 
 def test_edges_have_stable_numeric_ids(sample_schemas):

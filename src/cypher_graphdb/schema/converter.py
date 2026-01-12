@@ -144,8 +144,8 @@ def _create_schema_edges(
         # Generate stable IDs
         edge_id = _generate_edge_id(schema_name, target_name, rel_name)
 
-        # Create GraphEdge instance
-        edge = GraphEdge(id_=edge_id, label_="GraphRelation", start_id_=source_id, end_id_=target_id, properties_={})
+        # Create GraphEdge instance - use relation name as label
+        edge = GraphEdge(id_=edge_id, label_=rel_name, start_id_=source_id, end_id_=target_id, properties_={})
 
         # Set string-based gid_
         edge.properties_["gid_"] = _generate_edge_gid(schema_name, target_name)
@@ -168,8 +168,9 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
     """Convert JSON Schemas to schema graph representation.
 
     Transforms JSON Schema definitions into a graph structure where:
-    - Each schema type becomes a GraphNode with label "GraphNode"
-    - Relations between types become GraphEdge with label "GraphRelation"
+    - Each NODE schema type becomes a GraphNode with label "GraphNode"
+    - EDGE schema types are excluded (relations are shown as GraphEdge from NODE schemas)
+    - Relations between types become GraphEdge with the relation name as label
     - IDs are deterministic (hash-based from UUID5) for stable caching
     - gid_ uses string prefix to distinguish from real data
 
@@ -212,11 +213,15 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
     """
     g = Graph()
 
+    # Filter out EDGE schemas - they don't have source/target info
+    # Relations are defined in NODE schemas' x-graph.relations array
+    node_schemas = [s for s in schemas if s.get("x-graph", {}).get("type") != "EDGE"]
+
     # Create node lookup by schema name for edge generation
     schema_lookup: dict[str, tuple[int, dict[str, Any]]] = {}
 
-    # First pass: Create all nodes
-    for schema in schemas:
+    # First pass: Create all nodes (only NODE types)
+    for schema in node_schemas:
         schema_name, node_id, node = _create_schema_node(schema)
         g.nodes[node_id] = node
         schema_lookup[schema_name] = (node_id, schema)
