@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from .. import config, utils
+from .. import config
 from ..exceptions import ReadOnlyModeError
 from ..models import GraphEdge, GraphNode
 
@@ -117,23 +117,32 @@ class BatchMixin:
         node_class: type,
         edge_class: type,
     ) -> list[tuple[GraphEdge, GraphNode]]:
-        """Execute CREATE statements for linked pairs."""
+        """Execute CREATE statements for linked pairs using UNWIND for batch efficiency."""
+        # Prepare batch data for UNWIND
+        batch_data = []
+        for i in range(len(node_maps)):
+            batch_data.append({"node_props": node_maps[i], "edge_props": edge_maps[i] if edge_maps[i] else {}})
+
+        # Single UNWIND query for all node+edge pairs
+        cypher = f"""
+        MATCH (parent) WHERE id(parent) = $parent_id
+        UNWIND $batch AS item
+        CREATE (parent)-[r:{edge_class.__name__}]->(n:{node_class.__name__})
+        SET n += item.node_props, r += item.edge_props
+        RETURN id(n) as node_id, id(r) as edge_id
+        """
+
+        results = self.execute(cypher, params={"parent_id": parent_node.id_, "batch": batch_data})
+
+        # Update node and edge objects with IDs from results
         updated_pairs = []
-
         for i, (edge, node) in enumerate(linked_pairs):
-            node_props = ", ".join(f"{k}: {utils.convert_to_str(v)}" for k, v in node_maps[i].items())
-            edge_props = ", ".join(f"{k}: {utils.convert_to_str(v)}" for k, v in edge_maps[i].items()) if edge_maps[i] else ""
-
-            edge_props_clause = f" {{{edge_props}}}" if edge_props else ""
-            cypher = f"""
-            MATCH (parent) WHERE id(parent) = {parent_node.id_}
-            CREATE (parent)-[r:{edge_class.__name__}{edge_props_clause}]->(n:{node_class.__name__} {{{node_props}}})
-            RETURN id(n) as node_id, id(r) as edge_id
-            """
-
-            result = self.execute(cypher, unnest_result="r")
-
-            if result:
+            if results and i < len(results):
+                result = (
+                    results[i]
+                    if isinstance(results[i], (list, tuple))
+                    else (results[i].get("node_id"), results[i].get("edge_id"))
+                )
                 node.id_ = result[0]
                 edge.id_ = result[1]
                 edge.start_id_ = parent_node.id_
