@@ -306,3 +306,188 @@ def test_preserves_custom_x_extensions():
     assert node.properties_["xUiOptions"] == {"color": "blue", "size": "large"}
     assert node.properties_["xCustomMetadata"] == {"author": "test", "version": "1.0"}
     assert node.properties_["xGraph"] == {"type": "NODE", "relations": []}
+
+
+def test_single_inheritance_creates_inherits_from_edge():
+    """Test that single inheritance creates INHERITS_FROM_ edge."""
+    schemas = [
+        {
+            "title": "Product",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        },
+        {
+            "title": "TechProduct",
+            "type": "object",
+            "properties": {"tech_stack": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": [], "inherits_from": ["Product"]},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+
+    inheritance_edge = list(graph.edges.values())[0]
+    assert inheritance_edge.label_ == "INHERITS_FROM_"
+
+    # Verify edge connects child to parent
+    product_id = next(n.id_ for n in graph.nodes.values() if n.properties_["name"] == "Product")
+    tech_product_id = next(n.id_ for n in graph.nodes.values() if n.properties_["name"] == "TechProduct")
+
+    assert inheritance_edge.start_id_ == tech_product_id
+    assert inheritance_edge.end_id_ == product_id
+
+
+def test_multiple_inheritance_creates_multiple_edges():
+    """Test that multiple inheritance creates multiple INHERITS_FROM_ edges."""
+    schemas = [
+        {
+            "title": "Product",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        },
+        {
+            "title": "Auditable",
+            "type": "object",
+            "properties": {"created_at": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        },
+        {
+            "title": "AuditedProduct",
+            "type": "object",
+            "properties": {"version": {"type": "integer"}},
+            "x-graph": {"type": "NODE", "relations": [], "inherits_from": ["Product", "Auditable"]},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 3
+
+    # Should have 2 inheritance edges
+    inheritance_edges = [e for e in graph.edges.values() if e.label_ == "INHERITS_FROM_"]
+    assert len(inheritance_edges) == 2
+
+    # Verify both edges start from AuditedProduct
+    audited_product_id = next(n.id_ for n in graph.nodes.values() if n.properties_["name"] == "AuditedProduct")
+    assert all(e.start_id_ == audited_product_id for e in inheritance_edges)
+
+
+def test_no_inheritance_creates_no_inherits_from_edges():
+    """Test that schemas without inherits_from field don't create inheritance edges."""
+    schemas = [
+        {
+            "title": "Product",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        },
+        {
+            "title": "Company",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 0
+
+
+def test_inheritance_edge_properties():
+    """Test that inheritance edges have correct properties."""
+    schemas = [
+        {"title": "BaseClass", "type": "object", "properties": {}, "x-graph": {"type": "NODE", "relations": []}},
+        {
+            "title": "DerivedClass",
+            "type": "object",
+            "properties": {},
+            "x-graph": {"type": "NODE", "relations": [], "inherits_from": ["BaseClass"]},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    edge = list(graph.edges.values())[0]
+
+    assert edge.label_ == "INHERITS_FROM_"
+    assert "gid_" in edge.properties_
+    assert edge.properties_["gid_"].startswith("schema:rel:")
+    assert edge.properties_["name"] == "INHERITS_FROM_"
+    assert edge.properties_["parent"] == "BaseClass"
+
+
+def test_inheritance_with_missing_parent():
+    """Test that inheritance edge to non-existent parent is skipped."""
+    schemas = [
+        {
+            "title": "DerivedClass",
+            "type": "object",
+            "properties": {},
+            "x-graph": {"type": "NODE", "relations": [], "inherits_from": ["NonExistentParent"]},
+        }
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 1
+    assert len(graph.edges) == 0  # Edge to NonExistent parent should be skipped
+
+
+def test_inheritance_and_relations_coexist():
+    """Test that both inheritance and relation edges are created."""
+    schemas = [
+        {"title": "BaseProduct", "type": "object", "properties": {}, "x-graph": {"type": "NODE", "relations": []}},
+        {"title": "Category", "type": "object", "properties": {}, "x-graph": {"type": "NODE", "relations": []}},
+        {
+            "title": "TechProduct",
+            "type": "object",
+            "properties": {},
+            "x-graph": {
+                "type": "NODE",
+                "relations": [{"rel_type_name": "BELONGS_TO", "to_type_name": "Category"}],
+                "inherits_from": ["BaseProduct"],
+            },
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    assert len(graph.nodes) == 3
+    assert len(graph.edges) == 2  # 1 inheritance + 1 relation
+
+    inheritance_edges = [e for e in graph.edges.values() if e.label_ == "INHERITS_FROM_"]
+    relation_edges = [e for e in graph.edges.values() if e.label_ == "BELONGS_TO"]
+
+    assert len(inheritance_edges) == 1
+    assert len(relation_edges) == 1
+
+
+def test_edge_inheritance():
+    """Test that EDGE schemas can also have inheritance."""
+    schemas = [
+        {"title": "Relationship", "type": "object", "properties": {"since": {"type": "string"}}, "x-graph": {"type": "EDGE"}},
+        {
+            "title": "Partnership",
+            "type": "object",
+            "properties": {"contract_type": {"type": "string"}},
+            "x-graph": {"type": "EDGE", "inherits_from": ["Relationship"]},
+        },
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    # Both should become GraphEdge nodes (not connected edges)
+    assert len(graph.nodes) == 2
+    assert all(n.label_ == "GraphEdge" for n in graph.nodes.values())
+
+    # Should have 1 inheritance edge between them
+    assert len(graph.edges) == 1
+    edge = list(graph.edges.values())[0]
+    assert edge.label_ == "INHERITS_FROM_"

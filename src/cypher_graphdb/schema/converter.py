@@ -121,6 +121,57 @@ def _create_schema_node(schema: dict[str, Any]) -> tuple[str, int, GraphNode]:
     return schema_name, node_id, node
 
 
+def _create_inheritance_edges(
+    schema_name: str,
+    source_id: int,
+    schema: dict[str, Any],
+    schema_lookup: dict[str, tuple[int, dict[str, Any]]],
+) -> list[GraphEdge]:
+    """Create GraphEdge instances for inheritance relationships.
+
+    Creates INHERITS_FROM_ edges from child schema to parent schemas.
+
+    Args:
+        schema_name: Name of the child schema type
+        source_id: Numeric ID of the child node
+        schema: JSON Schema dictionary
+        schema_lookup: Mapping of schema names to (node_id, schema) tuples
+
+    Returns:
+        List of GraphEdge instances representing inheritance
+    """
+    edges = []
+    xgraph = schema.get("x-graph", {})
+    parent_labels = xgraph.get("inherits_from", [])
+
+    for parent_label in parent_labels:
+        if parent_label not in schema_lookup:
+            continue
+
+        parent_id = schema_lookup[parent_label][0]
+
+        # Generate stable ID for inheritance edge
+        edge_id = _generate_edge_id(schema_name, parent_label, "INHERITS_FROM_")
+
+        # Create inheritance edge with special label
+        edge = GraphEdge(
+            id_=edge_id,
+            label_="INHERITS_FROM_",
+            start_id_=source_id,
+            end_id_=parent_id,
+            properties_={},
+        )
+
+        # Set string-based gid_
+        edge.properties_["gid_"] = _generate_edge_gid(schema_name, parent_label)
+        edge.properties_["name"] = "INHERITS_FROM_"
+        edge.properties_["parent"] = parent_label
+
+        edges.append(edge)
+
+    return edges
+
+
 def _create_schema_edges(
     schema_name: str,
     source_id: int,
@@ -237,16 +288,24 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
         g.nodes[node_id] = node
         schema_lookup[schema_name] = (node_id, schema)
 
-    # Second pass: Create edges from relations
-    for schema_name, (source_id, schema) in schema_lookup.items():
-        edges = _create_schema_edges(schema_name, source_id, schema, schema_lookup)
-        for edge in edges:
-            g.edges[edge.id_] = edge
-
-    # Third pass: Create nodes from EDGE schemas (with label_ "GraphEdge")
+    # Second pass: Create nodes from EDGE schemas (with label_ "GraphEdge")
     # These represent relationship type definitions, not connected to other nodes
     for schema in edge_schemas:
         schema_name, node_id, node = _create_schema_node(schema)
         g.nodes[node_id] = node
+        schema_lookup[schema_name] = (node_id, schema)
+
+    # Third pass: Create edges from relations and inheritance
+    for schema_name, (source_id, schema) in schema_lookup.items():
+        # Create relation edges (only for NODE schemas)
+        if schema.get("x-graph", {}).get("type") != "EDGE":
+            edges = _create_schema_edges(schema_name, source_id, schema, schema_lookup)
+            for edge in edges:
+                g.edges[edge.id_] = edge
+
+        # Create inheritance edges (for both NODE and EDGE schemas)
+        inheritance_edges = _create_inheritance_edges(schema_name, source_id, schema, schema_lookup)
+        for edge in inheritance_edges:
+            g.edges[edge.id_] = edge
 
     return g

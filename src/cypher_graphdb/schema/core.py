@@ -24,6 +24,7 @@ class GraphSchemaContext:
     relations: list[Any]
     display: Any | None = None  # DisplayConfig to avoid circular import
     source: str | None = None  # Source type: "model" (Python) or "schema" (JSON)
+    graph_model: type[GraphNode | GraphEdge] | None = None  # Model class for inheritance detection
 
 
 def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext | None) -> dict[str, Any]:
@@ -58,6 +59,30 @@ def _filter_internal_fields(schema: dict[str, Any], context: GraphSchemaContext 
     return filtered_schema
 
 
+def _get_parent_labels(graph_model: type[GraphNode | GraphEdge]) -> list[str] | None:
+    """Extract parent class labels from inheritance hierarchy.
+
+    Args:
+        graph_model: The model class to analyze.
+
+    Returns:
+        List of parent labels, or None if no decorated parents exist.
+    """
+    parents = []
+
+    # Walk through method resolution order (skip self at index 0)
+    for base in graph_model.__mro__[1:]:
+        # Stop at GraphNode/GraphEdge base classes
+        if base in (GraphNode, GraphEdge):
+            break
+
+        # Only include classes that are decorated graph models
+        if hasattr(base, "graph_info_"):
+            parents.append(base.graph_info_.label_)
+
+    return parents if parents else None
+
+
 def _build_graph_extension(context: GraphSchemaContext) -> dict[str, Any]:
     """Build the x-graph extension dictionary from context.
 
@@ -77,6 +102,12 @@ def _build_graph_extension(context: GraphSchemaContext) -> dict[str, Any]:
 
     if hasattr(context, "source") and context.source is not None:
         extension["source"] = context.source
+
+    # Add inheritance information if model has decorated parents
+    if hasattr(context, "graph_model") and context.graph_model is not None:
+        parent_labels = _get_parent_labels(context.graph_model)
+        if parent_labels:
+            extension["inherits_from"] = parent_labels
 
     if context.display is not None:
         if hasattr(context.display, "model_dump"):
