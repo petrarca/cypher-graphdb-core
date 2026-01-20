@@ -35,10 +35,10 @@ tasks:
   clean:caches:
     desc: "Clean caches"
     cmds:
-      - ruff clean
+      - rm -rf .ruff_cache/
       - find . -type d -name "__pycache__" -exec rm -rf {} +
       - find . -type f -name "*.pyc" -delete
-      - rm -rf .ruff_cache/ **/__pycache__/ **/*.egg-info/
+      - rm -rf **/__pycache__/ **/*.egg-info/
 
   clean:all:
     desc: "Clean all"

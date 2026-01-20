@@ -94,7 +94,7 @@ class AGEGraphDB(CypherBackend):
         cursor_factory: Any = ClientCursor,
         check_graph_exists: bool = True,
         **kwargs: Any,
-    ) -> "AGEGraphDB":  # noqa: W504
+    ) -> "AGEGraphDB":
         """Connect to PostgreSQL database with Apache AGE extension.
 
         Args:

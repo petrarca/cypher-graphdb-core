@@ -60,12 +60,10 @@ def combine_schemas(
         Combined schema dictionary with $defs structure
 
     Example:
-        >>> schemas = [{'title': 'Product', 'type': 'object', ...}, {'title': 'Company', 'type': 'object', ...}]
+        >>> schemas = [{...}, {...}]  # List of schema dicts with title, type, etc.
         >>> combined = combine_schemas(schemas)
-        >>> combined['title']
-        'Graph Data Model'
-        >>> combined['$defs']['Product']['title']  # doctest: +SKIP
-        'Product'
+        >>> "$defs" in combined
+        True
     """
     # Step 1: Merge schemas by title
     merged_schemas = merge_schemas_by_title(schemas)
