@@ -684,3 +684,76 @@ def str_to_collection(str_val: str) -> str | None | list | set | tuple:
             return m[2]([v.strip() for v in str_val.strip(f"{m[0]}{m[1]}").split(",")])
 
     return str_val
+
+
+def resolve_env_var(value: str, default: str | None = None) -> str:
+    """Resolve environment variable in a string using shell-style syntax.
+
+    Supports:
+    - $VAR          - Simple variable name (terminated by non-alphanumeric)
+    - ${VAR}        - Braced variable name
+    - ${VAR:default} - Inline default value (takes precedence over parameter default)
+
+    Args:
+        value: The string that may contain env var references
+        default: Default value if env var is not set (used when no inline default)
+
+    Returns:
+        The resolved string with env vars replaced by their values
+
+    Raises:
+        ValueError: If an environment variable is not set and no default provided
+
+    Examples:
+        >>> import os
+        >>> os.environ["HOST"] = "localhost"
+        >>> resolve_env_var("$HOST")
+        'localhost'
+        >>> resolve_env_var("${PORT:8080}")
+        '8080'
+        >>> resolve_env_var("$MISSING", default="fallback")
+        'fallback'
+        >>> resolve_env_var("no_vars_here")
+        'no_vars_here'
+    """
+    import os
+    import re
+
+    if not value:
+        return value
+
+    def replace_var(match: re.Match) -> str:
+        var_name = match.group(1)
+        inline_default = match.group(2)
+
+        env_value = os.environ.get(var_name)
+        if env_value is not None:
+            return env_value
+        if inline_default is not None:
+            return inline_default
+        if default is not None:
+            return default
+        raise ValueError(f"Environment variable '{var_name}' not set and no default provided")
+
+    pattern = r"\$\{([^}:]+)(?::([^}]*))?\}"
+    result = re.sub(pattern, replace_var, value)
+
+    simple_pattern = r"\$([A-Za-z_][A-Za-z0-9_]*)"
+    result = re.sub(simple_pattern, lambda m: os.environ.get(m.group(1), default or m.group(0)), result)
+
+    return result
+
+
+def resolve_env_var_or_none(value: str | None, default: str | None = None) -> str | None:
+    """Resolve environment variable or return None if value is None.
+
+    Args:
+        value: The value to resolve, or None
+        default: Default value if env var is not set
+
+    Returns:
+        The resolved string, or None if input was None
+    """
+    if value is None:
+        return None
+    return resolve_env_var(value, default=default)

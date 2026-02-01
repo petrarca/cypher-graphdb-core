@@ -169,3 +169,72 @@ def test_starts_with():
     assert utils.starts_with("hello world", "world") == -1
     # Edge case: empty prefix returns -1
     assert utils.starts_with("hello", "") == -1
+
+
+def test_resolve_env_var_simple(monkeypatch):
+    """Test resolve_env_var with simple $VAR syntax."""
+
+    # Set up environment
+    monkeypatch.setenv("TEST_HOST", "localhost")
+    monkeypatch.setenv("TEST_PORT", "5432")
+
+    # Simple $VAR syntax
+    assert utils.resolve_env_var("$TEST_HOST") == "localhost"
+    assert utils.resolve_env_var("host=$TEST_HOST") == "host=localhost"
+
+    # Multiple vars
+    assert utils.resolve_env_var("$TEST_HOST:$TEST_PORT") == "localhost:5432"
+
+
+def test_resolve_env_var_braces(monkeypatch):
+    """Test resolve_env_var with ${VAR} syntax."""
+    monkeypatch.setenv("DATABASE_HOST", "db.example.com")
+    monkeypatch.setenv("DATABASE_PORT", "5432")
+
+    assert utils.resolve_env_var("${DATABASE_HOST}") == "db.example.com"
+    assert utils.resolve_env_var("${DATABASE_PORT}") == "5432"
+
+
+def test_resolve_env_var_default(monkeypatch):
+    """Test resolve_env_var with default values."""
+    # No default - raises ValueError
+    import pytest
+
+    with pytest.raises(ValueError, match="Environment variable 'UNKNOWN_VAR'"):
+        utils.resolve_env_var("${UNKNOWN_VAR}")
+
+    # With default parameter
+    assert utils.resolve_env_var("${UNKNOWN_VAR}", default="fallback") == "fallback"
+    assert utils.resolve_env_var("$UNKNOWN_VAR", default="fallback") == "fallback"
+
+    # Inline default takes precedence
+    monkeypatch.delenv("EXISTING_VAR", raising=False)
+    assert utils.resolve_env_var("${EXISTING_VAR:inline}") == "inline"
+    assert utils.resolve_env_var("${EXISTING_VAR:inline}", default="param") == "inline"
+
+    # Env var set - returns env value, not default
+    monkeypatch.setenv("MY_VAR", "from_env")
+    assert utils.resolve_env_var("${MY_VAR:default}") == "from_env"
+    assert utils.resolve_env_var("${MY_VAR:default}", default="param") == "from_env"
+
+
+def test_resolve_env_var_literal():
+    """Test resolve_env_var with literal strings (no variables)."""
+    assert utils.resolve_env_var("no variables here") == "no variables here"
+    assert utils.resolve_env_var("") == ""
+    assert utils.resolve_env_var("123") == "123"
+
+
+def test_resolve_env_var_or_none():
+    """Test resolve_env_var_or_none with None input."""
+
+    assert utils.resolve_env_var_or_none(None) is None
+
+    # With default when env not set
+    import os
+
+    os.environ["MISSING_VAR"] = "value"
+    assert utils.resolve_env_var_or_none("$MISSING_VAR", default="fallback") == "value"
+
+    del os.environ["MISSING_VAR"]
+    assert utils.resolve_env_var_or_none("$MISSING_VAR", default="fallback") == "fallback"
