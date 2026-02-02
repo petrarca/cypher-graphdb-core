@@ -16,7 +16,7 @@ class ConnectCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[connect_", tokens=["connect"])
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the connect command.
 
         Args:

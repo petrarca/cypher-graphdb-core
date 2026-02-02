@@ -65,7 +65,7 @@ class MemgraphDB(CypherBackend):
         cinfo: str | None = None,
         graph_name: str | None = "memgraph",
         **kwargs: Any,
-    ) -> "MemgraphDB":
+    ) -> MemgraphDB:
         """Connect to Memgraph database.
 
         Args:

@@ -58,7 +58,7 @@ class ConnectionMixin:
             self.disconnect()
         return False  # Don't suppress exceptions
 
-    def connect(self, connect_url: str | None = None, *args: Any, **kwargs: Any) -> "ConnectionMixin":
+    def connect(self, connect_url: str | None = None, *args: Any, **kwargs: Any) -> ConnectionMixin:
         """Establish a connection to the configured graph database backend.
 
         Args:

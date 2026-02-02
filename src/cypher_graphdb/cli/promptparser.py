@@ -23,7 +23,7 @@ class PromptParserCmd(BaseModel):
     kwargs: dict[str, Any] | None
     pos: int | None = None
     require_backend: bool
-    parse_result: "PromptParserResult" = None
+    parse_result: PromptParserResult = None
     mappings: dict[str, Any] | None
     _input: object = None
     _output: object = None
@@ -106,7 +106,7 @@ class PromptParserCmd(BaseModel):
         else:
             return min_len == 0
 
-    def replay(self, replaced_cmd: type["PromptParserCmd"] | None):
+    def replay(self, replaced_cmd: type[PromptParserCmd] | None):
         if replaced_cmd is not None:
             values = replaced_cmd.model_dump()
             del values["pos"]

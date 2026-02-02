@@ -76,7 +76,7 @@ class CypherGraphCLI(CLIRuntime):
         """Returns the prompt parser."""
         return self._prompt_parser
 
-    def banner(self) -> type["CypherGraphCLI"]:
+    def banner(self) -> type[CypherGraphCLI]:
         """Shows the CLI banner."""
         banner.show_banner()
         return self

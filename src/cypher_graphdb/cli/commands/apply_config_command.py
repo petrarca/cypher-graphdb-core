@@ -17,7 +17,7 @@ class ApplyConfigCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[config_", tokens=["config"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the apply config command.
 
         Args:
@@ -25,7 +25,7 @@ class ApplyConfigCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the apply config command.
 
         Applies configuration settings and renders the result.

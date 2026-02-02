@@ -21,7 +21,7 @@ class DumpSchemaCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_schema", tokens=["schema"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the dump schema command.
 
         Args:
@@ -29,7 +29,7 @@ class DumpSchemaCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump schema command.
 
         Shows the schema for a specific model.

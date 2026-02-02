@@ -19,7 +19,7 @@ class DumpBackendsCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_backends", tokens=["backends"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the dump backends command.
 
         Args:
@@ -27,7 +27,7 @@ class DumpBackendsCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump backends command.
 
         Lists all available backends or details for a specific backend.

@@ -20,7 +20,7 @@ class SearchCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[search]]", tokens=["search"])
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the search command.
 
         Args:
@@ -47,7 +47,7 @@ class SearchCommand(BaseCommand):
 
         return self._post_processing_cmd(parsed_cmd, parsed_cmd.output, render_kwargs=render_kwargs)
 
-    def _resolve_parsed_query(self, parsed_cmd: "PromptParserCmd") -> "ParsedCypherQuery | None":
+    def _resolve_parsed_query(self, parsed_cmd: PromptParserCmd) -> ParsedCypherQuery | None:
         """Resolve the parsed query for search operations.
 
         This helper method determines the appropriate parsed query based on

@@ -20,7 +20,7 @@ class DumpParsedQueryCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_parsed_query]]", tokens=["!", "!!"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the dump parsed query command.
 
         Args:
@@ -28,7 +28,7 @@ class DumpParsedQueryCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump parsed query command.
 
         Shows the parsed query structure from a previous cypher execution.
@@ -58,7 +58,7 @@ class DumpParsedQueryCommand(BaseCommand):
 
         return True
 
-    def _resolve_parsed_query(self, parsed_cmd: "PromptParserCmd"):
+    def _resolve_parsed_query(self, parsed_cmd: PromptParserCmd):
         """Resolve the parsed query from command context.
 
         Args:

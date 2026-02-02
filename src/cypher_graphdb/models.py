@@ -350,7 +350,7 @@ class GraphEdge(
             cls.graph_info_ = None
 
     @classmethod
-    def build(cls, start_node: Any, end_node: Any, *args: Any, **kwargs: Any) -> "GraphEdge":
+    def build(cls, start_node: Any, end_node: Any, *args: Any, **kwargs: Any) -> GraphEdge:
         """Create an edge between two nodes or IDs."""
         _start_id = start_node.id_ if isinstance(start_node, GraphNode) else start_node if isinstance(start_node, int) else None
         _end_id = end_node.id_ if isinstance(end_node, GraphNode) else end_node if isinstance(end_node, int) else None

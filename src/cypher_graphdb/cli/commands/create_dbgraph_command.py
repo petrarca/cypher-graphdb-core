@@ -16,7 +16,7 @@ class CreateDbgraphCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[create_dbgraph", tokens=["create dbgraph"])
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the create database graph command.
 
         Args:

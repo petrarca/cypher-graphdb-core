@@ -19,7 +19,7 @@ class ClearGraphCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[clear_graph]]_", tokens=["clear", "clear graph"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the clear graph command.
 
         Args:
@@ -27,7 +27,7 @@ class ClearGraphCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the clear graph command.
 
         Clears all nodes and edges from the current graph.

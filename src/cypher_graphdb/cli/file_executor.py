@@ -45,7 +45,7 @@ class ExecutionStats:
 class FileExecutor:
     """Handles execution of command files with progress tracking."""
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the file executor.
 
         Args:

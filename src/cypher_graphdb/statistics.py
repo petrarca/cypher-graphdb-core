@@ -58,7 +58,7 @@ class GraphStatistics(BaseModel):
         return not self.is_empty()
 
     @classmethod
-    def create_from_graph(cls: type["GraphStatistics"], graph: Graph) -> "GraphStatistics":
+    def create_from_graph(cls: type[GraphStatistics], graph: Graph) -> GraphStatistics:
         """Build statistics from an existing Graph object.
 
         Args:
@@ -80,7 +80,7 @@ class GraphStatistics(BaseModel):
         return stats
 
     @classmethod
-    def create_from_result(cls: type["GraphStatistics"], result: Any) -> "GraphStatistics":
+    def create_from_result(cls: type[GraphStatistics], result: Any) -> GraphStatistics:
         """Build statistics by walking through a query result structure.
 
         Args:

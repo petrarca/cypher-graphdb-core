@@ -17,7 +17,7 @@ class FetchAllCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[fetch_all", tokens=["fetch", "fetch all"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the fetch all command.
 
         Args:
@@ -25,7 +25,7 @@ class FetchAllCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the fetch all command.
 
         Fetches both nodes and edges from the database and merges results.

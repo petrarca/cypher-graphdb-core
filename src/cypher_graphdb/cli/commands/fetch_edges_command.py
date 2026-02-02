@@ -20,7 +20,7 @@ class FetchEdgesCommand(BaseCommand):
         pattern="[[fetch_edges", tokens=["fetch edges"], object_type=GraphObjectType.EDGE
     )
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the fetch edges command.
 
         Args:
@@ -28,7 +28,7 @@ class FetchEdgesCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the fetch edges command.
 
         Fetches edges from the database based on provided filters.

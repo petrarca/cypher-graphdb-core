@@ -19,7 +19,7 @@ class ResolveEdgesCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[resolve_edges]]", tokens=["resolve edges"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the resolve edges command.
 
         Args:
@@ -27,7 +27,7 @@ class ResolveEdgesCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the resolve edges command.
 
         Resolves missing edge-referenced nodes by loading them from database.

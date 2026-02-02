@@ -241,7 +241,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return self._model_provider
 
     @staticmethod
-    def get_settings() -> "config.Settings":
+    def get_settings() -> config.Settings:
         """Get the singleton settings instance.
 
         Returns:

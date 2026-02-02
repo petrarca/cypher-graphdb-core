@@ -17,7 +17,7 @@ class AddGraphCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="add_graph_", tokens=["add", "add graph"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the add to graph command.
 
         Args:
@@ -25,7 +25,7 @@ class AddGraphCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the add to graph command.
 
         This command rewrites the parsed command to set a variable,

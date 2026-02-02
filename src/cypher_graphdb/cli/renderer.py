@@ -314,7 +314,7 @@ class ResultRenderer:
     def _edge_to_text(
         self,
         edge: GraphEdge,
-        opts: type["RenderTreeOpts"],
+        opts: type[RenderTreeOpts],
         json_highlighter,
         left_arrow: str = "",
         right_arrow: str = "",
@@ -340,7 +340,7 @@ class ResultRenderer:
             "magenta",
         )
 
-    def _node_to_text(self, node: GraphNode, opts: type["RenderTreeOpts"], json_highlighter: JSONHighlighter) -> Text:
+    def _node_to_text(self, node: GraphNode, opts: type[RenderTreeOpts], json_highlighter: JSONHighlighter) -> Text:
         props = node.properties_.copy()
         if not opts.with_gid:
             props.pop(config.PROP_GID)

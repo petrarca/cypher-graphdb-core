@@ -28,7 +28,7 @@ class BaseCommand(ABC):
 
     @classmethod
     def create_command_map_entry(
-        cls, pattern: str, tokens: set[str | None], object_type: "GraphObjectType | None" = None, **kwargs: Any
+        cls, pattern: str, tokens: set[str | None], object_type: GraphObjectType | None = None, **kwargs: Any
     ) -> dict[str, dict[str, Any]]:
         """Create a command map entry for this command.
 
@@ -47,7 +47,7 @@ class BaseCommand(ABC):
         entry_value.update(kwargs)
         return {pattern: entry_value}
 
-    def __init__(self, cli_runtime: "CLIRuntime | None" = None) -> None:
+    def __init__(self, cli_runtime: CLIRuntime | None = None) -> None:
         """Initialize the command with access to the CLI runtime.
 
         Args:
@@ -92,7 +92,7 @@ class BaseCommand(ABC):
         return self._cli_runtime.prompt_parser
 
     @abstractmethod
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the command.
 
         Args:
@@ -105,7 +105,7 @@ class BaseCommand(ABC):
 
     def _post_processing_cmd(
         self,
-        parsed_cmd: "PromptParserCmd",
+        parsed_cmd: PromptParserCmd,
         result: Any,
         append_to_graph: bool = True,
         render_kwargs: dict[str, Any] | None = None,

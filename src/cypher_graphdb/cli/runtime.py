@@ -40,7 +40,7 @@ class CLIRuntime:
 
     def post_processing_cmd(
         self,
-        parsed_cmd: "PromptParserCmd",
+        parsed_cmd: PromptParserCmd,
         result: Any,
         append_to_graph: bool = True,
         render_kwargs: dict[str, Any] | None = None,

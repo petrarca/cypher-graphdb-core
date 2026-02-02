@@ -20,7 +20,7 @@ class DumpModelsCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_models", tokens=["models"])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the dump models command.
 
         Args:
@@ -28,7 +28,7 @@ class DumpModelsCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump models command.
 
         Lists all loaded models or details for a specific model.

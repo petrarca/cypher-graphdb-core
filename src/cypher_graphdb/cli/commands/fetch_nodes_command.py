@@ -20,7 +20,7 @@ class FetchNodesCommand(BaseCommand):
         pattern="[[fetch_nodes", tokens=["fetch nodes"], object_type=GraphObjectType.NODE
     )
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the fetch nodes command.
 
         Args:
@@ -28,7 +28,7 @@ class FetchNodesCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the fetch nodes command.
 
         Fetches nodes from the database based on provided filters.

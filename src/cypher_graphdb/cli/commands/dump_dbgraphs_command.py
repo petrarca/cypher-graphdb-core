@@ -17,7 +17,7 @@ class DumpDbgraphsCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_dbgraphs", tokens=["dbgraphs"])
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump database graphs command.
 
         Args:

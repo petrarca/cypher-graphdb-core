@@ -19,7 +19,7 @@ class FormatOutputCommand(BaseCommand):
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[format_output]]_", tokens=["json", "table", "list", None])
 
-    def __init__(self, runtime: "CLIRuntime"):
+    def __init__(self, runtime: CLIRuntime):
         """Initialize the format output command.
 
         Args:
@@ -27,7 +27,7 @@ class FormatOutputCommand(BaseCommand):
         """
         super().__init__(runtime)
 
-    def execute(self, parsed_cmd: "PromptParserCmd") -> bool:
+    def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the format output command.
 
         Either sets the output format globally or formats specific output.
