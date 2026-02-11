@@ -1,9 +1,9 @@
 """Cardinality module: Defines relationship cardinality constraints."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Cardinality(str, Enum):
+class Cardinality(StrEnum):
     """Relationship cardinality enumeration.
 
     Defines how many target nodes can be connected via a relationship.

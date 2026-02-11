@@ -194,7 +194,7 @@ class TestIntegrationWithActualSettings:
         settings = Settings()
 
         # Test with sanitizer that matches Settings class behavior
-        sanitizers = {"cinfo": lambda _: ("postgres://user:***MASKED***@localhost:5432/mydb")}
+        sanitizers = {"cinfo": lambda _: "postgres://user:***MASKED***@localhost:5432/mydb"}
 
         repr_result = safe_settings_repr(settings, field_sanitizers=sanitizers)
         str_result = safe_settings_str(settings, field_sanitizers=sanitizers)

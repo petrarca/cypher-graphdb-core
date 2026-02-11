@@ -242,7 +242,7 @@ def sanitize_connection_string_for_logging(connection_string: str) -> str:
             else:
                 # No password in URI, return as-is
                 return connection_string
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             # If parsing fails, fall through to key=value handling
             pass
 

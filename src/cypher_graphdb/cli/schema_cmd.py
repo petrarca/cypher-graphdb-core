@@ -35,7 +35,7 @@ def _prompt_for_confirmation(schema_file: Path) -> bool:
 
     try:
         answer = input(prompt).strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError, KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled.[/yellow]")
         raise typer.Exit(0) from None
 

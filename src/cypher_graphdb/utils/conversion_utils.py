@@ -102,7 +102,7 @@ def resolve_properties(properties: dict) -> dict:
             try:
                 val = ast.literal_eval(value)
                 properties[key] = val
-            except (ValueError, SyntaxError):
+            except ValueError, SyntaxError:
                 # If parsing fails, keep original value
                 pass
 

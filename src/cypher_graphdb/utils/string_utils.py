@@ -302,7 +302,7 @@ def resolve_to_type(s: str) -> type:
     """
     try:
         return type(ast.literal_eval(s))
-    except (ValueError, SyntaxError):
+    except ValueError, SyntaxError:
         return type(None)
 
 
@@ -451,7 +451,7 @@ def _add_current_arg(current: str, is_kwarg: bool, key: str, args: list, kwargs:
     if is_kwarg:
         try:
             kwargs[key] = ast.literal_eval(current)
-        except (ValueError, SyntaxError):
+        except ValueError, SyntaxError:
             kwargs[key] = current
         return "", False
     else:
@@ -597,7 +597,7 @@ def try_literal_eval(literal: str) -> tuple[Any, bool]:
     try:
         value = ast.literal_eval(literal)
         is_literal = False
-    except (ValueError, SyntaxError):
+    except ValueError, SyntaxError:
         value = literal
         is_literal = True
 
