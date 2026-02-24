@@ -36,7 +36,7 @@ wheels = [
 [[package]]
 name = "apache-age-python"
 version = "0.0.7"
-source = { git = "https://github.com/apache/age.git?subdirectory=drivers%2Fpython&tag=PG17%2Fv1.6.0-rc0#54905a09bf8462f22a87c3adfd2ab5752e5c1e71" }
+source = { git = "https://github.com/apache/age.git?subdirectory=drivers%2Fpython&tag=PG18%2Fv1.7.0-rc0#806fa2ebdb300b3e76ef30cdba61803babbf2683" }
 dependencies = [
     { name = "antlr4-python3-runtime" },
     { name = "psycopg" },
@@ -334,7 +334,7 @@ watch = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apache-age-python", git = "https://github.com/apache/age.git?subdirectory=drivers%2Fpython&tag=PG17%2Fv1.6.0-rc0" },
+    { name = "apache-age-python", git = "https://github.com/apache/age.git?subdirectory=drivers%2Fpython&tag=PG18%2Fv1.7.0-rc0" },
     { name = "art" },
     { name = "black", marker = "extra == 'docs'" },
     { name = "build", marker = "extra == 'build'" },
