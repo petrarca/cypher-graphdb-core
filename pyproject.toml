@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cypher_graphdb"
 authors = [
-    { name = "Wolfgang Miller", email = "w-miller@t-online.de" },
+    { name = "Wolfgang Miller", email = "wolfgang.miller@petrarca-labs.com" },
 ]
 description = "ORM like library and CLI for cypher query language supporting graph databases."
 readme = "README.md"
