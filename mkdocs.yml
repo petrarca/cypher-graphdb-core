@@ -27,7 +27,7 @@ nav:
   - cypher_graphdb: reference/
 - Development:
   - Contributing: CONTRIBUTING.md
-  - Documentation Guide: documentation_guide.md
+  - Documentation Guide: documentation-guide.md
   - ToDo: TODO.md
   - Coverage report: coverage.md
 

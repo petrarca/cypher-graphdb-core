@@ -141,7 +141,7 @@ task serve:docs
   - `usage/`: Usage guides and tutorials
   - `reference/`: API reference (auto-generated)
   - `contributing.md`: Contribution guidelines
-  - `documentation_guide.md`: This guide
+  - `documentation-guide.md`: This guide
 
 ## Example File
 
