@@ -13,6 +13,8 @@ class DisplayConfig(BaseModel):
     """Configuration for display properties of nodes and edges.
 
     Attributes:
+        labelTemplate: Template string for display labels, e.g. "{firstName} {lastName}".
+            Takes priority over labelProperty. Missing placeholders are silently dropped.
         labelProperty: Property name to use for display labels.
         fallbackProperty: Property to use if labelProperty is missing.
         sortProperty: Property to use for sorting.
@@ -20,6 +22,10 @@ class DisplayConfig(BaseModel):
         filterProperty: Optional property for grouping/filtering in UI.
     """
 
+    labelTemplate: str | None = Field(
+        default=None,
+        description="Template for display labels, e.g. '{firstName} {lastName}'. Takes priority over labelProperty.",
+    )
     labelProperty: str | None = Field(
         default=None,
         description="Property for display labels (default: 'name')",
