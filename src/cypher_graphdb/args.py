@@ -4,17 +4,16 @@ This module provides command-line argument parsing functionality using Typer
 for the cypher-graphdb CLI application.
 """
 
+from importlib.metadata import version
 from typing import Annotated
 
 import typer
-
-from cypher_graphdb import __about__
 
 
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        print(__about__.__version__)
+        print(version("cypher_graphdb"))
         raise typer.Exit()
 
 
