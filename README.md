@@ -52,8 +52,8 @@ Comprehensive command-line interface that works identically across all supported
 ## Quick Start
 
 ```bash
-git clone <repo-url>
-cd cypher-graphdb/lib
+git clone https://github.com/petrarca/cypher-graphdb-core.git
+cd cypher-graphdb-core
 task install    # Create venv + install library
 task test:unit  # Run unit tests
 task run:cli    # Launch interactive CLI
@@ -413,7 +413,7 @@ row = db.execute("RETURN 1, 2", fetch_one=True, unnest_result=True)  # (1, 2)
 
 ## Development Workflow
 
-See root [`README.md`](../README.md) for full project development workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and guidelines.
 
 ## Documentation
 
@@ -427,7 +427,7 @@ Output: `site/` directory. API reference auto-generated from docstrings.
 
 ## License
 
-See [`LICENSE.md`](../LICENSE.md) (MIT).
+Apache License 2.0 -- see [LICENSE.md](LICENSE.md).
 
 ---
 Happy graph hacking!

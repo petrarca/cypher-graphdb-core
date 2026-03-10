@@ -1,0 +1,142 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '!**/*.md'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '!**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        python-version: ['3.13']
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Ensure uv cache directory exists
+        run: mkdir -p ~/.cache/uv
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+
+      - name: Create virtual environment
+        run: uv venv
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            build-essential \
+            libpq-dev \
+            pkg-config \
+            zlib1g-dev \
+            libzstd-dev
+
+      - name: Install dependencies
+        run: |
+          uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
+          uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
+
+      - name: Lint code
+        run: .venv/bin/ruff check src tests
+
+      - name: Run unit tests
+        run: .venv/bin/pytest -m unit -x
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Ensure uv cache directory exists
+        run: mkdir -p ~/.cache/uv
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-3.13-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-3.13-
+
+      - name: Create virtual environment
+        run: uv venv
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            build-essential \
+            libpq-dev \
+            pkg-config \
+            zlib1g-dev \
+            libzstd-dev
+
+      - name: Install dependencies
+        run: |
+          uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
+          uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
+
+      - name: Build package
+        run: .venv/bin/python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7

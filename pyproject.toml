@@ -88,7 +88,6 @@ apache-age-python = { git = "https://github.com/apache/age.git", tag = "PG18/v1.
 cgdb-cli = "cypher_graphdb.args:typer_main"
 
 [tool.setuptools_scm]
-root = ".."
 tag_regex = "^v(?P<version>\\d+(?:\\.\\d+)*)"
 version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"

@@ -1,0 +1,109 @@
+.idea/
+.vscode/
+*.py[cod]
+*.so
+*.egg/
+*.egg-info/
+.DS_Store
+dist/
+build/
+site/
+.venv/
+__pycache__/
+.tox/
+.mypy_cache/
+.pytest_cache/
+.coverage
+.ruff_cache
+htmlcov/
+docs/coverage/
+tests/coverage.xml
+.cgdb_history
+.scannerwork
+~*.*
+
+# Exclude all .env files except .env.example
+.env*
+!.env*.example
+!.env.production
+
+# Ensure root CONTRIBUTING.md is not excluded
+!CONTRIBUTING.md
+
+# mkdocs build and cache ignores
+site/
+docs/coverage/
+docs/__pycache__/
+docs/.DS_Store
+
+# Excel and CSV files in root folder
+/*.xls
+/*.xlsx
+/*.csv
+
+# Cypher query files in root folder
+/*.cypher
+/*.cypherl
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Exclude repomix output
+repomix-output.*

@@ -19,7 +19,10 @@ tasks:
   clean:
     desc: "Clean the build files"
     cmds:
-      - rm -rf build/ dist/ src/*.egg-info/ .mypy_cache/ .pytest_cache/ .coverage .scannerwork
+      - rm -rf build/ dist/ .pytest_cache/ .ruff_cache/ **/__pycache__/ **/*.egg-info/
+      - find . -type d -name __pycache__ -exec rm -rf {} +
+      - find . -type f -name "*.pyc" -delete
+      - rm -rf src/*.egg-info/ .mypy_cache/ .coverage .scannerwork
       - rm -rf docs/coverage/ tests/coverage.xml
 
   clean:docs:
@@ -60,8 +63,8 @@ tasks:
     desc: "Build the documentation"
     cmds:
       - mkdir -p docs
-      - ln -sf ../../CONTRIBUTING.md docs/CONTRIBUTING.md
-      - ln -sf ../../LICENSE.md docs/LICENSE.md
+      - ln -sf ../CONTRIBUTING.md docs/CONTRIBUTING.md
+      - ln -sf ../LICENSE.md docs/LICENSE.md
       - .venv/bin/mkdocs build
       - rm -f docs/CONTRIBUTING.md
       - rm -f docs/LICENSE.md
@@ -81,6 +84,11 @@ tasks:
     cmds:
       - .venv/bin/ruff check src tests --fix
       - .venv/bin/ruff check --select D100,D101,D104 src/ # Check for missing docstrings in public package, module and class
+
+  lint:
+    desc: "Lint code (alias for check)"
+    cmds:
+      - task: check
 
   check:fix:
     desc: "Check code and try to fix it"
@@ -130,31 +138,39 @@ tasks:
       - task: test
 
   pre-commit:setup:
-    desc: "Setup pre-commit hooks"
+    desc: "Setup pre-commit"
     cmds:
-      - .venv/bin/pre-commit install
-    deps:
-      - install
+      - uv tool install pre-commit
 
-  pre-commit:run:
-    desc: "Run pre-commit hooks on all files"
+  pre-commit:install:
+    desc: "Install pre-commit hooks"
     cmds:
-      - .venv/bin/pre-commit run --all-files
-
-  pre-commit:run-changed:
-    desc: "Run pre-commit hooks on changed files only"
-    cmds:
-      - .venv/bin/pre-commit run
-
-  pre-commit:update:
-    desc: "Update pre-commit hooks to latest versions"
-    cmds:
-      - .venv/bin/pre-commit autoupdate
+      - pre-commit install --install-hooks
 
   pre-commit:uninstall:
     desc: "Uninstall pre-commit hooks"
     cmds:
-      - .venv/bin/pre-commit uninstall
+      - pre-commit uninstall
+
+  pre-commit:update:
+    desc: "Update pre-commit hooks to latest versions"
+    cmds:
+      - pre-commit autoupdate
+
+  pre-commit:run:
+    desc: "Run pre-commit hooks on all files"
+    cmds:
+      - pre-commit run --all-files
+
+  pre-commit:run-changed:
+    desc: "Run pre-commit hooks on changed files only"
+    cmds:
+      - pre-commit run
+
+  pre-commit:validate:
+    desc: "Validate pre-commit config"
+    cmds:
+      - pre-commit validate-config
 
   ci:
     desc: "Run the CI pipeline"
@@ -171,7 +187,12 @@ tasks:
       - task: check
       - task: test
 
-  run:cli:
+  run:
     desc: "Run the cypher-graphdb CLI"
+    cmds:
+      - .venv/bin/python -m cypher_graphdb.main {{.CLI_ARGS}}
+
+  run:cli:
+    desc: "Run the cypher-graphdb CLI (via entry point)"
     cmds:
       - .venv/bin/cypher-graphdb {{.CLI_ARGS}}
