@@ -1,4 +1,4 @@
-name: Core CI
+name: Core CI/CD
 
 on:
   push:
