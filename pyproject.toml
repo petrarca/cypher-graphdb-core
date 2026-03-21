@@ -27,16 +27,16 @@ dependencies = [
     "openpyxl",
     "numpy",
     "pydantic",
-    "pydantic-settings>=2.2.1",
+    "pydantic-settings>=2.13.1",
     "loguru",
-    "psycopg >= 3.2.10",
-    "psycopg-binary >= 3.2.10",
+    "psycopg >= 3.3.3",
+    "psycopg-binary >= 3.3.3",
     "pymgclient",
     "typing-extensions",
     "typer",
     "tenacity",
-    "json-schema-to-pydantic>=0.2.0",
-    "PyYAML>=6.0",
+    "json-schema-to-pydantic>=0.4.11",
+    "PyYAML>=6.0.3",
 ]
 
 [project.optional-dependencies]
