@@ -58,7 +58,7 @@ tasks:
   build:
     desc: "Build the package"
     cmds:
-      - .venv/bin/python -m build
+      - uv build
   build:docs:
     desc: "Build the documentation"
     cmds:
@@ -171,6 +171,16 @@ tasks:
     desc: "Validate pre-commit config"
     cmds:
       - pre-commit validate-config
+
+  rebuild:all:
+    desc: "Clean, install, format/check/test:all, build"
+    cmds:
+      - task: clean:all
+      - task: install
+      - task: format
+      - task: check
+      - task: test:all
+      - task: build
 
   ci:
     desc: "Run the CI pipeline"

@@ -132,7 +132,7 @@ jobs:
           uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
 
       - name: Build package
-        run: .venv/bin/python -m build
+        run: uv build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
