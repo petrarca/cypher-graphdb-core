@@ -1,92 +1,155 @@
 """Cypher query builder module: Generate Cypher queries for graph operations.
 
 This module provides the CypherBuilder class for programmatically generating
-Cypher queries for common graph database operations like creating, merging,
-fetching, and deleting nodes and edges.
+parameterized Cypher queries for common graph database operations like creating,
+merging, fetching, and deleting nodes and edges.
+
+All methods that inline property values return a ``(query, params)`` tuple so
+that the caller can pass parameters directly to the database driver, avoiding
+Cypher injection and parse errors caused by special characters in values.
+
+Methods that only reference graph IDs (integers) continue to return a plain
+``str`` — IDs are always safe to inline.
 """
 
-from .utils import dict_to_non_quoted_json, dict_to_value_pairs
+from .utils import dict_to_value_pairs
+
+
+def _props_to_params(properties: dict, prefix: str = "p_") -> tuple[str, dict]:
+    """Convert a properties dict to a parameterized Cypher fragment and a params dict.
+
+    Returns:
+        A tuple of (cypher_fragment, params) where cypher_fragment is a Cypher
+        map literal using ``$param_key`` placeholders (e.g. ``{name: $p_name}``),
+        and params maps each ``p_<key>`` to its value.
+
+    Example:
+        >>> _props_to_params({"name": "Alice", "age": 30})
+        ('{name: $p_name, age: $p_age}', {'p_name': 'Alice', 'p_age': 30})
+    """
+    if not properties:
+        return "{}", {}
+    params = {f"{prefix}{k}": v for k, v in properties.items()}
+    fragment = "{" + ", ".join(f"{k}: ${prefix}{k}" for k in properties) + "}"
+    return fragment, params
+
+
+def _set_to_params(properties: dict, node_alias: str, prefix: str = "p_") -> tuple[str, dict]:
+    """Convert a properties dict to a parameterized SET clause and a params dict.
+
+    Returns:
+        A tuple of (set_clause, params) where set_clause is a comma-separated
+        list of ``alias.key = $p_key`` assignments, and params maps each
+        ``p_<key>`` to its value. Returns an empty string and empty dict if
+        properties is empty.
+
+    Example:
+        >>> _set_to_params({"name": "Bob"}, "n")
+        ('n.name = $p_name', {'p_name': 'Bob'})
+    """
+    if not properties:
+        return "", {}
+    params = {f"{prefix}{k}": v for k, v in properties.items()}
+    clause = ", ".join(f"{node_alias}.{k} = ${prefix}{k}" for k in properties)
+    return clause, params
 
 
 class CypherBuilder:
-    """Utility class for building Cypher query strings."""
+    """Utility class for building parameterized Cypher query strings.
+
+    Methods that inline property values return ``tuple[str, dict]``:
+    ``(cypher_query, params)``. The caller is responsible for passing params
+    to the database driver.
+
+    Methods that only reference graph IDs (safe integers) return ``str``.
+    """
 
     @classmethod
-    def create_node(cls, label, properties) -> str:
-        props = dict_to_non_quoted_json(properties)
+    def create_node(cls, label: str, properties: dict) -> tuple[str, dict]:
+        """Build a parameterized CREATE node query.
 
-        return f"CREATE(n:{label} {str(props)}) RETURN id(n)"
+        Returns:
+            (query, params) tuple.
 
-    @classmethod
-    def merge_node_by_id(cls, node_id, properties) -> str:
-        # create value pairs with prefix "n."
-        values = dict_to_value_pairs(properties, "n.")
-
-        return f"""
-            MATCH (n)
-            WHERE id(n) = {node_id}
-            SET {values}
-            RETURN n
+        Example:
+            >>> query, params = CypherBuilder.create_node("Person", {"name": "Alice", "age": 30})
+            >>> # query: 'CREATE (n:Person {name: $p_name, age: $p_age}) RETURN id(n)'
+            >>> # params: {'p_name': 'Alice', 'p_age': 30}
         """
+        props_fragment, params = _props_to_params(properties)
+        return f"CREATE (n:{label} {props_fragment}) RETURN id(n)", params
 
     @classmethod
-    def create_edge(cls, label, start_id, end_id, properties) -> str:
-        props = dict_to_non_quoted_json(properties)
+    def merge_node_by_id(cls, node_id: int, properties: dict) -> tuple[str, dict]:
+        """Build a parameterized MATCH + SET node query by ID.
 
-        return f"""
-            MATCH (s) WHERE id(s) = {start_id}
-            MATCH (t) WHERE id(t) = {end_id}
-            CREATE (s)-[e:{label} {props}]->(t)
-            RETURN id(e)
+        Returns:
+            (query, params) tuple.
         """
+        set_clause, params = _set_to_params(properties, "n")
+        query = f"MATCH (n) WHERE id(n) = {node_id} SET {set_clause} RETURN n"
+        return query, params
 
     @classmethod
-    def merge_edge_by_id(cls, edge_id, properties) -> str:
-        # create value pairs with prefix "e."
-        values = dict_to_value_pairs(properties, "e.")
+    def create_edge(cls, label: str, start_id: int, end_id: int, properties: dict) -> tuple[str, dict]:
+        """Build a parameterized CREATE edge query.
 
-        if values:
-            set_clause = f"SET {values}"
-        else:
-            set_clause = ""
-
-        return f"""
-            MATCH (s)-[e]->(t)
-            WHERE id(e) = {edge_id}
-            {set_clause}
-            RETURN e
+        Returns:
+            (query, params) tuple.
         """
+        props_fragment, params = _props_to_params(properties)
+        prop_clause = f" {props_fragment}" if properties else ""
+        query = (
+            f"MATCH (s) WHERE id(s) = {start_id} "
+            f"MATCH (t) WHERE id(t) = {end_id} "
+            f"CREATE (s)-[e:{label}{prop_clause}]->(t) "
+            f"RETURN id(e)"
+        )
+        return query, params
 
     @classmethod
-    def fetch_node_by_criteria(cls, criteria) -> str:
+    def merge_edge_by_id(cls, edge_id: int, properties: dict) -> tuple[str, dict]:
+        """Build a parameterized MATCH + SET edge query by ID.
+
+        Returns:
+            (query, params) tuple.
+        """
+        set_clause, params = _set_to_params(properties, "e")
+        set_stmt = f"SET {set_clause} " if set_clause else ""
+        query = f"MATCH (s)-[e]->(t) WHERE id(e) = {edge_id} {set_stmt}RETURN e"
+        return query, params
+
+    @classmethod
+    def fetch_node_by_criteria(cls, criteria) -> tuple[str, dict]:
+        """Build a parameterized MATCH node query from criteria.
+
+        Returns:
+            (query, params) tuple. params is empty when criteria only uses IDs.
+        """
         prefix = criteria.prefix_ if criteria.prefix_ else "n"
-
-        match_stmt = cls._match_node_by_criteria(criteria, prefix)
+        match_stmt, params = cls._match_node_by_criteria_parameterized(criteria, prefix)
         projection_stmt = cls._build_projection_stmt(criteria, prefix)
-
-        return f"{match_stmt} RETURN {projection_stmt}"
+        return f"{match_stmt} RETURN {projection_stmt}", params
 
     @classmethod
     def fetch_nodes_by_ids(cls, node_ids: list[int]) -> str:
+        """Build a MATCH query for multiple nodes by ID. Returns plain str (IDs are safe)."""
         id_sequence = ",".join([str(id) for id in node_ids])
-
         return f"MATCH (n) WHERE id(n) IN [{id_sequence}] RETURN n"
 
     @classmethod
     def delete_node_by_criteria(cls, criteria, detach: bool) -> str:
+        """Build a DELETE node query. Returns plain str (criteria uses ID only)."""
         prefix = criteria.prefix_ if criteria.prefix_ else "n"
-
-        match_stmt = cls._match_node_by_criteria(criteria, prefix)
+        match_stmt, _ = cls._match_node_by_criteria_parameterized(criteria, prefix)
         detach_stmt = " DETACH" if detach else ""
-
         return f"{match_stmt}{detach_stmt} DELETE {prefix} RETURN id({prefix})"
 
     @classmethod
     def fetch_edge_by_criteria(cls, criteria) -> str:
+        """Build a MATCH edge query. Returns plain str (criteria uses ID only)."""
         prefix = criteria.prefix_ if criteria.prefix_ else "v"
         match_stmt = cls._match_edge_by_criteria(criteria, prefix)
-
-        # projection statement for the edge
         projection_stmt = cls._build_projection_stmt(criteria, prefix)
 
         if hasattr(criteria, "fetch_nodes_") and criteria.fetch_nodes_:
@@ -106,8 +169,8 @@ class CypherBuilder:
 
     @classmethod
     def delete_edge_by_criteria(cls, criteria) -> str:
+        """Build a DELETE edge query. Returns plain str (criteria uses ID only)."""
         match_stmt = cls._match_edge_by_criteria(criteria, "v")
-
         return f"{match_stmt} DELETE v RETURN id(v)"
 
     @classmethod
@@ -118,15 +181,19 @@ class CypherBuilder:
             return prefix
 
     @classmethod
-    def _match_node_by_criteria(cls, criteria, prefix) -> str:
-        node_criteria = cls._criteria_builder(criteria, prefix)
+    def _match_node_by_criteria_parameterized(cls, criteria, prefix) -> tuple[str, dict]:
+        """Build a parameterized MATCH node clause from criteria.
 
+        Returns:
+            (match_clause, params) tuple.
+        """
+        node_criteria, params = cls._criteria_builder_parameterized(criteria, prefix)
         where_condition = f"WHERE {node_criteria[0]}" if node_criteria[0] is not None else ""
-
-        return f"MATCH ({node_criteria[2]}{node_criteria[1]}) {where_condition}"
+        return f"MATCH ({node_criteria[2]}{node_criteria[1]}) {where_condition}", params
 
     @classmethod
     def _match_edge_by_criteria(cls, criteria, prefix) -> str:
+        """Build a MATCH edge clause. Safe -- edge criteria only uses IDs."""
         edge_criteria = cls._criteria_builder(criteria, prefix)
 
         start_criteria = (
@@ -136,15 +203,8 @@ class CypherBuilder:
             cls._criteria_builder(criteria.end_criteria_, "e") if hasattr(criteria, "end_criteria_") else (None, "", "e")
         )
 
-        ids = []
-        if edge_criteria[0] is not None:
-            ids.append(edge_criteria[0])
-        if start_criteria[0] is not None:
-            ids.append(start_criteria[0])
-        if end_criteria[0] is not None:
-            ids.append(end_criteria[0])
-
-        where_condition = "WHERE " + " AND ".join(ids) if len(ids) > 0 else ""
+        ids = [c[0] for c in (edge_criteria, start_criteria, end_criteria) if c[0] is not None]
+        where_condition = "WHERE " + " AND ".join(ids) if ids else ""
 
         edge_part = f"{edge_criteria[2]}{edge_criteria[1]}"
         start_node_part = f"{start_criteria[2]}{start_criteria[1]}"
@@ -153,17 +213,62 @@ class CypherBuilder:
         return f"MATCH ({start_node_part})-[{edge_part}]->({end_node_part}) {where_condition}"
 
     @classmethod
-    def _build_label_properties(cls, criteria, with_label: bool) -> str:
+    def _build_label_properties_parameterized(cls, criteria, with_label: bool, prefix: str) -> tuple[str, dict]:
+        """Build label+properties fragment with parameterized values.
+
+        Returns:
+            (fragment, params) tuple.
+        """
         if criteria is None:
-            return ""
+            return "", {}
 
         label = (f":{criteria.label_}" if criteria.label_ else "") if with_label else ""
-        props = dict_to_non_quoted_json(criteria.properties_) if criteria.properties_ and len(criteria.properties_) else ""
+        params = {}
+        props_fragment = ""
+        if criteria.properties_ and len(criteria.properties_):
+            props_fragment, params = _props_to_params(criteria.properties_, prefix=f"_c{prefix}_")
 
-        return f"{label} {props}"
+        return f"{label} {props_fragment}".rstrip(), params
 
     @classmethod
-    def _criteria_builder(cls, criteria, prefix):
+    def _criteria_builder_parameterized(cls, criteria, prefix) -> tuple[tuple, dict]:
+        """Build criteria tuple with parameterized property values.
+
+        Returns:
+            ((where_condition, label_props, prefix), params) tuple.
+        """
+        if criteria is None:
+            return (None, "", prefix), {}
+
+        prefix = criteria.get_prefix(prefix)
+
+        if criteria.id_ is not None:
+            return (f"id({prefix})={criteria.id_}", "", prefix), {}
+
+        label_cond = f"label({prefix}) in [{','.join(f'"{lbl}"' for lbl in criteria.label_)}]" if criteria.has_labels else None
+        label_props, params = cls._build_label_properties_parameterized(criteria, label_cond is None, prefix)
+
+        return (label_cond, label_props, prefix), params
+
+    # ---------------------------------------------------------------------------
+    # Legacy helpers (used by edge criteria which only match on IDs -- safe)
+    # ---------------------------------------------------------------------------
+
+    @classmethod
+    def _build_label_properties(cls, criteria, with_label: bool) -> str:
+        """Build label+properties fragment by inlining values (safe for ID-only criteria)."""
+        if criteria is None:
+            return ""
+        label = (f":{criteria.label_}" if criteria.label_ else "") if with_label else ""
+        props = (
+            dict_to_value_pairs(criteria.properties_, separator=",") if criteria.properties_ and len(criteria.properties_) else ""
+        )
+        props_fragment = f" {{{props}}}" if props else ""
+        return f"{label}{props_fragment}"
+
+    @classmethod
+    def _criteria_builder(cls, criteria, prefix) -> tuple:
+        """Build criteria tuple by inlining values (safe for ID-only criteria)."""
         if criteria is None:
             return (None, "", prefix)
 
@@ -172,6 +277,6 @@ class CypherBuilder:
         if criteria.id_ is not None:
             return (f"id({prefix})={criteria.id_}", "", prefix)
 
-        label_cond = f"label({prefix}) in [{','.join(f'"{lbl}"' for lbl in criteria.label_)}]" if criteria.has_labels else None
+        label_cond = f"label({prefix}) in [{','.join('"lbl"' for lbl in criteria.label_)}]" if criteria.has_labels else None
 
         return (label_cond, cls._build_label_properties(criteria, label_cond is None), prefix)

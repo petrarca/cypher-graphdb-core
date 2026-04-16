@@ -911,9 +911,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
     def _create_node(self, obj) -> GraphNode:
         obj.create_gid_if_missing()
 
-        cypher_cmd = CypherBuilder.create_node(obj.label_, obj.flatten_properties())
-
-        result = self._parse_and_execute(cypher_cmd, True)
+        cypher_cmd, params = CypherBuilder.create_node(obj.label_, obj.flatten_properties())
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
             return -1
@@ -925,9 +924,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return obj
 
     def _merge_node(self, obj) -> GraphNode:
-        cypher_cmd = CypherBuilder.merge_node_by_id(obj.id_, obj.flatten_properties())
-
-        result = self._parse_and_execute(cypher_cmd, True)
+        cypher_cmd, params = CypherBuilder.merge_node_by_id(obj.id_, obj.flatten_properties())
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
             return -1
@@ -940,10 +938,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return obj
 
     def _fetch_node_by_criteria(self, criteria: MatchCriteria, unnest_result: str, fetch_one: bool):
-        cypher_cmd = CypherBuilder.fetch_node_by_criteria(criteria)
-
-        result = self._parse_and_execute(cypher_cmd, fetch_one)
-
+        cypher_cmd, params = CypherBuilder.fetch_node_by_criteria(criteria)
+        result = self._parse_and_execute(cypher_cmd, fetch_one, params=params or None)
         return utils.unnest_result(result, unnest_result)
 
     def _delete_node_by_id(self, obj, detach) -> int:
@@ -984,9 +980,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
     def _create_edge(self, obj) -> GraphEdge:
         obj.create_gid_if_missing()
 
-        cypher_cmd = CypherBuilder.create_edge(obj.label_, obj.start_id_, obj.end_id_, obj.flatten_properties())
-
-        result = self._parse_and_execute(cypher_cmd, True)
+        cypher_cmd, params = CypherBuilder.create_edge(obj.label_, obj.start_id_, obj.end_id_, obj.flatten_properties())
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         # result is [(id,)], extract the integer from the tuple
         obj.bind_id(result[0][0])
@@ -994,9 +989,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return obj
 
     def _merge_edge(self, obj) -> GraphEdge:
-        cypher_cmd = CypherBuilder.merge_edge_by_id(obj.id_, obj.flatten_properties())
-
-        result = self._parse_and_execute(cypher_cmd, True)
+        cypher_cmd, params = CypherBuilder.merge_edge_by_id(obj.id_, obj.flatten_properties())
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
             return -1

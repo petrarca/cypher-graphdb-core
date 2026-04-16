@@ -42,41 +42,69 @@ class MockCriteria:
 
 
 # ---------------------------------------------------------------------------
-# Basic node/edge creation and merging
+# Basic node/edge creation and merging -- return (query, params) tuples
 # ---------------------------------------------------------------------------
 
 
 def test_create_node():
-    cypher = CypherBuilder.create_node("Person", {"name": "Alice", "age": 30})
-    assert "CREATE(n:Person" in cypher
-    assert 'name: "Alice"' in cypher
-    assert "age: 30" in cypher
-    assert "RETURN id(n)" in cypher
+    query, params = CypherBuilder.create_node("Person", {"name": "Alice", "age": 30})
+    assert "CREATE (n:Person" in query
+    assert "$p_name" in query
+    assert "$p_age" in query
+    assert "RETURN id(n)" in query
+    assert params["p_name"] == "Alice"
+    assert params["p_age"] == 30
+
+
+def test_create_node_empty_properties():
+    query, params = CypherBuilder.create_node("Empty", {})
+    assert "CREATE (n:Empty {})" in query
+    assert params == {}
 
 
 def test_create_edge():
-    cypher = CypherBuilder.create_edge("KNOWS", 1, 2, {"since": 2020, "weight": 0.8})
-    assert "MATCH (s) WHERE id(s) = 1" in cypher
-    assert "MATCH (t) WHERE id(t) = 2" in cypher
-    assert "CREATE (s)-[e:KNOWS" in cypher
-    assert "since: 2020" in cypher
-    assert "RETURN id(e)" in cypher
+    query, params = CypherBuilder.create_edge("KNOWS", 1, 2, {"since": 2020, "weight": 0.8})
+    assert "MATCH (s) WHERE id(s) = 1" in query
+    assert "MATCH (t) WHERE id(t) = 2" in query
+    assert "CREATE (s)-[e:KNOWS" in query
+    assert "$p_since" in query
+    assert "RETURN id(e)" in query
+    assert params["p_since"] == 2020
+    assert params["p_weight"] == 0.8
+
+
+def test_create_edge_empty_properties():
+    query, params = CypherBuilder.create_edge("SIMPLE", 1, 2, {})
+    assert "CREATE (s)-[e:SIMPLE]->(t)" in query
+    assert params == {}
 
 
 def test_merge_node_by_id():
-    cypher = CypherBuilder.merge_node_by_id(123, {"name": "Bob", "active": True})
-    assert "MATCH (n)" in cypher
-    assert "WHERE id(n) = 123" in cypher
-    assert 'SET n.name="Bob",n.active=True' in cypher
-    assert "RETURN n" in cypher
+    query, params = CypherBuilder.merge_node_by_id(123, {"name": "Bob", "active": True})
+    assert "MATCH (n)" in query
+    assert "WHERE id(n) = 123" in query
+    assert "n.name = $p_name" in query
+    assert "n.active = $p_active" in query
+    assert "RETURN n" in query
+    assert params["p_name"] == "Bob"
+    assert params["p_active"] is True
 
 
 def test_merge_edge_by_id():
-    cypher = CypherBuilder.merge_edge_by_id(456, {"weight": 0.9})
-    assert "MATCH (s)-[e]->(t)" in cypher
-    assert "WHERE id(e) = 456" in cypher
-    assert "SET e.weight=0.9" in cypher
-    assert "RETURN e" in cypher
+    query, params = CypherBuilder.merge_edge_by_id(456, {"weight": 0.9})
+    assert "MATCH (s)-[e]->(t)" in query
+    assert "WHERE id(e) = 456" in query
+    assert "e.weight = $p_weight" in query
+    assert "RETURN e" in query
+    assert params["p_weight"] == 0.9
+
+
+def test_merge_edge_by_id_empty_properties():
+    query, params = CypherBuilder.merge_edge_by_id(456, {})
+    assert "MATCH (s)-[e]->(t)" in query
+    assert "SET" not in query
+    assert "RETURN e" in query
+    assert params == {}
 
 
 # ---------------------------------------------------------------------------
@@ -85,33 +113,45 @@ def test_merge_edge_by_id():
 
 
 def test_fetch_nodes_by_ids():
+    # Returns plain str -- IDs are safe to inline
     cypher = CypherBuilder.fetch_nodes_by_ids([10, 20, 30])
     assert cypher == "MATCH (n) WHERE id(n) IN [10,20,30] RETURN n"
 
 
 def test_fetch_node_by_criteria_simple():
     criteria = MockCriteria(id_=42)
-    cypher = CypherBuilder.fetch_node_by_criteria(criteria)
-    assert "MATCH (n)" in cypher
-    assert "WHERE id(n)=42" in cypher
-    assert "RETURN n" in cypher
+    query, params = CypherBuilder.fetch_node_by_criteria(criteria)
+    assert "MATCH (n)" in query
+    assert "WHERE id(n)=42" in query
+    assert "RETURN n" in query
+    assert params == {}
 
 
 def test_fetch_node_by_criteria_with_projection():
     criteria = MockCriteria(id_=42, projection_=["name", "id(n)", "age"])
-    cypher = CypherBuilder.fetch_node_by_criteria(criteria)
-    assert "RETURN n.name,id(n),n.age" in cypher
+    query, params = CypherBuilder.fetch_node_by_criteria(criteria)
+    assert "RETURN n.name,id(n),n.age" in query
 
 
 def test_fetch_node_by_criteria_with_custom_prefix():
     criteria = MockCriteria(id_=42, prefix_="person")
-    cypher = CypherBuilder.fetch_node_by_criteria(criteria)
-    assert "MATCH (person)" in cypher
-    assert "WHERE id(person)=42" in cypher
-    assert "RETURN person" in cypher
+    query, params = CypherBuilder.fetch_node_by_criteria(criteria)
+    assert "MATCH (person)" in query
+    assert "WHERE id(person)=42" in query
+    assert "RETURN person" in query
+
+
+def test_fetch_node_by_criteria_with_properties():
+    criteria = MockCriteria(label_="License", properties_={"name": '{file = "LICENSE"}'})
+    query, params = CypherBuilder.fetch_node_by_criteria(criteria)
+    # Value must NOT be inlined -- it must be a $param reference
+    assert '{file = "LICENSE"}' not in query
+    assert "$" in query
+    assert any(v == '{file = "LICENSE"}' for v in params.values())
 
 
 def test_fetch_edge_by_criteria_simple():
+    # Returns plain str
     criteria = MockCriteria(id_=101)
     cypher = CypherBuilder.fetch_edge_by_criteria(criteria)
     assert "MATCH (s)-[v]->(e)" in cypher
@@ -120,6 +160,7 @@ def test_fetch_edge_by_criteria_simple():
 
 
 def test_fetch_edge_by_criteria_with_nodes():
+    # Returns plain str
     start_criteria = MockCriteria(id_=1)
     end_criteria = MockCriteria(id_=2)
     criteria = MockCriteria(
@@ -134,7 +175,7 @@ def test_fetch_edge_by_criteria_with_nodes():
 
 
 # ---------------------------------------------------------------------------
-# Delete operations
+# Delete operations -- return plain str (ID-based, safe)
 # ---------------------------------------------------------------------------
 
 
@@ -178,74 +219,65 @@ def test_build_projection_stmt_without_projection():
     assert result == "n"
 
 
-def test_build_label_properties_empty():
-    result = CypherBuilder._build_label_properties(None, True)
-    assert result == ""
-
-
-def test_build_label_properties_with_label_and_props():
-    criteria = MockCriteria(label_="Person", properties_={"name": "Alice"})
-    result = CypherBuilder._build_label_properties(criteria, True)
-    assert ":Person" in result
-    assert 'name: "Alice"' in result
-
-
 def test_criteria_builder_with_id():
-    criteria = MockCriteria(id_=42)
-    result = CypherBuilder._criteria_builder(criteria, "n")
-    assert result[0] == "id(n)=42"
-    assert result[1] == ""
-    assert result[2] == "n"
+    (cond, props, prefix), params = CypherBuilder._criteria_builder_parameterized(MockCriteria(id_=42), "n")
+    assert cond == "id(n)=42"
+    assert props == ""
+    assert prefix == "n"
+    assert params == {}
 
 
 def test_criteria_builder_with_labels():
     criteria = MockCriteria(label_=["Person", "User"], has_labels=True)
-    result = CypherBuilder._criteria_builder(criteria, "n")
-    assert "label(n) in" in result[0]
-    assert '"Person"' in result[0]
-    assert '"User"' in result[0]
+    (cond, props, prefix), params = CypherBuilder._criteria_builder_parameterized(criteria, "n")
+    assert "label(n) in" in cond
+    assert '"Person"' in cond
+    assert '"User"' in cond
 
 
 def test_criteria_builder_none():
-    result = CypherBuilder._criteria_builder(None, "n")
+    result, params = CypherBuilder._criteria_builder_parameterized(None, "n")
     assert result == (None, "", "n")
+    assert params == {}
 
 
 # ---------------------------------------------------------------------------
-# Edge cases and complex scenarios
+# Special character safety tests
 # ---------------------------------------------------------------------------
 
 
-def test_create_node_empty_properties():
-    cypher = CypherBuilder.create_node("Empty", {})
-    assert "CREATE(n:Empty {})" in cypher
+@pytest.mark.parametrize(
+    "special_value",
+    [
+        "ibxtlib.3.1lib.lib",
+        '{file = "LICENSE"}',
+        "O'Brien",
+        'value with "quotes"',
+        "C:\\path\\to\\file",
+        "multi\nline\nvalue",
+    ],
+)
+def test_create_node_special_characters(special_value):
+    """Property values with special characters must never be inlined into the query."""
+    query, params = CypherBuilder.create_node("Node", {"key": special_value})
+    assert special_value not in query
+    assert params["p_key"] == special_value
 
 
-def test_create_edge_empty_properties():
-    cypher = CypherBuilder.create_edge("SIMPLE", 1, 2, {})
-    assert "CREATE (s)-[e:SIMPLE {}]->(t)" in cypher
-
-
-def test_match_edge_by_criteria_complex():
-    start_criteria = MockCriteria(label_=["Person"], has_labels=True, prefix_="start")
-    end_criteria = MockCriteria(id_=99, prefix_="end")
-    edge_criteria = MockCriteria(properties_={"weight": 0.5}, prefix_="rel")
-
-    # Mock the edge criteria structure manually for complex test
-    edge_criteria.start_criteria_ = start_criteria
-    edge_criteria.end_criteria_ = end_criteria
-    edge_criteria.model_fields = {
-        "start_criteria_": True,
-        "end_criteria_": True,
-    }
-
-    cypher = CypherBuilder._match_edge_by_criteria(edge_criteria, "rel")
-    assert "MATCH (start" in cypher
-    assert ")-[rel" in cypher
-    assert "]->(end)" in cypher
-    assert "label(start)" in cypher
-    assert "id(end)=99" in cypher
-    assert "weight: 0.5" in cypher
+@pytest.mark.parametrize(
+    "special_value",
+    [
+        "ibxtlib.3.1lib.lib",
+        '{file = "LICENSE"}',
+        "O'Brien",
+    ],
+)
+def test_fetch_node_by_criteria_special_characters(special_value):
+    """Criteria property values with special characters must never be inlined."""
+    criteria = MockCriteria(label_="Node", properties_={"name": special_value})
+    query, params = CypherBuilder.fetch_node_by_criteria(criteria)
+    assert special_value not in query
+    assert any(v == special_value for v in params.values())
 
 
 @pytest.mark.parametrize(
