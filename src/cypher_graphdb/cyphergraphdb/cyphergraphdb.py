@@ -69,6 +69,7 @@ from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .batch import BatchMixin
 from .connection import ConnectionMixin
 from .criteria import MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
+from .indexing import IndexingMixin
 from .result import QueryResult
 from .schema import SchemaMixin
 from .search import SearchMixin
@@ -76,7 +77,7 @@ from .sql import SqlMixin
 from .stream_mixin import StreamMixin
 
 
-class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin):
+class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin):
     """Primary client for connecting to and managing Cypher-based graph databases.
 
     CypherGraphDB provides a high-level interface for graph database operations
@@ -946,9 +947,9 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         assert obj.id_ is not None
 
         criteria = MatchNodeCriteria(id_=obj.id_)
-        cypher_cmd = CypherBuilder.delete_node_by_criteria(criteria, detach)
+        cypher_cmd, params = CypherBuilder.delete_node_by_criteria(criteria, detach)
 
-        result = self._parse_and_execute(cypher_cmd, True)
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
             return -1
@@ -959,9 +960,9 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return result[0]
 
     def _delete_node_by_criteria(self, criteria: MatchCriteria, detach: bool):
-        cypher_cmd = CypherBuilder.delete_node_by_criteria(criteria, detach)
+        cypher_cmd, params = CypherBuilder.delete_node_by_criteria(criteria, detach)
 
-        return self._parse_and_execute(cypher_cmd)
+        return self._parse_and_execute(cypher_cmd, params=params or None)
 
     def _create_or_merge_edge(self, obj, strategy: str) -> int:
         obj.resolve()
@@ -1006,9 +1007,9 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         assert obj.id_ is not None
 
         criteria = MatchEdgeCriteria(id_=obj.id_)
-        cypher_cmd = CypherBuilder.delete_edge_by_criteria(criteria)
+        cypher_cmd, params = CypherBuilder.delete_edge_by_criteria(criteria)
 
-        result = self._parse_and_execute(cypher_cmd, True)
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
             return -1
@@ -1019,14 +1020,14 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, SchemaMixin, SearchMixin, SqlMi
         return result[0]
 
     def _delete_edge_by_criteria(self, criteria: MatchCriteria):
-        cypher_cmd = CypherBuilder.delete_edge_by_criteria(criteria)
+        cypher_cmd, params = CypherBuilder.delete_edge_by_criteria(criteria)
 
-        return self._parse_and_execute(cypher_cmd)
+        return self._parse_and_execute(cypher_cmd, params=params or None)
 
     def _fetch_edge_by_criteria(self, criteria: MatchCriteria, unnest_result: str | bool, fetch_one: bool):
-        cypher_cmd = CypherBuilder.fetch_edge_by_criteria(criteria)
+        cypher_cmd, params = CypherBuilder.fetch_edge_by_criteria(criteria)
 
-        result = self._parse_and_execute(cypher_cmd, fetch_one)
+        result = self._parse_and_execute(cypher_cmd, fetch_one, params=params or None)
 
         return utils.unnest_result(result, unnest_result)
 

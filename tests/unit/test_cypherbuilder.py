@@ -151,16 +151,15 @@ def test_fetch_node_by_criteria_with_properties():
 
 
 def test_fetch_edge_by_criteria_simple():
-    # Returns plain str
     criteria = MockCriteria(id_=101)
-    cypher = CypherBuilder.fetch_edge_by_criteria(criteria)
-    assert "MATCH (s)-[v]->(e)" in cypher
-    assert "WHERE id(v)=101" in cypher
-    assert "RETURN v" in cypher
+    query, params = CypherBuilder.fetch_edge_by_criteria(criteria)
+    assert "MATCH (s)-[v]->(e)" in query
+    assert "WHERE id(v)=101" in query
+    assert "RETURN v" in query
+    assert params == {}
 
 
 def test_fetch_edge_by_criteria_with_nodes():
-    # Returns plain str
     start_criteria = MockCriteria(id_=1)
     end_criteria = MockCriteria(id_=2)
     criteria = MockCriteria(
@@ -169,9 +168,10 @@ def test_fetch_edge_by_criteria_with_nodes():
         start_criteria_=start_criteria,
         end_criteria_=end_criteria,
     )
-    cypher = CypherBuilder.fetch_edge_by_criteria(criteria)
-    assert "RETURN s,v,e" in cypher
-    assert "WHERE id(v)=101 AND id(s)=1 AND id(e)=2" in cypher
+    query, params = CypherBuilder.fetch_edge_by_criteria(criteria)
+    assert "RETURN s,v,e" in query
+    assert "WHERE id(v)=101 AND id(s)=1 AND id(e)=2" in query
+    assert params == {}
 
 
 # ---------------------------------------------------------------------------
@@ -181,25 +181,28 @@ def test_fetch_edge_by_criteria_with_nodes():
 
 def test_delete_node_by_criteria():
     criteria = MockCriteria(id_=99)
-    cypher = CypherBuilder.delete_node_by_criteria(criteria, detach=False)
-    assert "MATCH (n)" in cypher
-    assert "WHERE id(n)=99" in cypher
-    assert " DELETE n RETURN id(n)" in cypher
-    assert "DETACH" not in cypher
+    query, params = CypherBuilder.delete_node_by_criteria(criteria, detach=False)
+    assert "MATCH (n)" in query
+    assert "WHERE id(n)=99" in query
+    assert " DELETE n RETURN id(n)" in query
+    assert "DETACH" not in query
+    assert params == {}
 
 
 def test_delete_node_by_criteria_detach():
     criteria = MockCriteria(id_=99)
-    cypher = CypherBuilder.delete_node_by_criteria(criteria, detach=True)
-    assert "DETACH DELETE n RETURN id(n)" in cypher
+    query, params = CypherBuilder.delete_node_by_criteria(criteria, detach=True)
+    assert "DETACH DELETE n RETURN id(n)" in query
+    assert params == {}
 
 
 def test_delete_edge_by_criteria():
     criteria = MockCriteria(id_=200)
-    cypher = CypherBuilder.delete_edge_by_criteria(criteria)
-    assert "MATCH (s)-[v]->(e)" in cypher
-    assert "WHERE id(v)=200" in cypher
-    assert "DELETE v RETURN id(v)" in cypher
+    query, params = CypherBuilder.delete_edge_by_criteria(criteria)
+    assert "MATCH (s)-[v]->(e)" in query
+    assert "WHERE id(v)=200" in query
+    assert "DELETE v RETURN id(v)" in query
+    assert params == {}
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +281,74 @@ def test_fetch_node_by_criteria_special_characters(special_value):
     query, params = CypherBuilder.fetch_node_by_criteria(criteria)
     assert special_value not in query
     assert any(v == special_value for v in params.values())
+
+
+@pytest.mark.parametrize(
+    "special_value",
+    [
+        "ibxtlib.3.1lib.lib",
+        '{file = "LICENSE"}',
+        "O'Brien",
+        'value with "quotes"',
+    ],
+)
+def test_fetch_edge_by_criteria_special_characters(special_value):
+    """Edge criteria property values with special characters must never be inlined."""
+    criteria = MockCriteria(label_="USES", properties_={"note": special_value})
+    query, params = CypherBuilder.fetch_edge_by_criteria(criteria)
+    assert special_value not in query
+    assert any(v == special_value for v in params.values())
+
+
+@pytest.mark.parametrize(
+    "special_value",
+    [
+        "ibxtlib.3.1lib.lib",
+        "O'Brien",
+        'value with "quotes"',
+    ],
+)
+def test_delete_edge_by_criteria_special_characters(special_value):
+    """Delete edge criteria property values must be parameterized."""
+    criteria = MockCriteria(label_="USES", properties_={"note": special_value})
+    query, params = CypherBuilder.delete_edge_by_criteria(criteria)
+    assert special_value not in query
+    assert any(v == special_value for v in params.values())
+
+
+@pytest.mark.parametrize(
+    "special_value",
+    [
+        "ibxtlib.3.1lib.lib",
+        "O'Brien",
+        'value with "quotes"',
+    ],
+)
+def test_delete_node_by_criteria_special_characters(special_value):
+    """Delete node criteria property values must be parameterized."""
+    criteria = MockCriteria(label_="Node", properties_={"name": special_value})
+    query, params = CypherBuilder.delete_node_by_criteria(criteria, detach=True)
+    assert special_value not in query
+    assert any(v == special_value for v in params.values())
+
+
+def test_fetch_edge_by_criteria_with_node_properties():
+    """Edge criteria with start/end node properties should parameterize all."""
+    start_criteria = MockCriteria(label_="Product", properties_={"name": "CypherGraph"})
+    end_criteria = MockCriteria(label_="Technology", properties_={"name": "Python"})
+    criteria = MockCriteria(
+        label_="USES",
+        fetch_nodes_=True,
+        start_criteria_=start_criteria,
+        end_criteria_=end_criteria,
+    )
+    query, params = CypherBuilder.fetch_edge_by_criteria(criteria)
+    # Values must not be inlined
+    assert "CypherGraph" not in query
+    assert "Python" not in query
+    # Values must be in params
+    assert any(v == "CypherGraph" for v in params.values())
+    assert any(v == "Python" for v in params.values())
 
 
 @pytest.mark.parametrize(

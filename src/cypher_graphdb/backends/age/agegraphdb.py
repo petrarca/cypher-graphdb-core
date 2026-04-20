@@ -26,11 +26,12 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
-from cypher_graphdb.statistics import LabelStatistics
-from cypher_graphdb.utils import sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
+from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
+from cypher_graphdb.utils import chunk_list, sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
 
 from .agerowfactories import age_row_factory
 from .agesearch import convert_to_fts_query
+from .ageserializer import to_cypher_list
 from .agesqlbuilder import SQLBuilder
 from .agtype import AgTypeLoader
 
@@ -369,9 +370,9 @@ class AGEGraphDB(CypherBackend):
         """
         sql = SQLBuilder.resolve_graphs()
 
-        (result,), _, _ = self._execute_sql(sql, raw_data=True)
+        rows, _, _ = self._execute_sql(sql, raw_data=True)
 
-        return list(result)
+        return [row[0] for row in rows]
 
     def labels(self) -> list[LabelStatistics]:
         """Get statistics for all labels in the current graph.
@@ -507,6 +508,9 @@ class AGEGraphDB(CypherBackend):
             case BackendCapability.STREAMING_SUPPORT:
                 # AGE does not support native streaming
                 return False
+            case BackendCapability.PROPERTY_INDEX:
+                # AGE supports GIN property indexes via PostgreSQL SQL
+                return True
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)
@@ -548,6 +552,235 @@ class AGEGraphDB(CypherBackend):
             for val in elabels:
                 cursor.execute(SQLBuilder.create_elabel(graph_name, val))
             self._connection.commit()
+
+    # ── Index management ────────────────────────────────────────────────
+
+    def create_property_index(self, label: str, *property_names: str) -> None:
+        """Create a GIN index on the properties column of a label table.
+
+        AGE stores all node properties in a single agtype JSON column.
+        A GIN index on this column accelerates all property-based MATCH
+        lookups (the @> containment operator). The property_names parameter
+        is accepted for API compatibility but ignored -- one GIN index
+        covers all properties.
+
+        Args:
+            label: Node label to index (e.g. "Method").
+            *property_names: Ignored for AGE (GIN covers all properties).
+        """
+        self._require_connection()
+        graph_name = self._graph_name
+        assert graph_name, "Graph name is required for index creation"
+
+        # Check if label table exists (AGE creates tables lazily)
+        existing_tables = self._get_label_tables()
+        if label not in existing_tables:
+            logger.debug("Skipping index for '{}' -- label table not yet created in graph '{}'", label, graph_name)
+            return
+
+        with self._fetch_cursor(row_factory=None) as cursor:
+            cursor.execute(SQLBuilder.create_gin_index(graph_name, label))
+            self._connection.commit()
+
+        logger.debug("GIN property index created for label '{}' in graph '{}'", label, graph_name)
+
+    def drop_index(self, label: str, *property_names: str) -> None:
+        """Drop the GIN property index on a label table.
+
+        Args:
+            label: Node label whose index to drop.
+            *property_names: Ignored for AGE.
+        """
+        self._require_connection()
+        graph_name = self._graph_name
+        assert graph_name, "Graph name is required for index operations"
+
+        with self._fetch_cursor(row_factory=None) as cursor:
+            cursor.execute(SQLBuilder.drop_gin_index(graph_name, label))
+            self._connection.commit()
+
+        logger.debug("GIN property index dropped for label '{}' in graph '{}'", label, graph_name)
+
+    def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
+        """List all indexes on the current graph.
+
+        Queries pg_indexes for the graph schema and returns normalized
+        IndexInfo objects.
+
+        Args:
+            include_internal: If True, also return AGE-internal indexes:
+                _ag_label_* base table indexes, _pkey primary key indexes,
+                and _start_id_idx/_end_id_idx edge traversal indexes.
+                Useful for diagnostics. Default False.
+
+        Returns:
+            List of IndexInfo objects describing each index.
+        """
+        self._require_connection()
+        graph_name = self._graph_name
+        assert graph_name, "Graph name is required for listing indexes"
+
+        indexes = []
+        with self._fetch_cursor(row_factory=None) as cursor:
+            cursor.execute(SQLBuilder.list_indexes(graph_name), (graph_name,))
+            rows = cursor.fetchall()
+
+        for tablename, indexname, indexdef in rows:
+            if not include_internal and self._is_age_internal_index(tablename, indexname):
+                continue
+            index_info = self._parse_index_def(tablename, indexname, indexdef or "")
+            if index_info:
+                indexes.append(index_info)
+
+        return indexes
+
+    @staticmethod
+    def _is_age_internal_index(tablename: str, indexname: str) -> bool:
+        """Return True if this index is AGE-internal (not user-created)."""
+        # Base label tables created by AGE itself
+        if tablename.startswith("_ag_label_"):
+            return True
+        # Primary key indexes -- auto-created on every label table
+        if indexname.endswith("_pkey"):
+            return True
+        # Edge traversal indexes -- auto-created on edge label tables
+        return bool(indexname.endswith("_start_id_idx") or indexname.endswith("_end_id_idx"))
+
+    # ── Bulk write operations ─────────────────────────────────────────────
+
+    def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
+        """Create nodes in batches using UNWIND with inline Cypher literals.
+
+        AGE does not support $params in UNWIND. Rows are serialized as
+        inline Cypher map literals and executed in batches.
+
+        Args:
+            label: Node label for all created nodes.
+            rows: List of property dicts, one per node.
+            batch_size: Number of nodes per UNWIND batch.
+
+        Returns:
+            Total number of nodes created.
+        """
+        self._require_connection()
+        if not rows:
+            return 0
+
+        total = 0
+        for batch in chunk_list(rows, batch_size):
+            self._write_node_batch(label, batch)
+            total += len(batch)
+
+        return total
+
+    def bulk_create_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str = "",
+        dst_label: str = "",
+        src_key: str = "id",
+        dst_key: str = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Create edges in batches by matching src/dst nodes on a key property.
+
+        Each dict in edges must have "src" and "dst" keys whose values
+        match the src_key/dst_key properties on source/destination nodes.
+
+        Args:
+            label: Edge label for all created edges.
+            edges: List of dicts with at least "src" and "dst" keys.
+            src_label: Label of source nodes (empty string for any label).
+            dst_label: Label of destination nodes (empty string for any label).
+            src_key: Property name on source nodes to match against "src".
+            dst_key: Property name on destination nodes to match against "dst".
+            batch_size: Number of edges per UNWIND batch.
+
+        Returns:
+            Total number of edges created.
+        """
+        self._require_connection()
+        if not edges:
+            return 0
+
+        # Build MATCH patterns from label/key names (not user values -- safe to inline)
+        src_pat = f"(a:{src_label} {{{src_key}: e.src}})" if src_label else f"(a {{{src_key}: e.src}})"
+        dst_pat = f"(b:{dst_label} {{{dst_key}: e.dst}})" if dst_label else f"(b {{{dst_key}: e.dst}})"
+
+        total = 0
+        for batch in chunk_list(edges, batch_size):
+            self._write_edge_batch(label, batch, src_pat, dst_pat)
+            total += len(batch)
+
+        return total
+
+    # ── Private helpers for bulk write ────────────────────────────────────
+
+    def _write_node_batch(self, label: str, batch: list[dict]) -> None:
+        """Write one batch of node dicts via UNWIND CREATE.
+
+        All dicts in batch must have the same set of keys -- the SET clause
+        is derived from the first row and applied to all rows.
+        """
+        props_keys = list(batch[0].keys())
+        set_clause = ", ".join(f"n.{k} = props.{k}" for k in props_keys)
+        cypher = f"UNWIND {to_cypher_list(batch)} AS props CREATE (n:{label}) SET {set_clause}"
+
+        parsed = self.parse_cypher(cypher)
+        self.execute_cypher(parsed)
+
+    def _write_edge_batch(self, label: str, batch: list[dict], src_pat: str, dst_pat: str) -> None:
+        """Write one batch of edges via UNWIND MATCH CREATE.
+
+        Any keys in batch dicts beyond 'src' and 'dst' are set as edge properties.
+        """
+        # Detect extra property keys (beyond src/dst) from first row
+        edge_prop_keys = [k for k in batch[0] if k not in ("src", "dst")]
+        if edge_prop_keys:
+            set_clause = " SET " + ", ".join(f"r.{k} = e.{k}" for k in edge_prop_keys)
+        else:
+            set_clause = ""
+
+        cypher = f"UNWIND {to_cypher_list(batch)} AS e MATCH {src_pat} MATCH {dst_pat} CREATE (a)-[r:{label}]->(b){set_clause}"
+
+        parsed = self.parse_cypher(cypher)
+        self.execute_cypher(parsed)
+
+    def _get_label_tables(self) -> set[str]:
+        """Get the set of existing label table names in the graph schema."""
+        with self._fetch_cursor(row_factory=None) as cursor:
+            cursor.execute(SQLBuilder.get_label_tables(self._graph_name), (self._graph_name,))
+            return {row[0] for row in cursor.fetchall()}
+
+    @staticmethod
+    def _parse_index_def(tablename: str, indexname: str, indexdef: str) -> IndexInfo | None:
+        """Parse a pg_indexes row into an IndexInfo object."""
+        # Determine index type from the definition
+        indexdef_upper = indexdef.upper()
+        if "UNIQUE" in indexdef_upper:
+            idx_type = IndexType.UNIQUE
+        else:
+            idx_type = IndexType.PROPERTY
+
+        # GIN on properties covers all props
+        prop_names = None
+        if "USING GIN" not in indexdef_upper:
+            # Try to extract column names from indexdef for non-GIN indexes
+            # Format: CREATE INDEX ... ON schema.table USING btree (col1, col2)
+            paren_start = indexdef.rfind("(")
+            paren_end = indexdef.rfind(")")
+            if paren_start != -1 and paren_end != -1:
+                cols = indexdef[paren_start + 1 : paren_end]
+                prop_names = [c.strip().strip('"') for c in cols.split(",")]
+
+        return IndexInfo(
+            label=tablename,
+            property_names=prop_names,
+            index_type=idx_type,
+            index_name=indexname,
+            unique="UNIQUE" in indexdef_upper,
+        )
 
     @retry(
         stop=stop_after_attempt(5),

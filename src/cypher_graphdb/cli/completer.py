@@ -208,13 +208,13 @@ class CommandLineCompleter(Completer):
             "dump_models": lambda parse_result: LabelCompleterConfig(parse_result),
             "search": lambda parse_result: self._create_search_config(parse_result),
             # Database and variable commands
-            "drop_dbgraph": lambda parse_result: ListProviderConfig(
+            "drop_graph": lambda parse_result: ListProviderConfig(
                 parse_result, list_provider=self._providers.graphdb_provider.get_graphs
             ),
-            "change_dbgraph": lambda parse_result: ListProviderConfig(
+            "use_graph": lambda parse_result: ListProviderConfig(
                 parse_result, list_provider=self._providers.graphdb_provider.get_graphs
             ),
-            "dbgraph_exists": lambda parse_result: ListProviderConfig(
+            "graph_exists": lambda parse_result: ListProviderConfig(
                 parse_result, list_provider=self._providers.graphdb_provider.get_graphs
             ),
             "get": lambda parse_result: ListProviderConfig(parse_result, list_provider=self._providers.var_provider.get_varnames),

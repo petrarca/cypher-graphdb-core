@@ -8,17 +8,31 @@ import ast
 from typing import Any
 
 
-def convert_to_str(value: Any) -> str:
-    """Convert various Python types to their string representation.
+def _escape_cypher_string(value: str) -> str:
+    """Escape a string for safe use in double-quoted Cypher literals.
 
-    Converts different Python types (strings, dicts, lists, None, etc.)
-    to their string representation suitable for display or serialization.
+    Handles backslashes, double quotes, newlines, carriage returns, and tabs.
 
     Args:
-        value: Value to convert (string, dict, list, None, or other).
+        value: Raw string to escape.
 
     Returns:
-        String representation of the value.
+        Escaped string (without surrounding quotes).
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
+def convert_to_str(value: Any) -> str:
+    """Convert various Python types to their Cypher literal representation.
+
+    Produces valid Cypher syntax: lowercase null/true/false, escaped strings,
+    unquoted keys in maps.
+
+    Args:
+        value: Value to convert (string, dict, list, None, bool, or other).
+
+    Returns:
+        Cypher literal string representation of the value.
 
     Examples:
         >>> convert_to_str("hello")
@@ -31,19 +45,28 @@ def convert_to_str(value: Any) -> str:
         '[1,2,3]'
 
         >>> convert_to_str(None)
-        'NULL'
+        'null'
 
         >>> convert_to_str(42)
         '42'
+
+        >>> convert_to_str(True)
+        'true'
+
+        >>> convert_to_str('say "hi"')
+        '"say \\\\"hi\\\\""'
     """
-    if isinstance(value, str):
-        return f'"{value}"'
+    # bool must be checked before int (bool is a subclass of int in Python)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    elif isinstance(value, str):
+        return f'"{_escape_cypher_string(value)}"'
     elif isinstance(value, dict):
         return dict_to_non_quoted_json(value)
     elif isinstance(value, list):
         return "[" + ",".join(convert_to_str(item) for item in value) + "]"
     elif value is None:
-        return "NULL"
+        return "null"
     else:
         return str(value)
 

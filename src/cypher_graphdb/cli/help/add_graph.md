@@ -1,6 +1,6 @@
 # Add Graph
 
-**Command:** `add` | `add graph`
+**Command:** `add`
 
 **Description:** Add query results or data to the current in-memory graph. The add command accumulates data from Cypher queries, variables, or other sources into a working graph that can be analyzed, exported, or further processed.
 
@@ -102,7 +102,7 @@ The add command prevents duplicate data:
 ### Incremental Graph Building
 ```
 # Start with empty graph
-clear graph
+clear
 
 # Add nodes step by step
 MATCH (p:Person) RETURN p | add
@@ -145,7 +145,7 @@ add relationships
 set __ = MATCH (n) RETURN n  # Clears graph first, then adds
 
 # Option 2: Explicit clear then add
-clear graph
+clear
 MATCH (n) RETURN n | add
 
 # Option 3: Accumulative adding (default)
@@ -159,7 +159,7 @@ MATCH (c:Company) RETURN c | add  # Adds to existing graph
 stats
 
 # Clear when memory gets large
-clear graph
+clear
 
 # Selective building for large datasets
 MATCH (n:Person) WHERE n.department = 'IT' RETURN n | add
@@ -222,7 +222,7 @@ add .
 ### Complex Graph Building
 ```
 # Multi-step graph construction
-clear graph
+clear
 
 # Add all persons
 MATCH (p:Person) RETURN p | add
@@ -294,7 +294,7 @@ Common scenarios:
 
 **Memory Constraints**
 - Large graphs may consume significant memory
-- Use `clear graph` to free memory when needed
+- Use `clear` to free memory when needed
 
 **Type Mismatches**
 - Non-graph objects are ignored safely
@@ -321,7 +321,7 @@ Common scenarios:
 
 - **import / import graph** - Load data from files, automatically adds to graph
 - **export / export graph** - Export current graph data to files
-- **clear graph** - Clear the current in-memory graph
+- **clear** - Clear the current in-memory graph
 - **stats** - Show current graph statistics
 - **tree** - Convert graph to tree visualization
 - **set** - Store query results in variables

@@ -24,20 +24,19 @@ Example registration:
 from cypher_graphdb.cli.command_registry import registry
 from cypher_graphdb.cli.commands.add_graph_command import AddGraphCommand
 from cypher_graphdb.cli.commands.apply_config_command import ApplyConfigCommand
-from cypher_graphdb.cli.commands.change_dbgraph_command import ChangeDbgraphCommand
 from cypher_graphdb.cli.commands.clear_graph_command import ClearGraphCommand
 from cypher_graphdb.cli.commands.commit_command import CommitCommand
 from cypher_graphdb.cli.commands.connect_command import ConnectCommand
-from cypher_graphdb.cli.commands.create_dbgraph_command import CreateDbgraphCommand
 from cypher_graphdb.cli.commands.create_edge_command import CreateEdgeCommand
+from cypher_graphdb.cli.commands.create_graph_command import CreateGraphCommand
 from cypher_graphdb.cli.commands.create_linked_node_command import CreateLinkedNodeCommand
 from cypher_graphdb.cli.commands.create_node_command import CreateNodeCommand
-from cypher_graphdb.cli.commands.dbgraph_exists_command import DbgraphExistsCommand
 from cypher_graphdb.cli.commands.delete_graphobj_command import DeleteGraphobjCommand
 from cypher_graphdb.cli.commands.disconnect_command import DisconnectCommand
-from cypher_graphdb.cli.commands.drop_dbgraph_command import DropDbgraphCommand
+from cypher_graphdb.cli.commands.drop_graph_command import DropGraphCommand
 from cypher_graphdb.cli.commands.dump_backends_command import DumpBackendsCommand
-from cypher_graphdb.cli.commands.dump_dbgraphs_command import DumpDbgraphsCommand
+from cypher_graphdb.cli.commands.dump_graphs_command import DumpGraphsCommand
+from cypher_graphdb.cli.commands.dump_indexes_command import DumpIndexesCommand
 from cypher_graphdb.cli.commands.dump_labels_command import DumpLabelsCommand
 from cypher_graphdb.cli.commands.dump_models_command import DumpModelsCommand
 from cypher_graphdb.cli.commands.dump_parsed_query_command import DumpParsedQueryCommand
@@ -53,6 +52,7 @@ from cypher_graphdb.cli.commands.fetch_nodes_command import FetchNodesCommand
 from cypher_graphdb.cli.commands.format_output_command import FormatOutputCommand
 from cypher_graphdb.cli.commands.get_command import GetCommand
 from cypher_graphdb.cli.commands.gid_command import GidCommand
+from cypher_graphdb.cli.commands.graph_exists_command import GraphExistsCommand
 from cypher_graphdb.cli.commands.graph_op_command import GraphOpCommand
 from cypher_graphdb.cli.commands.graph_to_tree_command import GraphToTreeCommand
 from cypher_graphdb.cli.commands.help_command import HelpCommand
@@ -65,6 +65,7 @@ from cypher_graphdb.cli.commands.search_command import SearchCommand
 from cypher_graphdb.cli.commands.set_command import SetCommand
 from cypher_graphdb.cli.commands.sql_command import SqlCommand
 from cypher_graphdb.cli.commands.update_graphobj_command import UpdateGraphobjCommand
+from cypher_graphdb.cli.commands.use_graph_command import UseGraphCommand
 
 # Register all commands
 registry.register(GidCommand)
@@ -97,12 +98,13 @@ registry.register(DumpParsedQueryCommand)
 registry.register(DumpStatisticsCommand)
 registry.register(DumpBackendsCommand)
 registry.register(DumpLabelsCommand)
-registry.register(DumpDbgraphsCommand)
+registry.register(DumpGraphsCommand)
+registry.register(DumpIndexesCommand)
 registry.register(DumpModelsCommand)
-registry.register(CreateDbgraphCommand)
-registry.register(DropDbgraphCommand)
-registry.register(ChangeDbgraphCommand)
-registry.register(DbgraphExistsCommand)
+registry.register(CreateGraphCommand)
+registry.register(DropGraphCommand)
+registry.register(UseGraphCommand)
+registry.register(GraphExistsCommand)
 registry.register(LoadModelsCommand)
 registry.register(ExecuteFileCommand)
 registry.register(FormatOutputCommand)

@@ -134,3 +134,40 @@ class SQLBuilder:
     @classmethod
     def resolve_label_count(cls, relation: str) -> sql.SQL:
         return sql.SQL(f"SELECT count(*) FROM {relation}")
+
+    # ── Index management SQL ──────────────────────────────────────────────
+
+    @classmethod
+    def get_label_tables(cls, graph_name: str) -> sql.SQL:
+        """List all label tables in the graph schema via pg_class."""
+        return sql.SQL(
+            "SELECT c.relname FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = {graph_name} AND c.relkind = 'r'"
+        ).format(graph_name=sql.Placeholder())
+
+    @classmethod
+    def create_gin_index(cls, graph_name: str, label: str) -> sql.SQL:
+        """Create a GIN index on the properties column of a label table."""
+        idx_name = f"{graph_name}_{label}_props_gin"
+        return sql.SQL("CREATE INDEX IF NOT EXISTS {idx} ON {schema}.{table} USING gin(properties)").format(
+            idx=sql.Identifier(idx_name),
+            schema=sql.Identifier(graph_name),
+            table=sql.Identifier(label),
+        )
+
+    @classmethod
+    def drop_gin_index(cls, graph_name: str, label: str) -> sql.SQL:
+        """Drop a GIN index on the properties column of a label table."""
+        idx_name = f"{graph_name}_{label}_props_gin"
+        return sql.SQL("DROP INDEX IF EXISTS {schema}.{idx}").format(
+            schema=sql.Identifier(graph_name),
+            idx=sql.Identifier(idx_name),
+        )
+
+    @classmethod
+    def list_indexes(cls, graph_name: str) -> sql.SQL:
+        """List all user-created indexes in the graph schema via pg_indexes."""
+        return sql.SQL(
+            "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = {graph_name} ORDER BY tablename, indexname"
+        ).format(graph_name=sql.Placeholder())
