@@ -1,7 +1,12 @@
 """Indexing and bulk write mixin for CypherGraphDB."""
 
+from collections.abc import Sequence
+from typing import Any
+
 from ..backend import BackendCapability
+from ..models import GraphEdge, GraphNode
 from ..statistics import IndexInfo
+from .bulk_normalize import normalize_edges_input, normalize_nodes_input
 
 
 class IndexingMixin:
@@ -88,88 +93,121 @@ class IndexingMixin:
         assert self._backend
         return self._backend.list_indexes(include_internal=include_internal)
 
-    def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
+    def bulk_create_nodes(
+        self,
+        rows: Sequence[dict] | Sequence[GraphNode],
+        label: str | None = None,
+        batch_size: int = 200,
+    ) -> int:
         """Create nodes in batches.
 
-        Uses UNWIND for efficient bulk insertion. The exact mechanism is
-        backend-specific (inline literals for AGE, parameterized for others).
+        Uses UNWIND for efficient bulk insertion. Accepts either plain
+        property dicts (traditional shape) or decorated ``GraphNode``
+        instances (typed shape). For typed input, the label is derived from
+        the instances' ``graph_info_`` and ``label`` becomes optional.
 
         Args:
-            label: Node label for all created nodes.
-            rows: List of property dicts, one per node.
+            rows: Either a list of property dicts or a list of ``GraphNode``
+                instances (all sharing the same label). An empty list is
+                accepted and returns 0.
+            label: Node label. Required when ``rows`` are dicts; optional for
+                typed input (if given, must match the instances' label).
             batch_size: Number of nodes per batch.
 
         Returns:
             Total number of nodes created.
 
         Examples:
-            ```python
-            with CypherGraphDB("age") as cdb:
-                cdb.connect()
+            Dict shape (backend-agnostic, no model required)::
 
                 nodes = [
                     {"id": "mod_1", "name": "main", "filepath": "main.py"},
                     {"id": "mod_2", "name": "utils", "filepath": "utils.py"},
                 ]
-                count = cdb.bulk_create_nodes("Module", nodes)
-                cdb.commit()
-                print(f"Created {count} nodes")
-            ```
+                cdb.bulk_create_nodes(nodes, label="Module")
+
+            Typed shape (requires ``@node()`` decorated class)::
+
+                modules = [Module(id="mod_1", name="main"), Module(id="mod_2", name="utils")]
+                cdb.bulk_create_nodes(modules)
         """
         assert self._backend
-        return self._backend.bulk_create_nodes(label, rows, batch_size)
+        derived_label, dict_rows = normalize_nodes_input(rows, label)
+        return self._backend.bulk_create_nodes(derived_label, dict_rows, batch_size)
 
     def bulk_create_edges(
         self,
-        label: str,
-        edges: list[dict],
+        edges: Sequence[dict] | Sequence[GraphEdge],
+        src_refs: Sequence[Any] | None = None,
+        dst_refs: Sequence[Any] | None = None,
+        label: str | None = None,
         src_label: str = "",
         dst_label: str = "",
-        src_key: str = "id",
-        dst_key: str = "id",
+        src_ref_prop: str = "id",
+        dst_ref_prop: str = "id",
         batch_size: int = 500,
     ) -> int:
-        """Create edges in batches by matching src/dst nodes on a key property.
+        """Create edges in batches by matching src/dst nodes on a reference property.
 
-        Each dict in edges must have "src" and "dst" keys whose values match
-        the src_key/dst_key properties on source/destination nodes.
+        Accepts either plain dicts (traditional shape) or decorated
+        ``GraphEdge`` instances (typed shape).
+
+        For dict shape, each entry must have ``"src"`` and ``"dst"`` keys
+        whose values match the ``src_ref_prop`` / ``dst_ref_prop`` properties
+        on source/destination nodes. Extra keys become edge properties.
+
+        For typed shape, the match values are supplied via the parallel
+        ``src_refs`` / ``dst_refs`` lists; the edge properties come from
+        ``flatten_properties()`` on each instance.
 
         Args:
-            label: Edge label for all created edges.
-            edges: List of dicts with at least "src" and "dst" keys.
+            edges: Either a list of dicts (each with ``src``/``dst`` + props)
+                or a list of ``GraphEdge`` instances (all sharing the same
+                label). An empty list is accepted and returns 0.
+            src_refs: Parallel list of source match values. Required for
+                typed input; must be None for dict input.
+            dst_refs: Parallel list of destination match values. Required for
+                typed input; must be None for dict input.
+            label: Edge label. Required for dicts; optional for typed input.
             src_label: Label of source nodes (empty string for any label).
             dst_label: Label of destination nodes (empty string for any label).
-            src_key: Property name on source nodes to match against "src".
-            dst_key: Property name on destination nodes to match against "dst".
+            src_ref_prop: Property name on source nodes to match against src refs.
+            dst_ref_prop: Property name on destination nodes to match against dst refs.
             batch_size: Number of edges per batch.
 
         Returns:
             Total number of edges created.
 
         Examples:
-            ```python
-            with CypherGraphDB("age") as cdb:
-                cdb.connect()
+            Dict shape::
 
                 edges = [
                     {"src": "class_Foo", "dst": "method_bar"},
                     {"src": "class_Foo", "dst": "method_baz"},
                 ]
-                count = cdb.bulk_create_edges(
-                    "HAS_METHOD", edges,
-                    src_label="Class", dst_label="Method",
+                cdb.bulk_create_edges(edges, label="HAS_METHOD",
+                                      src_label="Class", dst_label="Method")
+
+            Typed shape::
+
+                calls = [Calls(confidence="high"), Calls(confidence="medium")]
+                cdb.bulk_create_edges(
+                    calls,
+                    src_refs=["mod.foo.bar", "mod.foo.baz"],
+                    dst_refs=["mod.target.a", "mod.target.b"],
+                    src_label="Method", dst_label="Method",
+                    src_ref_prop="qualified_name",
+                    dst_ref_prop="qualified_name",
                 )
-                cdb.commit()
-                print(f"Created {count} edges")
-            ```
         """
         assert self._backend
+        derived_label, edge_dicts = normalize_edges_input(edges, src_refs, dst_refs, label)
         return self._backend.bulk_create_edges(
-            label,
-            edges,
+            derived_label,
+            edge_dicts,
             src_label=src_label,
             dst_label=dst_label,
-            src_key=src_key,
-            dst_key=dst_key,
+            src_ref_prop=src_ref_prop,
+            dst_ref_prop=dst_ref_prop,
             batch_size=batch_size,
         )

@@ -543,8 +543,8 @@ class MemgraphDB(CypherBackend):
         edges: list[dict],
         src_label: str = "",
         dst_label: str = "",
-        src_key: str = "id",
-        dst_key: str = "id",
+        src_ref_prop: str = "id",
+        dst_ref_prop: str = "id",
         batch_size: int = 500,
     ) -> int:
         """Create edges in batches using parameterized UNWIND.
@@ -557,8 +557,8 @@ class MemgraphDB(CypherBackend):
             edges: List of dicts with "src", "dst", and optional edge properties.
             src_label: Label of source nodes (empty string for any label).
             dst_label: Label of destination nodes (empty string for any label).
-            src_key: Property name on source nodes to match against "src".
-            dst_key: Property name on destination nodes to match against "dst".
+            src_ref_prop: Property name on source nodes to match against "src".
+            dst_ref_prop: Property name on destination nodes to match against "dst".
             batch_size: Number of edges per UNWIND batch.
 
         Returns:
@@ -568,9 +568,9 @@ class MemgraphDB(CypherBackend):
         if not edges:
             return 0
 
-        # Build MATCH patterns from label/key names (not user values -- safe to inline)
-        src_pat = f"(a:{src_label} {{{src_key}: e.src}})" if src_label else f"(a {{{src_key}: e.src}})"
-        dst_pat = f"(b:{dst_label} {{{dst_key}: e.dst}})" if dst_label else f"(b {{{dst_key}: e.dst}})"
+        # Build MATCH patterns from label/prop names (not user values -- safe to inline)
+        src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})" if src_label else f"(a {{{src_ref_prop}: e.src}})"
+        dst_pat = f"(b:{dst_label} {{{dst_ref_prop}: e.dst}})" if dst_label else f"(b {{{dst_ref_prop}: e.dst}})"
 
         # Collect edge property keys (beyond src/dst) from first row
         edge_prop_keys = [k for k in edges[0] if k not in ("src", "dst")]

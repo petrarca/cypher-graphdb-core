@@ -358,23 +358,23 @@ class CypherBackend(abc.ABC):
         edges: list[dict],
         src_label: str = "",
         dst_label: str = "",
-        src_key: str = "id",
-        dst_key: str = "id",
+        src_ref_prop: str = "id",
+        dst_ref_prop: str = "id",
         batch_size: int = 500,
     ) -> int:
-        """Create edges in batches by matching src/dst nodes on a key property.
+        """Create edges in batches by matching src/dst nodes on a reference property.
 
         Each dict in edges must have "src" and "dst" keys whose values match
-        the src_key/dst_key properties on source/destination nodes. Any
-        additional keys are set as properties on the created edge.
+        the src_ref_prop/dst_ref_prop properties on source/destination nodes.
+        Any additional keys are set as properties on the created edge.
 
         Args:
             label: Edge label for all created edges.
             edges: List of dicts with "src", "dst", and optional edge properties.
             src_label: Label of source nodes (empty string for any label).
             dst_label: Label of destination nodes (empty string for any label).
-            src_key: Property name on source nodes to match against "src".
-            dst_key: Property name on destination nodes to match against "dst".
+            src_ref_prop: Property name on source nodes to match against "src".
+            dst_ref_prop: Property name on destination nodes to match against "dst".
             batch_size: Number of edges per UNWIND batch.
 
         Returns:
