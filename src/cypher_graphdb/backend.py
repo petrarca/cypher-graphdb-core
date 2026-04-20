@@ -315,8 +315,12 @@ class CypherBackend(abc.ABC):
         """
         raise NotImplementedError(f"Backend {self.name} does not support drop_index")
 
-    def list_indexes(self) -> list[IndexInfo]:
+    def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
         """List all indexes on the current graph.
+
+        Args:
+            include_internal: If True, also return backend-internal indexes
+                (e.g. AGE's _pkey, _start_id_idx, _end_id_idx). Default False.
 
         Returns:
             List of IndexInfo objects describing each index.
@@ -361,11 +365,12 @@ class CypherBackend(abc.ABC):
         """Create edges in batches by matching src/dst nodes on a key property.
 
         Each dict in edges must have "src" and "dst" keys whose values match
-        the src_key/dst_key properties on source/destination nodes.
+        the src_key/dst_key properties on source/destination nodes. Any
+        additional keys are set as properties on the created edge.
 
         Args:
             label: Edge label for all created edges.
-            edges: List of dicts with at least "src" and "dst" keys.
+            edges: List of dicts with "src", "dst", and optional edge properties.
             src_label: Label of source nodes (empty string for any label).
             dst_label: Label of destination nodes (empty string for any label).
             src_key: Property name on source nodes to match against "src".

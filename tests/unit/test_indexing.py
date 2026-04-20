@@ -160,6 +160,10 @@ class TestDefaultBackendMethods:
         with pytest.raises(NotImplementedError, match="does not support list_indexes"):
             self.backend.list_indexes()
 
+    def test_list_indexes_include_internal_raises(self):
+        with pytest.raises(NotImplementedError, match="does not support list_indexes"):
+            self.backend.list_indexes(include_internal=True)
+
     def test_bulk_create_nodes_raises(self):
         with pytest.raises(NotImplementedError, match="does not support bulk_create_nodes"):
             self.backend.bulk_create_nodes("Label", [{"a": 1}])
@@ -183,6 +187,39 @@ class TestDefaultBackendMethods:
 
 
 # ── AGE _parse_index_def static method tests ──────────────────────────────
+
+
+class TestAGEIsInternalIndex:
+    """Test AGEGraphDB._is_age_internal_index classification."""
+
+    def setup_method(self):
+        from cypher_graphdb.backends.age.agegraphdb import AGEGraphDB
+
+        self.is_internal = AGEGraphDB._is_age_internal_index
+
+    def test_ag_label_edge_table(self):
+        assert self.is_internal("_ag_label_edge", "_ag_label_edge_pkey") is True
+
+    def test_ag_label_vertex_table(self):
+        assert self.is_internal("_ag_label_vertex", "_ag_label_vertex_pkey") is True
+
+    def test_pkey_on_node_label(self):
+        assert self.is_internal("Method", "Method_pkey") is True
+
+    def test_pkey_on_edge_label(self):
+        assert self.is_internal("CALLS", "CALLS_pkey") is True
+
+    def test_start_id_idx(self):
+        assert self.is_internal("CALLS", "CALLS_start_id_idx") is True
+
+    def test_end_id_idx(self):
+        assert self.is_internal("CALLS", "CALLS_end_id_idx") is True
+
+    def test_user_gin_index_is_not_internal(self):
+        assert self.is_internal("Method", "graph_Method_props_gin") is False
+
+    def test_user_unique_index_is_not_internal(self):
+        assert self.is_internal("User", "user_email_unique") is False
 
 
 class TestAGEParseIndexDef:

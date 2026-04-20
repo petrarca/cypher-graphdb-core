@@ -601,15 +601,20 @@ class AGEGraphDB(CypherBackend):
 
         logger.debug("GIN property index dropped for label '{}' in graph '{}'", label, graph_name)
 
-    def list_indexes(self) -> list[IndexInfo]:
+    def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
         """List all indexes on the current graph.
 
         Queries pg_indexes for the graph schema and returns normalized
-        IndexInfo objects. Filters out internal AGE indexes (primary keys
-        on _ag_label_* tables).
+        IndexInfo objects.
+
+        Args:
+            include_internal: If True, also return AGE-internal indexes:
+                _ag_label_* base table indexes, _pkey primary key indexes,
+                and _start_id_idx/_end_id_idx edge traversal indexes.
+                Useful for diagnostics. Default False.
 
         Returns:
-            List of IndexInfo objects for user-created indexes.
+            List of IndexInfo objects describing each index.
         """
         self._require_connection()
         graph_name = self._graph_name
@@ -621,18 +626,25 @@ class AGEGraphDB(CypherBackend):
             rows = cursor.fetchall()
 
         for tablename, indexname, indexdef in rows:
-            # Skip internal AGE tables
-            if tablename.startswith("_ag_label_"):
+            if not include_internal and self._is_age_internal_index(tablename, indexname):
                 continue
-            # Skip primary key indexes (auto-created by AGE)
-            if "_pkey" in indexname or "PRIMARY" in (indexdef or "").upper():
-                continue
-
             index_info = self._parse_index_def(tablename, indexname, indexdef or "")
             if index_info:
                 indexes.append(index_info)
 
         return indexes
+
+    @staticmethod
+    def _is_age_internal_index(tablename: str, indexname: str) -> bool:
+        """Return True if this index is AGE-internal (not user-created)."""
+        # Base label tables created by AGE itself
+        if tablename.startswith("_ag_label_"):
+            return True
+        # Primary key indexes -- auto-created on every label table
+        if indexname.endswith("_pkey"):
+            return True
+        # Edge traversal indexes -- auto-created on edge label tables
+        return bool(indexname.endswith("_start_id_idx") or indexname.endswith("_end_id_idx"))
 
     # ── Bulk write operations ─────────────────────────────────────────────
 
@@ -719,8 +731,18 @@ class AGEGraphDB(CypherBackend):
         self.execute_cypher(parsed)
 
     def _write_edge_batch(self, label: str, batch: list[dict], src_pat: str, dst_pat: str) -> None:
-        """Write one batch of edges via UNWIND MATCH CREATE."""
-        cypher = f"UNWIND {to_cypher_list(batch)} AS e MATCH {src_pat} MATCH {dst_pat} CREATE (a)-[:{label}]->(b)"
+        """Write one batch of edges via UNWIND MATCH CREATE.
+
+        Any keys in batch dicts beyond 'src' and 'dst' are set as edge properties.
+        """
+        # Detect extra property keys (beyond src/dst) from first row
+        edge_prop_keys = [k for k in batch[0] if k not in ("src", "dst")]
+        if edge_prop_keys:
+            set_clause = " SET " + ", ".join(f"r.{k} = e.{k}" for k in edge_prop_keys)
+        else:
+            set_clause = ""
+
+        cypher = f"UNWIND {to_cypher_list(batch)} AS e MATCH {src_pat} MATCH {dst_pat} CREATE (a)-[r:{label}]->(b){set_clause}"
 
         parsed = self.parse_cypher(cypher)
         self.execute_cypher(parsed)

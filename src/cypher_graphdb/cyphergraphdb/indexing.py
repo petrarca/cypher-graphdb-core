@@ -60,8 +60,12 @@ class IndexingMixin:
         assert self._backend
         self._backend.drop_index(label, *property_names)
 
-    def list_indexes(self) -> list[IndexInfo]:
+    def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
         """List all indexes on the current graph.
+
+        Args:
+            include_internal: If True, also return backend-internal indexes
+                (e.g. AGE's _pkey, _start_id_idx, _end_id_idx). Default False.
 
         Returns:
             List of IndexInfo objects describing each index.
@@ -71,14 +75,18 @@ class IndexingMixin:
             with CypherGraphDB("age") as cdb:
                 cdb.connect()
 
+                # User-created indexes only (default)
                 indexes = cdb.list_indexes()
                 for idx in indexes:
                     print(f"{idx.label}: {idx.index_type.value} "
                           f"({idx.property_names or 'all properties'})")
+
+                # All indexes including AGE internals (diagnostics)
+                all_indexes = cdb.list_indexes(include_internal=True)
             ```
         """
         assert self._backend
-        return self._backend.list_indexes()
+        return self._backend.list_indexes(include_internal=include_internal)
 
     def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
         """Create nodes in batches.
