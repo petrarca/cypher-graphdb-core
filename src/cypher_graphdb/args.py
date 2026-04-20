@@ -107,9 +107,16 @@ def create_main_app() -> typer.Typer:
             typer.Option(
                 "--model-path",
                 "-m",
-                help="Path to Python model module/directory to auto-load on startup.",
+                help="Path to Python model module/directory to auto-load on startup. Overrides CGDB_MODEL_PATH env var.",
             ),
         ] = None,
+        ignore_model_path: Annotated[
+            bool,
+            typer.Option(
+                "--ignore-model-path",
+                help="Ignore CGDB_MODEL_PATH env var (useful to suppress auto-loading).",
+            ),
+        ] = False,
     ) -> None:
         """CypherGraph CLI - A command-line interface for graph databases."""
         # Only run interactive CLI if no subcommand was invoked
@@ -134,6 +141,7 @@ def create_main_app() -> typer.Typer:
             "verbose": verbose,
             "no_progress": no_progress,
             "model_path": model_path,
+            "ignore_model_path": ignore_model_path,
         }
 
         # Filter out None and False values

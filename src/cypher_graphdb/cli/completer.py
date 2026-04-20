@@ -10,7 +10,8 @@ from typing import Any
 
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
+from pydantic_core import PydanticUndefined
 
 import cypher_graphdb.utils as utils
 from cypher_graphdb.models import GraphObject, GraphObjectType
@@ -26,8 +27,8 @@ _FIND_WORD_RE = re.compile(r"([a-zA-Z0-9_\$]+|[^a-zA-Z0-9_\s]+)")
 class CompleterConfig(BaseModel):
     """Configuration class for CLI completion settings."""
 
-    _cmd_props: dict[str, Field] = {}
-    _parse_result: PromptParserCmd
+    _cmd_props: dict[str, Field] = PrivateAttr(default_factory=dict)
+    _parse_result: PromptParserCmd = PrivateAttr()
 
     @property
     def parse_result(self):
@@ -54,7 +55,7 @@ class CompleterConfig(BaseModel):
 
         if prop_type is not None:
             field.annotation = prop_type
-        if default is not None:
+        if default is not PydanticUndefined and default is not None:
             field.default = default
 
         if completer is not None:
@@ -124,7 +125,7 @@ class PropsCompleterConfig(LabelPropsCompleterConfig):
 class ListProviderConfig(CompleterConfig):
     """Configuration for completion using list providers."""
 
-    list_provider: Callable[[None], tuple[str]] | list[str]
+    list_provider: Callable[[], tuple[str]] | list[str]
 
 
 class CommandLineCompleter(Completer):
@@ -196,27 +197,31 @@ class CommandLineCompleter(Completer):
         if isinstance(spec, list):
             return ListProviderConfig(parse_result, list_provider=spec)
 
-        # Provider shorthand: completion = "graphs" / "variables" / "config"
-        if isinstance(spec, str) and spec in self._PROVIDER_MAP:
-            return ListProviderConfig(parse_result, list_provider=self._PROVIDER_MAP[spec](self._providers))
-
-        # Simple label+props: completion = "label_props"
-        if spec == "label_props":
-            return LabelPropsCompleterConfig(parse_result)
-
-        # Label only: completion = "label_only"
-        if spec == "label_only":
-            return LabelCompleterConfig(parse_result)
-
-        # Props only: completion = "props_only"
-        if spec == "props_only":
-            return PropsCompleterConfig(parse_result)
-
         # Dict with fine-grained control
         if isinstance(spec, dict):
             return self._resolve_dict_completion(spec, parse_result)
 
+        # String shorthands -- dispatch via map to avoid fragile if-chain
+        if isinstance(spec, str):
+            factory = self._get_string_completion_factory(spec)
+            return factory(parse_result) if factory else None
+
         return None
+
+    def _get_string_completion_factory(self, spec: str):
+        """Return a factory function for the given string completion shorthand."""
+        # Provider-backed list completions
+        if spec in self._PROVIDER_MAP:
+            provider_fn = self._PROVIDER_MAP[spec](self._providers)
+            return lambda pr: ListProviderConfig(pr, list_provider=provider_fn)
+
+        # Type-based completions
+        type_map = {
+            "label_props": lambda pr: LabelPropsCompleterConfig(pr),
+            "label_only": lambda pr: LabelCompleterConfig(pr),
+            "props_only": lambda pr: PropsCompleterConfig(pr),
+        }
+        return type_map.get(spec)
 
     def _resolve_dict_completion(self, spec: dict, parse_result: PromptParserCmd) -> CompleterConfig | None:
         """Build a CompleterConfig from a dict-style completion spec."""
@@ -262,7 +267,8 @@ class CommandLineCompleter(Completer):
         word, stopchar, exclude_labels = self._resolve_type_names(config.parse_result, document, True)
 
         if config.with_label and (stopchar in ("", " ") or exclude_labels is not None):
-            # reset property cache, only valid for prior label or object reference
+            # Reset property cache -- it is only valid for the currently selected label.
+            # When the user is still typing/changing the label, cached props are stale.
             self._props_cache = None
 
             if config.label_from_model:
@@ -326,6 +332,7 @@ class CommandLineCompleter(Completer):
             return
 
         if self._props_cache is None:
+            # _resolve_props populates self._props_cache as a side effect
             self._resolve_props(name, config)
 
         if prop_info := self._props_cache.get(name):
@@ -443,30 +450,40 @@ class CommandLineCompleter(Completer):
             bracket_pos = self._find_open_bracket(document, cmd_len, None)
             if bracket_pos != -1:
                 bracket_content = document.text[bracket_pos + 1 : document.cursor_position - len(word) - 1]
-                exclude_types = bracket_content if bracket_content else []
+                # Split into list so membership test works correctly
+                exclude_types = [t.strip() for t in bracket_content.split(",") if t.strip()] if bracket_content else []
 
         return word, stopchar, exclude_types
 
     @staticmethod
     def _extract_word_and_stopchar(user_text: str) -> tuple[str, str]:
-        """Extract the current word and preceding stop character from user input text."""
-        stopchars = (",", "=", "(")
-        stripped = user_text.rstrip()
+        """Extract the current word and preceding stop character from user input text.
 
-        if not stripped:
+        Returns:
+            (word, stopchar) where stopchar is one of: "," "=" "(" " " ""
+            A stopchar of " " means the cursor is after whitespace (label mode).
+            A stopchar of "" means the word starts at the beginning of user input.
+        """
+        stopchars = (",", "=", "(")
+
+        # Trailing space (or empty input) means we're in label/arg mode
+        if not user_text or user_text[-1] == " ":
+            # Extract any partial word before trailing space
+            stripped = user_text.rstrip()
+            if not stripped:
+                return "", " "
+            # Check if the character before trailing space is a stopchar
+            if stripped[-1] in stopchars:
+                return "", stripped[-1]
             return "", " "
 
-        # Check if last char is a stop character
-        if stripped[-1] in stopchars:
-            return "", stripped[-1]
-
-        # Walk backwards to find the word boundary
-        i = len(stripped) - 1
-        while i >= 0 and stripped[i] not in (" ", *stopchars, '"', "'"):
+        # No trailing space -- extract current word
+        i = len(user_text) - 1
+        while i >= 0 and user_text[i] not in (" ", *stopchars, '"', "'"):
             i -= 1
 
-        word = stripped[i + 1 :]
-        stopchar = stripped[i] if i >= 0 and stripped[i] in stopchars else ""
+        word = user_text[i + 1 :]
+        stopchar = user_text[i] if i >= 0 and user_text[i] in stopchars else ""
 
         return word, stopchar
 
@@ -482,9 +499,9 @@ class CommandLineCompleter(Completer):
             else:
                 result[tokens[0]] = cmd
 
-        # sort by token alphabetically but then reversed by length
-        # to match specialized command before generic ones like 'update node' before 'update'
-        return dict(sorted(result.items(), key=lambda x: (x[0], -len(x), x)))
+        # sort alphabetically, then by descending token length so specialized
+        # commands ("update node") match before generic ones ("update")
+        return dict(sorted(result.items(), key=lambda item: (item[0], -len(item[0]))))
 
     def _text_before_cursor_to_sep(self, document: Document) -> tuple[str, str]:
         if pos := document.find_backwards("||"):
@@ -494,28 +511,6 @@ class CommandLineCompleter(Completer):
             return document.text[pos + 1 : document.cursor_position].strip(), "|"
 
         return document.text_before_cursor.strip(), ""
-
-    def _get_word_before_cursor(self, document: Document, stopchars: tuple[str] | None) -> tuple[str, str]:
-        if stopchars is None:
-            stopchars = ()
-
-        if (c := document.char_before_cursor) in stopchars:
-            return "", c
-
-        val = document.get_word_before_cursor(pattern=_FIND_WORD_RE)
-
-        if (pos := document.cursor_position - len(val) - 1) == -1:
-            return (
-                None,
-                "",
-            )
-
-        while pos >= 0:
-            if document.text[pos] in (" ", '"', "'"):
-                pos -= 1
-                continue
-
-            return (val, document.text[pos]) if document.text[pos] in stopchars else (val, "")
 
     def _get_prop_name(self, word: str, document: Document) -> str:
         pos = document.cursor_position - len(word) - 1
@@ -533,6 +528,11 @@ class CommandLineCompleter(Completer):
         return document.text[pos + 1 : document.cursor_position - len(word) - 1]
 
     def _find_open_bracket(self, document: Document, start_pos: int | None, end_pos: int | None) -> int:
+        """Find the position of the nearest unmatched opening bracket scanning backwards.
+
+        Note: does not track bracket depth -- the first closing bracket encountered
+        terminates the search. Nested brackets within command arguments are not supported.
+        """
         if start_pos is None:
             start_pos = 0
 

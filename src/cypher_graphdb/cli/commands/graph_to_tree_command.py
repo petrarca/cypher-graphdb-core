@@ -1,13 +1,17 @@
 """Graph To Tree Command - Converts graph to tree structure."""
 
+from typing import TYPE_CHECKING
+
 import rich
 
 import cypher_graphdb.config as config
 import cypher_graphdb.graphops as gops
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
 from cypher_graphdb.models import Graph
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class GraphToTreeCommand(BaseCommand):

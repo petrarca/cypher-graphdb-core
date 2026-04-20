@@ -1,11 +1,15 @@
 """Create Edge Command - Creates new graph edges."""
 
+from typing import TYPE_CHECKING
+
 import rich
 
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
 from cypher_graphdb.models import GraphObjectType
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class CreateEdgeCommand(BaseCommand):
@@ -56,4 +60,4 @@ class CreateEdgeCommand(BaseCommand):
         if not (result := self.graphdb.create_edge(start_node, end_node, parsed_cmd.args, parsed_cmd.kwargs)):
             return False
 
-        return self._cli_runtime.post_processing_cmd(parsed_cmd, result)
+        return self._post_processing_cmd(parsed_cmd, result)

@@ -23,6 +23,7 @@ from cypher_graphdb.cli.promptparser import PromptParser, PromptParserCmd, Promp
 from cypher_graphdb.cli.provider import CLIProviders
 from cypher_graphdb.cli.renderer import ResultRenderer
 from cypher_graphdb.cli.runtime import CLIRuntime
+from cypher_graphdb.cli.settings import get_cli_settings
 from cypher_graphdb.settings import get_settings
 
 
@@ -35,6 +36,7 @@ class CypherGraphCLI(CLIRuntime):
         self._autoconfirm = False
         self._graphdb = CLIGraphDB(self._renderer)
         self.show_banner = show_banner
+        self._model_path: str | None = None  # Set in run() from CLI args or CLISettings
 
         self._prompt_parser = self._create_prompt_parser()
         self._last_cypher_cmd = None
@@ -100,7 +102,14 @@ class CypherGraphCLI(CLIRuntime):
 
         """
         self._resolve_cmdline_args(options)
-        self._model_path = options.get("model_path") or os.environ.get("CGDB_MODEL_PATH")
+
+        # Resolve model_path: CLI arg takes priority, then CGDB_MODEL_PATH from CLISettings,
+        # unless --ignore-model-path was passed.
+        if options.get("ignore_model_path"):
+            self._model_path = None
+        else:
+            self._model_path = options.get("model_path") or get_cli_settings().model_path
+
         logger.debug("cmdline_options:\n{}", options)
 
         # Parse execution mode options
@@ -172,15 +181,26 @@ class CypherGraphCLI(CLIRuntime):
             self._auto_load_models(self._model_path)
 
     def _auto_load_models(self, model_path: str):
-        """Auto-load Python models from the given path on startup."""
-        module_name = os.path.basename(model_path)
-        path = os.path.dirname(model_path) if os.path.isfile(model_path) else model_path
+        """Auto-load Python models from the given file or directory path on startup."""
+        path = os.path.normpath(model_path)
 
-        loaded = self._graphdb.db.model_provider.try_to_load_models(module_name, path)
-        if loaded:
-            logger.info("Auto-loaded {} model(s) from '{}'", len(loaded), model_path)
+        if os.path.isfile(path):
+            # Single file: derive module name without extension
+            module_name = os.path.splitext(os.path.basename(path))[0]
+            parent_path = os.path.dirname(path)
+        elif os.path.isdir(path):
+            # Directory: pass None as module_name, let try_to_load_models scan it
+            module_name = None
+            parent_path = path
         else:
-            logger.warning("No models found at '{}'", model_path)
+            logger.warning("Model path does not exist: '{}'", path)
+            return
+
+        loaded = self._graphdb.db.model_provider.try_to_load_models(module_name, parent_path if module_name else path)
+        if loaded:
+            logger.info("Auto-loaded {} model(s) from '{}'", len(loaded), path)
+        else:
+            logger.warning("No models found at '{}'", path)
 
     def _run_interactive_mode(self):
         """Run the CLI in interactive mode with prompt."""
@@ -249,7 +269,7 @@ class CypherGraphCLI(CLIRuntime):
         for cmd in parts:
             cmd = cmd.strip()
 
-            logger.debug("Exec command: {}", cmdline)
+            logger.debug("Exec command: {}", cmd)
 
             if not self._parse_and_execute(cmd, True):
                 break
@@ -276,22 +296,13 @@ class CypherGraphCLI(CLIRuntime):
 
         executor = FileExecutor(self)
 
-        # Default behavior: progress=true, verbose=false
-        # --verbose: enables verbose
-        # --no-progress: disables progress
-        # Both flags can be used independently
-
-        # Use the provided flag values directly
-        show_progress = progress
-        show_verbose = verbose
-
         # Always show summary if either verbose or progress is enabled
-        show_summary = show_progress or show_verbose
+        show_summary = progress or verbose
 
         executor.execute(
             file,
-            show_progress=show_progress,
-            verbose=show_verbose,
+            show_progress=progress,
+            verbose=verbose,
             show_summary=show_summary,
         )
 
@@ -337,14 +348,15 @@ class CypherGraphCLI(CLIRuntime):
 
         action = parsed_cmd.action
 
-        # Check for dynamic prefixes (update_*, delete_*)
+        # Check for dynamic prefixes (update_*, delete_*) -- these commands
+        # handle "update", "update node", "update edge" via a single handler
         if action.startswith("update"):
-            update_command = self._command_manager.get_instance("update_graphobj")
+            update_command = self._command_manager.get_instance("update")
             if update_command:
                 return update_command.execute(parsed_cmd)
 
         if action.startswith("delete"):
-            delete_command = self._command_manager.get_instance("delete_graphobj")
+            delete_command = self._command_manager.get_instance("delete")
             if delete_command:
                 return delete_command.execute(parsed_cmd)
 
@@ -467,10 +479,10 @@ class CypherGraphCLI(CLIRuntime):
         """Determine auto-confirm behavior.
 
         Rules:
-        * Interactive prompt (tty, no -e/-f): never autoconfirm.
+        * Interactive prompt (tty, no -e, no -f): never autoconfirm.
         * File execution (-f) with --yes: autoconfirm.
         * File execution (-f) without --yes: ask for confirmation.
-        * Piped stdin (non-tty, no -e): autoconfirm.
+        * Piped stdin (non-tty, no -e, no -f): autoconfirm.
         * Single execute command (-e): only autoconfirm with --yes.
         """
         if self._with_prompt:
@@ -527,6 +539,7 @@ class CypherGraphCLI(CLIRuntime):
                 if value and value.lower() in ("table", "json", "list"):
                     self._renderer.default_format = value
                     return True
+                return False
             case "exec_stats":
                 if isinstance(value, bool):
                     self._exec_stats = value

@@ -1,12 +1,15 @@
 """Load Models Command - Loads model modules."""
 
 import sys
+from typing import TYPE_CHECKING
 
 import rich
 
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class LoadModelsCommand(BaseCommand):

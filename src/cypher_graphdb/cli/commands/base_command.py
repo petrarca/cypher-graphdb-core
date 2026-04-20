@@ -27,22 +27,32 @@ class BaseCommand(ABC):
     command_map_entry: dict[str, Any] | None = None
 
     # Optional: Declarative completion spec for command arguments.
-    # Interpreted by CommandLineCompleter. Supported types:
-    #   - "label_props"              -- complete labels + properties (fetch/create)
-    #   - "label_only"               -- complete labels only (schema, models)
-    #   - "graphs"                   -- complete from graph list
-    #   - "variables"                -- complete from variable names
-    #   - "config"                   -- complete from config properties
-    #   - ["val1", "val2"]           -- complete from static list
-    #   - dict with keys:            -- fine-grained control:
-    #       type: "label_props" | "label_only" | "list_provider"
-    #       complete_mandatory_props: bool
-    #       label_from_model: bool
-    #       resolve_model_props: bool
-    #       default_from_values: bool
-    #       provider: str ("graphs", "variables", "config")
-    #       items: list[str]
-    #   - None                       -- no argument completion (default)
+    # Interpreted by CommandLineCompleter. Supported values:
+    #
+    # Shorthand strings:
+    #   "label_props"   -- complete labels + properties (fetch, create node/edge)
+    #   "label_only"    -- complete labels only (schema, models)
+    #   "props_only"    -- complete properties only (search)
+    #   "graphs"        -- complete from live graph list
+    #   "variables"     -- complete from current variable names
+    #   "config"        -- complete from config property names
+    #
+    # Static list:
+    #   ["val1", "val2"] -- complete from a fixed list of strings
+    #
+    # Dict for fine-grained control:
+    #   {
+    #     "type": "label_props" | "label_only" | "props_only",
+    #     "complete_mandatory_props": bool,   # show mandatory props immediately
+    #     "label_from_model": bool,           # use model registry for labels
+    #     "resolve_model_props": bool,        # resolve props from model fields
+    #     "default_from_values": bool,        # prefill defaults from graph values
+    #     "extra_props": list[str],           # additional property names to offer
+    #                                         # use "from_|to_" for aliased props
+    #                                         # use "edge_label_" for edge label picker
+    #   }
+    #
+    # None (default) -- no argument completion
     completion: str | list[str] | dict[str, Any] | None = None
 
     @classmethod
