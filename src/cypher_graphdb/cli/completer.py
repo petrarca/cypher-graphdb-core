@@ -46,7 +46,8 @@ class CompleterConfig(BaseModel):
     def update_cmd_property(
         self, name: str, prop_type: type = str, default: Any = None, completer: Callable = None, ctx: Any = None
     ) -> Field:
-        if field := self._cmd_props.get(name, None) is None:
+        field = self._cmd_props.get(name)
+        if field is None:
             field = Field()
             self._cmd_props[name] = field
 
@@ -217,6 +218,7 @@ class CommandLineCompleter(Completer):
             "graph_exists": lambda parse_result: ListProviderConfig(
                 parse_result, list_provider=self._providers.graphdb_provider.get_graphs
             ),
+            "dump_indexes": lambda parse_result: ListProviderConfig(parse_result, list_provider=["all"]),
             "get": lambda parse_result: ListProviderConfig(parse_result, list_provider=self._providers.var_provider.get_varnames),
             "set": lambda parse_result: ListProviderConfig(parse_result, list_provider=self._providers.var_provider.get_varnames),
             "config": lambda parse_result: ListProviderConfig(
@@ -360,7 +362,7 @@ class CommandLineCompleter(Completer):
             yield Completion(" ")
 
     def _prop_completion_text(self, name: str, prop_info: Field) -> str:
-        quotes = '""' if isinstance(prop_info.annotation, str) else ""
+        quotes = '""' if prop_info.annotation is str else ""
         return f"{name}={quotes}"
 
     def _prop_completion_display(self, name: str, prop_info: Field) -> str:
@@ -448,7 +450,7 @@ class CommandLineCompleter(Completer):
                 result[tokens[0]] = cmd
 
         # sort by token alphabetically but then reversed by length
-        # to match specilized command before generic ones like 'update node' before 'update'
+        # to match specialized command before generic ones like 'update node' before 'update'
         return dict(sorted(result.items(), key=lambda x: (x[0], -len(x), x)))
 
     def _text_before_cursor_to_sep(self, document: Document) -> tuple[str, str]:
@@ -463,8 +465,6 @@ class CommandLineCompleter(Completer):
     def _get_word_before_cursor(self, document: Document, stopchars: tuple[str] | None) -> tuple[str, str]:
         if stopchars is None:
             stopchars = ()
-
-        # TODO: Remove        if (c := document.char_before_cursor) in (" ",) + stopchars:
 
         if (c := document.char_before_cursor) in stopchars:
             return "", c
