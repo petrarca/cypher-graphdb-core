@@ -389,7 +389,8 @@ class AGEGraphDB(CypherBackend):
             if row[0].startswith("_ag_label_"):
                 continue
 
-            (count,), _, _ = self._execute_sql(SQLBuilder.resolve_label_count(row[2]), True, True)
+            count_result, _, _ = self._execute_sql(SQLBuilder.resolve_label_count(row[2]), True, True)
+            count = count_result[0][0] if count_result else 0
 
             label_statistics = LabelStatistics(
                 graph_name=self.graph_name,
