@@ -1,8 +1,12 @@
 """Last Result Operation Command - Operations on last result."""
 
+from typing import TYPE_CHECKING
+
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class LastResultOpCommand(BaseCommand):

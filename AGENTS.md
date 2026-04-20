@@ -150,7 +150,17 @@ from cypher_graphdb.cli.commands.my_command import MyCommand
 registry.register(MyCommand)
 ```
 
-3. If tab-completion is needed, add entry to `cli/completer.py`.
+3. Add tab-completion via the `completion` class attribute (no completer.py changes needed):
+```python
+# Static list
+completion = ["all", "verbose"]
+# Dynamic provider
+completion = "graphs"       # or "variables", "config"
+# Label+property completion
+completion = "label_props"  # or "label_only"
+# Fine-grained control
+completion = {"type": "label_props", "complete_mandatory_props": True}
+```
 4. Update `cli/help/_overview.md` with the new command.
 
 ## Backend Architecture
@@ -205,6 +215,16 @@ McCabe max-complexity = 10. Refactor complex functions into helpers.
 - Commit prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`
 - Short commit messages, max two sentences
 - Current feature branch: `feat/bulk-write-and-property-indexes`
+
+## Documentation
+
+Docs use mkdocs with the Material theme. `docs/reference/` is auto-generated from
+docstrings via `scripts/gen_ref_nav.py` + `mkdocstrings`. Manual pages live under
+`docs/usage/` (plain markdown). To add a new usage guide:
+
+1. Create `docs/usage/my-guide.md`
+2. Add it to `nav:` in `mkdocs.yml` under the `Usage:` section
+3. Preview with `task docs:serve` (if configured) or `mkdocs serve`
 
 ## Smoke Testing
 

@@ -1,12 +1,15 @@
 """Load Models Command - Loads model modules."""
 
 import sys
+from typing import TYPE_CHECKING
 
 import rich
 
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class LoadModelsCommand(BaseCommand):
@@ -38,7 +41,7 @@ class LoadModelsCommand(BaseCommand):
         module_name = parsed_cmd.get_arg(0)
         path = parsed_cmd.get_kwarg("path")
 
-        loaded_models, path = self.graphdb.db.model_provider.try_to_load_models(module_name, path)
+        loaded_models = self.graphdb.db.model_provider.try_to_load_models(module_name, path)
 
         if loaded_models is None:
             rich.print(
@@ -48,10 +51,10 @@ class LoadModelsCommand(BaseCommand):
             return False
 
         if loaded_models:
-            rich.print(f"[blue]Loaded models from '{path}'")
+            rich.print(f"[blue]Loaded {len(loaded_models)} model(s)")
             for v in loaded_models:
                 rich.print(f"[blue]  {v}")
         else:
-            rich.print(f"[yellow]No new models loaded from '{path}'")
+            rich.print(f"[yellow]No new models loaded from '{module_name}'")
 
         return True

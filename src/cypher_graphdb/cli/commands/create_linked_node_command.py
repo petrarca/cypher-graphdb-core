@@ -1,14 +1,17 @@
 """Create Linked Node Command - Creates connected graph nodes."""
 
 import sys
+from typing import TYPE_CHECKING
 
 import rich
 
 import cypher_graphdb.config as config
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.cli.runtime import CLIRuntime
 from cypher_graphdb.models import GraphObjectType
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cli.runtime import CLIRuntime
 
 
 class CreateLinkedNodeCommand(BaseCommand):
@@ -20,6 +23,7 @@ class CreateLinkedNodeCommand(BaseCommand):
     command_map_entry = BaseCommand.create_command_map_entry(
         pattern="[[create_linked_node", tokens=["create linked node"], object_type=GraphObjectType.NODE
     )
+    completion = {"type": "label_props", "complete_mandatory_props": True, "extra_props": ["from_|to_", "edge_label_"]}
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""
@@ -81,4 +85,4 @@ class CreateLinkedNodeCommand(BaseCommand):
             parsed_cmd.kwargs,
         )
 
-        return self._cli_runtime.post_processing_cmd(parsed_cmd, result)
+        return self._post_processing_cmd(parsed_cmd, result)

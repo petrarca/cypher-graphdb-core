@@ -1,60 +1,44 @@
-"""Main entry point for the cypher-graphdb CLI application.
-
-This module handles application initialization and delegates to the CLI app
-with parsed options from the argument parser.
-"""
+"""Main entry point for the cypher-graphdb CLI application."""
 
 import sys
-from typing import Any
 
 from loguru import logger
 
 import cypher_graphdb
 from cypher_graphdb.cli.app import CypherGraphCLI
+from cypher_graphdb.cli.settings import get_cli_settings
 
 
-def main(show_banner: bool = True, parsed_options: dict[str, Any] | None = None) -> None:
+def main(show_banner: bool = True) -> None:
     """Main entry point for the cypher-graphdb CLI application.
 
-    This function accepts pre-parsed options and passes them to the CLI application.
+    Reads all configuration from CLISettings (already populated from CLI args
+    by args.py before this function is called).
 
     Args:
-        show_banner (bool): If True, display the banner at the start of the CLI.
-        parsed_options (dict[str, Any]): Pre-parsed options from the CLI argument parser.
+        show_banner: If True, display the banner at the start of the CLI.
     """
-
-    # Use the provided parsed options
-    options = parsed_options or {}
+    cli_settings = get_cli_settings()
 
     # Enable logging for cypher_graphdb
     logger.enable(cypher_graphdb.__name__)
+    logger.remove()
+    logger.add(sys.stderr, level=cli_settings.log_level.upper())
 
-    # Configure log level if specified
-    if loglevel := options.get("log_level"):
-        logger.remove()
-        logger.add(sys.stderr, level=loglevel.upper())
-
-    # Create and run the CLI application
     cli_app = CypherGraphCLI(show_banner=show_banner)
 
     try:
-        if loglevel and loglevel.upper() in ("TRACE", "DEBUG"):
-            cli_app.run_catched(options)
+        if cli_settings.log_level.upper() in ("TRACE", "DEBUG"):
+            cli_app.run_catched()
         else:
-            cli_app.run(options)
+            cli_app.run()
     except Exception as e:
-        logger.error(f"CLI application failed: {e}")
+        logger.error("CLI application failed: {}", e)
         sys.exit(1)
 
 
 def run(show_banner: bool = True) -> None:
-    """Console script entry point for the cypher-graphdb CLI.
-
-    This function is called when the 'cypher-graphdb' command is executed.
-
-    Args:
-        show_banner (bool): If True, display the banner at the start of the CLI.
-    """
+    """Console script entry point for the cypher-graphdb CLI."""
     main(show_banner=show_banner)
 
 

@@ -23,7 +23,7 @@ from cypher_graphdb.cli.promptparser import PromptParser, PromptParserCmd, Promp
 from cypher_graphdb.cli.provider import CLIProviders
 from cypher_graphdb.cli.renderer import ResultRenderer
 from cypher_graphdb.cli.runtime import CLIRuntime
-from cypher_graphdb.settings import get_settings
+from cypher_graphdb.cli.settings import get_cli_settings
 
 
 class CypherGraphCLI(CLIRuntime):
@@ -35,6 +35,7 @@ class CypherGraphCLI(CLIRuntime):
         self._autoconfirm = False
         self._graphdb = CLIGraphDB(self._renderer)
         self.show_banner = show_banner
+        self._model_path: str | None = None  # Set in run() from CLI args or CLISettings
 
         self._prompt_parser = self._create_prompt_parser()
         self._last_cypher_cmd = None
@@ -82,34 +83,26 @@ class CypherGraphCLI(CLIRuntime):
         return self
 
     @logger.catch
-    def run_catched(self, options: dict[str, Any]) -> None:
+    def run_catched(self) -> None:
         """Main entry point for the CLI. Runtime exceptions are caught by loguru.
         This entry point should only be used for diagnostic purposes.
-
-        Args:
-            options (dict[str, Any]): Parsed command line options.
-
         """
-        self.run(options)
+        self.run()
 
-    def run(self, options: dict[str, Any]) -> None:
-        """Main entry point for the CLI.
+    def run(self) -> None:
+        """Main entry point for the CLI. Reads all configuration from CLISettings."""
+        s = get_cli_settings()
 
-        Args:
-            options (dict[str, Any]): Parsed command line options.
+        self._apply_cli_settings(s)
+        logger.debug("cli_settings: {}", s)
 
-        """
-        self._resolve_cmdline_args(options)
-        logger.debug("cmdline_options:\n{}", options)
-
-        # Parse execution mode options
-        exec_cmd, file_cmd, verbose, progress = self._parse_execution_options(options)
+        exec_cmd, file_cmd, verbose, progress = self._parse_execution_options(s)
 
         # Determine if we're in interactive mode
         self._with_prompt = sys.stdin.isatty() and not (exec_cmd or file_cmd)
 
         # Set autoconfirm and output suppression
-        self._set_autoconfirm(self._determine_autoconfirm(exec_cmd, file_cmd, options))
+        self._set_autoconfirm(self._determine_autoconfirm(exec_cmd, file_cmd, s))
         self._renderer.suppress_output = self._determine_suppress_output(exec_cmd, file_cmd)
 
         # Show banner and connect to database
@@ -128,23 +121,26 @@ class CypherGraphCLI(CLIRuntime):
         else:
             self._run_non_interactive_mode(exec_cmd, file_cmd, verbose, progress)
 
-    def _parse_execution_options(self, options: dict[str, Any]) -> tuple[str | None, str | None, bool, bool]:
-        """Parse execution-related options.
+    def _apply_cli_settings(self, s) -> None:
+        """Apply CLISettings: output format, model path, and output suppression."""
+        if s.json_format:
+            self._config.set_properties({"output_format": "json"})
+        elif s.table_format:
+            self._config.set_properties({"output_format": "table"})
+
+        # Resolve model path (--ignore-model-path suppresses env var)
+        self._model_path = None if s.ignore_model_path else s.model_path
+
+    def _parse_execution_options(self, s) -> tuple[str | None, str | None, bool, bool]:
+        """Parse execution-related options from CLISettings.
 
         Returns:
             Tuple of (exec_cmd, file_cmd, verbose, progress)
         """
-        exec_cmd = options.get("execute")
-        if exec_cmd:
-            exec_cmd = exec_cmd.strip()
-
-        file_cmd = options.get("file")
-        if file_cmd:
-            file_cmd = file_cmd.strip()
-
-        verbose = options.get("verbose", False)
-        no_progress = options.get("no_progress", False)
-        progress = not no_progress
+        exec_cmd = s.execute.strip() if s.execute else None
+        file_cmd = s.file.strip() if s.file else None
+        verbose = s.verbose
+        progress = not s.no_progress
 
         # Convenience: allow -e <file> to behave like -f <file>
         if exec_cmd and not file_cmd and os.path.isfile(exec_cmd):
@@ -165,6 +161,32 @@ class CypherGraphCLI(CLIRuntime):
                 "output_format",
                 "table" if self._with_prompt else "json",
             )
+
+        # Auto-load models if --model-path was provided
+        if self._model_path:
+            self._auto_load_models(self._model_path)
+
+    def _auto_load_models(self, model_path: str):
+        """Auto-load Python models from the given file or directory path on startup."""
+        path = os.path.normpath(model_path)
+
+        if os.path.isfile(path):
+            # Single file: derive module name without extension
+            module_name = os.path.splitext(os.path.basename(path))[0]
+            parent_path = os.path.dirname(path)
+        elif os.path.isdir(path):
+            # Directory: pass None as module_name, let try_to_load_models scan it
+            module_name = None
+            parent_path = path
+        else:
+            logger.warning("Model path does not exist: '{}'", path)
+            return
+
+        loaded = self._graphdb.db.model_provider.try_to_load_models(module_name, parent_path if module_name else path)
+        if loaded:
+            logger.info("Auto-loaded {} model(s) from '{}'", len(loaded), path)
+        else:
+            logger.warning("No models found at '{}'", path)
 
     def _run_interactive_mode(self):
         """Run the CLI in interactive mode with prompt."""
@@ -233,7 +255,7 @@ class CypherGraphCLI(CLIRuntime):
         for cmd in parts:
             cmd = cmd.strip()
 
-            logger.debug("Exec command: {}", cmdline)
+            logger.debug("Exec command: {}", cmd)
 
             if not self._parse_and_execute(cmd, True):
                 break
@@ -260,22 +282,13 @@ class CypherGraphCLI(CLIRuntime):
 
         executor = FileExecutor(self)
 
-        # Default behavior: progress=true, verbose=false
-        # --verbose: enables verbose
-        # --no-progress: disables progress
-        # Both flags can be used independently
-
-        # Use the provided flag values directly
-        show_progress = progress
-        show_verbose = verbose
-
         # Always show summary if either verbose or progress is enabled
-        show_summary = show_progress or show_verbose
+        show_summary = progress or verbose
 
         executor.execute(
             file,
-            show_progress=show_progress,
-            verbose=show_verbose,
+            show_progress=progress,
+            verbose=verbose,
             show_summary=show_summary,
         )
 
@@ -321,14 +334,15 @@ class CypherGraphCLI(CLIRuntime):
 
         action = parsed_cmd.action
 
-        # Check for dynamic prefixes (update_*, delete_*)
+        # Check for dynamic prefixes (update_*, delete_*) -- these commands
+        # handle "update", "update node", "update edge" via a single handler
         if action.startswith("update"):
-            update_command = self._command_manager.get_instance("update_graphobj")
+            update_command = self._command_manager.get_instance("update")
             if update_command:
                 return update_command.execute(parsed_cmd)
 
         if action.startswith("delete"):
-            delete_command = self._command_manager.get_instance("delete_graphobj")
+            delete_command = self._command_manager.get_instance("delete")
             if delete_command:
                 return delete_command.execute(parsed_cmd)
 
@@ -339,35 +353,6 @@ class CypherGraphCLI(CLIRuntime):
 
         # Unknown command
         raise RuntimeError(f"Action {action} not implemented!")
-
-    def _resolve_cmdline_args(self, options):
-        if options.get("json"):
-            self._config.set_properties({"output_format": "json"})
-
-        if options.get("table"):
-            self._config.set_properties({"output_format": "table"})
-
-        # Update settings with CLI options (CLI args override environment variables)
-        self._update_settings_with_cli_options(options)
-
-    def _update_settings_with_cli_options(self, options):
-        """Update settings with CLI options (CLI args override defaults).
-
-        Note: This updates the singleton settings instance that is shared
-        across all modules (e.g., graphdb.py). All modules must use
-        consistent import paths to access the same settings singleton.
-        """
-        settings = get_settings()
-
-        # Simply override settings attributes when CLI args exist
-        if backend := options.get("backend"):
-            settings.backend = backend
-        if cinfo := options.get("cinfo"):
-            settings.cinfo = cinfo  # Auto-sanitized via @computed_field
-        if graph := options.get("graph"):
-            settings.graph = graph
-        if "read_only" in options:
-            settings.read_only = options["read_only"]
 
     def _pipe_to_shell_cmd(self, parse_result: PromptParserResult):
         process = subprocess.Popen(
@@ -447,21 +432,21 @@ class CypherGraphCLI(CLIRuntime):
         else:
             return True
 
-    def _determine_autoconfirm(self, exec_cmd, file_cmd, options) -> bool:
+    def _determine_autoconfirm(self, exec_cmd, file_cmd, s) -> bool:
         """Determine auto-confirm behavior.
 
         Rules:
-        * Interactive prompt (tty, no -e/-f): never autoconfirm.
+        * Interactive prompt (tty, no -e, no -f): never autoconfirm.
         * File execution (-f) with --yes: autoconfirm.
         * File execution (-f) without --yes: ask for confirmation.
-        * Piped stdin (non-tty, no -e): autoconfirm.
+        * Piped stdin (non-tty, no -e, no -f): autoconfirm.
         * Single execute command (-e): only autoconfirm with --yes.
         """
         if self._with_prompt:
             return False
         # File execution and single -e commands: only autoconfirm with --yes
         if file_cmd or exec_cmd:
-            return bool(options.get("yes"))
+            return s.yes
         # Piped stdin (no -e, no -f, non-tty): autoconfirm
         return True
 
@@ -511,6 +496,7 @@ class CypherGraphCLI(CLIRuntime):
                 if value and value.lower() in ("table", "json", "list"):
                     self._renderer.default_format = value
                     return True
+                return False
             case "exec_stats":
                 if isinstance(value, bool):
                     self._exec_stats = value

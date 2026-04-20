@@ -19,6 +19,7 @@ class FetchNodesCommand(BaseCommand):
     command_map_entry = BaseCommand.create_command_map_entry(
         pattern="[[fetch_nodes", tokens=["fetch nodes"], object_type=GraphObjectType.NODE
     )
+    completion = "label_props"
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the fetch nodes command.

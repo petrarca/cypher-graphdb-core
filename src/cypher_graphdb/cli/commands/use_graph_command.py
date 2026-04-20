@@ -15,6 +15,7 @@ class UseGraphCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[use_graph", tokens=["use graph", "use"])
+    completion = "graphs"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the change database graph command.

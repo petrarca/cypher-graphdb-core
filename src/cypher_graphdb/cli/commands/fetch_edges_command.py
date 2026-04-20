@@ -19,6 +19,7 @@ class FetchEdgesCommand(BaseCommand):
     command_map_entry = BaseCommand.create_command_map_entry(
         pattern="[[fetch_edges", tokens=["fetch edges"], object_type=GraphObjectType.EDGE
     )
+    completion = "label_props"
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the fetch edges command.
