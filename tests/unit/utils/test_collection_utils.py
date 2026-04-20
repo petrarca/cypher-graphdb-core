@@ -14,7 +14,7 @@ def test_dict_to_value_pairs():
     dict_values = {"a": 1, "b": "strval", "c": True, "d": None}
     result = utils.dict_to_value_pairs(dict_values, separator=", ")
 
-    assert result == 'a=1, b="strval", c=True, d=NULL'
+    assert result == 'a=1, b="strval", c=true, d=null'
 
 
 def test_remove_from_dict():

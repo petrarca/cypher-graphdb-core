@@ -5,6 +5,7 @@ using Cypher query language, with support for multiple backends including
 Apache AGE (Age Graph Extension) for PostgreSQL.
 """
 
+from .backend import BackendCapability
 from .backendprovider import backend_provider
 from .cardinality import Cardinality
 from .cyphergraphdb import (
@@ -25,7 +26,7 @@ from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 from .modelprovider import ModelProvider, model_provider
 from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
 from .settings import Settings, get_settings
-from .statistics import GraphStatistics
+from .statistics import GraphStatistics, IndexInfo, IndexType
 
 __all__ = [
     "Graph",
@@ -40,6 +41,8 @@ __all__ = [
     "GraphNodeInfo",
     "GraphEdgeInfo",
     "GraphStatistics",
+    "IndexInfo",
+    "IndexType",
     "CypherGraphDB",
     "QueryResult",
     "MatchCriteria",
@@ -52,6 +55,7 @@ __all__ = [
     "get_settings",
     "ReadOnlyModeError",
     "backend",
+    "BackendCapability",
     "backend_provider",
     "node",
     "edge",

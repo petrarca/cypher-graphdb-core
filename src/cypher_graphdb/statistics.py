@@ -3,8 +3,11 @@
 This module provides:
     - GraphStatistics: Summarize nodes, edges, paths, and values in a Graph or query result.
     - LabelStatistics: Serialize per-label counts for a specific graph.
+    - IndexType: Enumeration of index types (property, unique, fulltext, vector).
+    - IndexInfo: Backend-agnostic index metadata model.
 """
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, model_serializer
@@ -155,4 +158,46 @@ class LabelStatistics(BaseModel):
             "label_": self.label_,
             "type_": self.type_.name,
             "count": self.count,
+        }
+
+
+class IndexType(StrEnum):
+    """Enumeration of index types supported across graph backends."""
+
+    PROPERTY = "property"  # Range/GIN/BTREE property lookup index
+    UNIQUE = "unique"  # Unique constraint index
+    FULLTEXT = "fulltext"  # Full-text search index
+    VECTOR = "vector"  # Vector similarity index
+
+
+class IndexInfo(BaseModel):
+    """Backend-agnostic index metadata.
+
+    Provides a normalized view of index information across different graph
+    database backends (AGE, Memgraph, Neo4j, FalkorDB).
+
+    Attributes:
+        label: Node or edge label the index is on (e.g. "Method").
+        property_names: Properties covered by the index. None means all
+            properties are covered (e.g. AGE GIN indexes).
+        index_type: The kind of index (property, unique, fulltext, vector).
+        index_name: Backend-specific index name, used for drop_index.
+        unique: Whether the index enforces uniqueness.
+    """
+
+    label: str
+    property_names: list[str] | None = None
+    index_type: IndexType = IndexType.PROPERTY
+    index_name: str | None = None
+    unique: bool = False
+
+    @model_serializer
+    def serialize_model(self, _) -> dict[str, Any]:
+        """Convert IndexInfo to a serializable dictionary."""
+        return {
+            "label": self.label,
+            "property_names": self.property_names,
+            "index_type": self.index_type.value,
+            "index_name": self.index_name,
+            "unique": self.unique,
         }

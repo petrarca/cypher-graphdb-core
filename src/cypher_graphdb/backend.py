@@ -16,7 +16,7 @@ from . import modelprovider, utils
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .modelprovider import ModelProvider
 from .models import TabularResult
-from .statistics import GraphStatistics, LabelStatistics
+from .statistics import GraphStatistics, IndexInfo, LabelStatistics
 
 
 class BackendCapability(Enum):
@@ -25,6 +25,10 @@ class BackendCapability(Enum):
     LABEL_FUNCTION = auto()  # Function to get node labels
     SUPPORT_MULTIPLE_LABELS = auto()  # Support for multiple labels per node
     STREAMING_SUPPORT = auto()  # Native streaming support via server-side cursors
+    PROPERTY_INDEX = auto()  # Supports create_property_index / drop_index / list_indexes
+    UNIQUE_CONSTRAINT = auto()  # Supports create_unique_constraint
+    FULLTEXT_INDEX = auto()  # Supports create_fulltext_index
+    VECTOR_INDEX = auto()  # Supports create_vector_index
 
 
 class ExecStatistics(GraphStatistics):
@@ -278,6 +282,103 @@ class CypherBackend(abc.ABC):
     def rollback(self):
         """Rollback pending transactions, discarding changes."""
         pass
+
+    # ── Index management (opt-in, not abstract) ────────────────────────────
+
+    def create_property_index(self, label: str, *property_names: str) -> None:
+        """Create a property index on the given label.
+
+        For backends like AGE where a single GIN index covers all properties,
+        the property_names parameter may be ignored. For backends like Neo4j,
+        Memgraph, and FalkorDB, each property gets its own index.
+
+        Consumers should always pass property_names for portability.
+
+        Args:
+            label: Node label to index (e.g. "Method").
+            *property_names: Property names to index. Ignored by some backends.
+
+        Raises:
+            NotImplementedError: If the backend does not support property indexes.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support create_property_index")
+
+    def drop_index(self, label: str, *property_names: str) -> None:
+        """Drop a property index on the given label.
+
+        Args:
+            label: Node label whose index to drop.
+            *property_names: Property names of the index. Ignored by some backends.
+
+        Raises:
+            NotImplementedError: If the backend does not support drop_index.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support drop_index")
+
+    def list_indexes(self) -> list[IndexInfo]:
+        """List all indexes on the current graph.
+
+        Returns:
+            List of IndexInfo objects describing each index.
+
+        Raises:
+            NotImplementedError: If the backend does not support list_indexes.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support list_indexes")
+
+    # ── Bulk write operations (opt-in, not abstract) ──────────────────────
+
+    def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
+        """Create nodes in batches using UNWIND.
+
+        For AGE, rows are serialized as inline Cypher literals (AGE does not
+        support $params in UNWIND). For other backends, parameterized UNWIND
+        is used.
+
+        Args:
+            label: Node label for all created nodes.
+            rows: List of property dicts, one per node.
+            batch_size: Number of nodes per UNWIND batch.
+
+        Returns:
+            Total number of nodes created.
+
+        Raises:
+            NotImplementedError: If the backend does not support bulk_create_nodes.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support bulk_create_nodes")
+
+    def bulk_create_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str = "",
+        dst_label: str = "",
+        src_key: str = "id",
+        dst_key: str = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Create edges in batches by matching src/dst nodes on a key property.
+
+        Each dict in edges must have "src" and "dst" keys whose values match
+        the src_key/dst_key properties on source/destination nodes.
+
+        Args:
+            label: Edge label for all created edges.
+            edges: List of dicts with at least "src" and "dst" keys.
+            src_label: Label of source nodes (empty string for any label).
+            dst_label: Label of destination nodes (empty string for any label).
+            src_key: Property name on source nodes to match against "src".
+            dst_key: Property name on destination nodes to match against "dst".
+            batch_size: Number of edges per UNWIND batch.
+
+        Returns:
+            Total number of edges created.
+
+        Raises:
+            NotImplementedError: If the backend does not support bulk_create_edges.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support bulk_create_edges")
 
     @property
     def __dict__(self):
