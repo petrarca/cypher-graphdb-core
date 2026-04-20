@@ -216,6 +216,16 @@ McCabe max-complexity = 10. Refactor complex functions into helpers.
 - Short commit messages, max two sentences
 - Current feature branch: `feat/bulk-write-and-property-indexes`
 
+## Documentation
+
+Docs use mkdocs with the Material theme. `docs/reference/` is auto-generated from
+docstrings via `scripts/gen_ref_nav.py` + `mkdocstrings`. Manual pages live under
+`docs/usage/` (plain markdown). To add a new usage guide:
+
+1. Create `docs/usage/my-guide.md`
+2. Add it to `nav:` in `mkdocs.yml` under the `Usage:` section
+3. Preview with `task docs:serve` (if configured) or `mkdocs serve`
+
 ## Smoke Testing
 
 ```bash
