@@ -223,12 +223,16 @@ class TestGraphs:
 
 
 class TestSpecialValues:
-    """Test handling of None, boolean, and edge-case values."""
+    """Test that various value types roundtrip correctly through a CREATE -> MATCH cycle.
+
+    The focus is value handling (booleans, nulls, numerics, special characters), not the
+    write mechanism. Bulk-specific behaviour is covered in ``test_indexes_and_bulk.py``.
+    """
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_boolean_properties(self, clean_db):
         """Boolean values should roundtrip correctly."""
-        clean_db.bulk_create_nodes("Flag", [{"id": "f1", "active": True, "deleted": False}])
+        clean_db.execute("CREATE (f:Flag {id: 'f1', active: true, deleted: false})")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (f:Flag) RETURN f.active, f.deleted", unnest_result=True)
@@ -238,7 +242,7 @@ class TestSpecialValues:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_null_properties(self, clean_db):
         """Null values should roundtrip correctly."""
-        clean_db.bulk_create_nodes("Nullable", [{"id": "n1", "value": None}])
+        clean_db.execute("CREATE (n:Nullable {id: 'n1', value: null})")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (n:Nullable {id: 'n1'}) RETURN n.value", unnest_result=True)
@@ -247,7 +251,7 @@ class TestSpecialValues:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_numeric_properties(self, clean_db):
         """Integer and float values should roundtrip correctly."""
-        clean_db.bulk_create_nodes("Numeric", [{"id": "num1", "int_val": 42, "float_val": 3.14}])
+        clean_db.execute("CREATE (n:Numeric {id: 'num1', int_val: 42, float_val: 3.14})")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (n:Numeric) RETURN n.int_val, n.float_val", unnest_result=True)
@@ -257,7 +261,7 @@ class TestSpecialValues:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_empty_string_property(self, clean_db):
         """Empty string should roundtrip correctly."""
-        clean_db.bulk_create_nodes("EmptyStr", [{"id": "e1", "name": ""}])
+        clean_db.execute("CREATE (n:EmptyStr {id: 'e1', name: ''})")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (n:EmptyStr) RETURN n.name", unnest_result=True)
@@ -266,39 +270,12 @@ class TestSpecialValues:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_special_characters_in_strings(self, clean_db):
         """Strings with special characters should roundtrip correctly."""
-        clean_db.bulk_create_nodes(
-            "Special",
-            [
-                {"id": "s1", "val": 'contains "double quotes"'},
-                {"id": "s2", "val": "contains\nnewline"},
-                {"id": "s3", "val": "contains\\backslash"},
-            ],
-        )
+        # Use parameterized query via bulk-ish path: separate execute calls (one per row)
+        # keeps this test focused on value handling without invoking the bulk API.
+        clean_db.execute("CREATE (n:Special {id: 's1', val: 'contains \"double quotes\"'})")
+        clean_db.execute("CREATE (n:Special {id: 's2', val: 'contains\\nnewline'})")
+        clean_db.execute("CREATE (n:Special {id: 's3', val: 'contains\\\\backslash'})")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (n:Special) RETURN n.id, n.val ORDER BY n.id", unnest_result=False)
         assert len(result) == 3
-
-
-# ── Bulk + rollback interaction ───────────────────────────────────────────────
-
-
-class TestBulkEdgeCases:
-    """Test edge cases in bulk operations."""
-
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
-    def test_bulk_edges_no_match(self, clean_db):
-        """bulk_create_edges with no matching src/dst should create 0 edges."""
-        edges = [{"src": "nonexistent_1", "dst": "nonexistent_2"}]
-        count = clean_db.bulk_create_edges("GHOST", edges, src_label="Person", dst_label="Person")
-        clean_db.commit()
-
-        assert count == 1  # UNWIND ran but MATCH found 0 nodes -> 0 edges actually created
-        result = clean_db.execute("MATCH ()-[r:GHOST]->() RETURN count(r)", unnest_result=True)
-        assert result == 0
-
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
-    def test_bulk_rollback_does_not_raise(self, clean_db):
-        """Rollback after bulk_create_nodes should not raise."""
-        clean_db.bulk_create_nodes("TempNode", [{"id": f"t{i}"} for i in range(10)])
-        clean_db.rollback()  # should not raise

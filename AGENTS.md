@@ -237,7 +237,7 @@ CGDB_CINFO=postgresql://postgres:postgres@localhost:8432/graphdb CGDB_BACKEND=ag
 from cypher_graphdb import CypherGraphDB
 cdb = CypherGraphDB("age")
 cdb.connect(cinfo="...", graph_name="test", create_graph=True)
-cdb.bulk_create_nodes("Label", [{"id": "1", "name": "foo"}])
+cdb.bulk_create_nodes([{"id": "1", "name": "foo"}], label="Label")
 cdb.create_property_index("Label", "id", "name")
 print(cdb.list_indexes())
 ```

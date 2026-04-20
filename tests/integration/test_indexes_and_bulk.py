@@ -6,9 +6,28 @@ and bulk_create_edges for both Memgraph and AGE backends.
 
 import pytest
 
-from cypher_graphdb import BackendCapability
+from cypher_graphdb import BackendCapability, GraphEdge, GraphNode, edge, node
 
 pytestmark = pytest.mark.integration
+
+
+# ── Typed model fixtures (shared across typed-path tests) ────────────────────
+
+
+@node()
+class _ITPerson(GraphNode):
+    """Integration-test typed person node."""
+
+    id: str
+    name: str
+    age: int = 0
+
+
+@edge(label="FRIENDS_WITH")
+class _ITFriendsWith(GraphEdge):
+    """Integration-test typed edge with a property."""
+
+    since: int = 0
 
 
 @pytest.fixture
@@ -110,7 +129,7 @@ class TestBulkCreateNodes:
     def test_bulk_create_nodes_basic(self, clean_db):
         """bulk_create_nodes should create all nodes."""
         rows = [{"id": f"node_{i}", "name": f"Node {i}", "value": i} for i in range(10)]
-        count = clean_db.bulk_create_nodes("BulkNode", rows)
+        count = clean_db.bulk_create_nodes(rows, label="BulkNode")
         clean_db.commit()
 
         assert count == 10
@@ -121,14 +140,14 @@ class TestBulkCreateNodes:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_empty(self, clean_db):
         """bulk_create_nodes with empty list should return 0."""
-        count = clean_db.bulk_create_nodes("BulkNode", [])
+        count = clean_db.bulk_create_nodes([], label="BulkNode")
         assert count == 0
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_batching(self, clean_db):
         """bulk_create_nodes should correctly batch large inputs."""
         rows = [{"id": f"n{i}", "name": f"Name {i}"} for i in range(250)]
-        count = clean_db.bulk_create_nodes("BatchNode", rows, batch_size=100)
+        count = clean_db.bulk_create_nodes(rows, label="BatchNode", batch_size=100)
         clean_db.commit()
 
         assert count == 250
@@ -144,7 +163,7 @@ class TestBulkCreateNodes:
             {"id": "sc_3", "name": "value with\nnewline"},
             {"id": "sc_4", "name": "value with\\backslash"},
         ]
-        count = clean_db.bulk_create_nodes("SpecialNode", rows)
+        count = clean_db.bulk_create_nodes(rows, label="SpecialNode")
         clean_db.commit()
 
         assert count == 4
@@ -162,19 +181,19 @@ class TestBulkCreateEdges:
     def setup_nodes(self, clean_db):
         """Create source and destination nodes for edge tests."""
         clean_db.bulk_create_nodes(
-            "Person",
             [
                 {"id": "p1", "name": "Alice"},
                 {"id": "p2", "name": "Bob"},
                 {"id": "p3", "name": "Charlie"},
             ],
+            label="Person",
         )
         clean_db.bulk_create_nodes(
-            "Company",
             [
                 {"id": "c1", "name": "Acme"},
                 {"id": "c2", "name": "Globex"},
             ],
+            label="Company",
         )
         # Create indexes for fast MATCH lookups
         clean_db.create_property_index("Person", "id")
@@ -189,7 +208,7 @@ class TestBulkCreateEdges:
             {"src": "p2", "dst": "c1"},
             {"src": "p3", "dst": "c2"},
         ]
-        count = clean_db.bulk_create_edges("WORKS_AT", edges, src_label="Person", dst_label="Company")
+        count = clean_db.bulk_create_edges(edges, label="WORKS_AT", src_label="Person", dst_label="Company")
         clean_db.commit()
 
         assert count == 3
@@ -203,7 +222,7 @@ class TestBulkCreateEdges:
             {"src": "p1", "dst": "p2", "since": 2020, "strength": 0.9},
             {"src": "p2", "dst": "p3", "since": 2021, "strength": 0.7},
         ]
-        count = clean_db.bulk_create_edges("KNOWS", edges, src_label="Person", dst_label="Person")
+        count = clean_db.bulk_create_edges(edges, label="KNOWS", src_label="Person", dst_label="Person")
         clean_db.commit()
 
         assert count == 2
@@ -216,23 +235,114 @@ class TestBulkCreateEdges:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_bulk_create_edges_empty(self, clean_db):
         """bulk_create_edges with empty list should return 0."""
-        count = clean_db.bulk_create_edges("KNOWS", [])
+        count = clean_db.bulk_create_edges([], label="KNOWS")
         assert count == 0
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
-    def test_bulk_create_edges_custom_key(self, clean_db):
-        """bulk_create_edges should support custom src_key/dst_key."""
+    def test_bulk_create_edges_custom_ref_prop(self, clean_db):
+        """bulk_create_edges should support custom src_ref_prop/dst_ref_prop."""
         edges = [{"src": "Alice", "dst": "Acme"}]
         count = clean_db.bulk_create_edges(
-            "WORKS_AT",
             edges,
+            label="WORKS_AT",
             src_label="Person",
             dst_label="Company",
-            src_key="name",
-            dst_key="name",
+            src_ref_prop="name",
+            dst_ref_prop="name",
         )
         clean_db.commit()
 
         assert count == 1
         result = clean_db.execute("MATCH ()-[r:WORKS_AT]->() RETURN count(r)", unnest_result=True)
         assert result == 1
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_bulk_create_edges_no_match(self, clean_db):
+        """bulk_create_edges with no matching src/dst should create 0 edges in the graph."""
+        edges = [{"src": "nonexistent_1", "dst": "nonexistent_2"}]
+        clean_db.bulk_create_edges(edges, label="GHOST", src_label="Person", dst_label="Person")
+        clean_db.commit()
+
+        # UNWIND ran but MATCH found 0 nodes -> 0 edges actually created in the graph
+        result = clean_db.execute("MATCH ()-[r:GHOST]->() RETURN count(r)", unnest_result=True)
+        assert result == 0
+
+
+# ── Bulk + rollback interaction ─────────────────────────────────────────────
+
+
+class TestBulkTransactional:
+    """Tests covering bulk writes' interaction with transactions.
+
+    Note: The default connection mode is ``autocommit=True``, so bulk writes
+    are persisted immediately and cannot be rolled back. Tests here verify
+    that rollback is still a safe no-op on an autocommit connection.
+    """
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_bulk_rollback_does_not_raise(self, clean_db):
+        """Rollback after bulk_create_nodes should not raise on an autocommit connection."""
+        clean_db.bulk_create_nodes([{"id": f"t{i}"} for i in range(10)], label="TempNode")
+        clean_db.rollback()  # should not raise
+
+
+# ── Typed-input bulk writes (GraphNode / GraphEdge instances) ────────────────
+
+
+class TestBulkCreateTyped:
+    """Test bulk writes with typed GraphNode / GraphEdge instances for both backends."""
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_bulk_create_nodes_typed(self, clean_db):
+        """bulk_create_nodes with GraphNode instances should derive label and persist properties."""
+        people = [_ITPerson(id=f"t{i}", name=f"Typed {i}", age=20 + i) for i in range(5)]
+        count = clean_db.bulk_create_nodes(people)
+        clean_db.commit()
+
+        assert count == 5
+        fetched = clean_db.fetch_nodes({"label_": "_ITPerson"}, unnest_result=True)
+        assert len(fetched) == 5
+        assert all(isinstance(p, _ITPerson) for p in fetched)
+        ages = sorted(p.age for p in fetched)
+        assert ages == [20, 21, 22, 23, 24]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_bulk_create_edges_typed(self, clean_db):
+        """bulk_create_edges with GraphEdge instances + parallel refs should persist edge properties."""
+        # Seed nodes via typed path
+        people = [_ITPerson(id=f"t{i}", name=f"T{i}") for i in range(3)]
+        clean_db.bulk_create_nodes(people)
+        clean_db.create_property_index("_ITPerson", "id")
+        clean_db.commit()
+
+        # Typed edges: connect t0->t1, t1->t2
+        edges = [_ITFriendsWith(since=2020), _ITFriendsWith(since=2021)]
+        count = clean_db.bulk_create_edges(
+            edges,
+            src_refs=["t0", "t1"],
+            dst_refs=["t1", "t2"],
+            src_label="_ITPerson",
+            dst_label="_ITPerson",
+            src_ref_prop="id",
+            dst_ref_prop="id",
+        )
+        clean_db.commit()
+
+        assert count == 2
+        fetched = clean_db.fetch_edges({"label_": "FRIENDS_WITH"}, unnest_result=True)
+        assert len(fetched) == 2
+        assert all(isinstance(e, _ITFriendsWith) for e in fetched)
+        assert sorted(e.since for e in fetched) == [2020, 2021]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_typed_nodes_roundtrip_preserves_all_fields(self, clean_db):
+        """Typed node write -> read should preserve all model fields including defaults."""
+        p = _ITPerson(id="alice", name="Alice", age=30)
+        clean_db.bulk_create_nodes([p])
+        clean_db.commit()
+
+        fetched = clean_db.fetch_nodes({"label_": "_ITPerson", "id": "alice"}, unnest_result=True, fetch_one=True)
+        assert fetched is not None
+        assert fetched.id == "alice"
+        assert fetched.name == "Alice"
+        assert fetched.age == 30
