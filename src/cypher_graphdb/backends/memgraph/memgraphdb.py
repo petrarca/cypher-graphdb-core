@@ -19,8 +19,8 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
-from cypher_graphdb.statistics import LabelStatistics
-from cypher_graphdb.utils import parse_connection_uri, validate_protocol
+from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
+from cypher_graphdb.utils import chunk_list, parse_connection_uri, validate_protocol
 
 
 class MemgraphDB(CypherBackend):
@@ -433,6 +433,186 @@ class MemgraphDB(CypherBackend):
         # Only the default graph "memgraph" exists
         return graph_name == "memgraph"
 
+    # ── Index management ─────────────────────────────────────────────────
+
+    def create_property_index(self, label: str, *property_names: str) -> None:
+        """Create property indexes on the given label.
+
+        Memgraph creates one index per property. If no property_names are
+        given, creates a label-only index.
+
+        Args:
+            label: Node label to index.
+            *property_names: Property names to index. Each gets its own index.
+        """
+        self._require_connection()
+        if property_names:
+            for prop in property_names:
+                self._run_ddl(f"CREATE INDEX ON :{label}({prop})")
+        else:
+            self._run_ddl(f"CREATE INDEX ON :{label}")
+        logger.debug("Property index(es) created for label '{}' in Memgraph", label)
+
+    def drop_index(self, label: str, *property_names: str) -> None:
+        """Drop property indexes on the given label.
+
+        Args:
+            label: Node label whose index to drop.
+            *property_names: Property names to drop. Drops label index if empty.
+        """
+        self._require_connection()
+        if property_names:
+            for prop in property_names:
+                self._run_ddl(f"DROP INDEX ON :{label}({prop})")
+        else:
+            self._run_ddl(f"DROP INDEX ON :{label}")
+        logger.debug("Index(es) dropped for label '{}' in Memgraph", label)
+
+    def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
+        """List all indexes in Memgraph.
+
+        Args:
+            include_internal: Unused for Memgraph -- all indexes are user-created.
+
+        Returns:
+            List of IndexInfo objects.
+        """
+        self._require_connection()
+        with self._autocommit_mode():
+            cursor = self._connection.cursor()
+            cursor.execute("SHOW INDEX INFO")
+            rows = cursor.fetchall()
+            cursor.close()
+
+        indexes = []
+        for row in rows:
+            # Memgraph SHOW INDEX INFO returns: (index_type_str, label, property_list_or_none, count)
+            # property is a Python list (e.g. ['id']) or None for label-only indexes
+            index_type_str, label, prop_list, _ = row
+            idx_type = IndexType.UNIQUE if "unique" in str(index_type_str).lower() else IndexType.PROPERTY
+            # prop_list is already a list or None
+            prop_names = list(prop_list) if prop_list else None
+            name = f"{label}_{'_'.join(prop_list)}" if prop_list else label
+            indexes.append(
+                IndexInfo(
+                    label=label,
+                    property_names=prop_names,
+                    index_type=idx_type,
+                    index_name=name,
+                )
+            )
+        return indexes
+
+    # ── Bulk write operations ─────────────────────────────────────────────
+
+    def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
+        """Create nodes in batches using parameterized UNWIND.
+
+        Memgraph supports standard $params in UNWIND, so we use the clean
+        parameterized path.
+
+        Args:
+            label: Node label for all created nodes.
+            rows: List of property dicts, one per node.
+            batch_size: Number of nodes per UNWIND batch.
+
+        Returns:
+            Total number of nodes created.
+        """
+        self._require_connection()
+        if not rows:
+            return 0
+
+        total = 0
+        for batch in chunk_list(rows, batch_size):
+            cursor = self._connection.cursor()
+            cursor.execute(
+                f"UNWIND $rows AS props CREATE (n:{label}) SET n = props",
+                {"rows": batch},
+            )
+            cursor.close()
+            if self.autocommit:
+                self._connection.commit()
+            total += len(batch)
+
+        return total
+
+    def bulk_create_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str = "",
+        dst_label: str = "",
+        src_key: str = "id",
+        dst_key: str = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Create edges in batches using parameterized UNWIND.
+
+        Each dict in edges must have "src" and "dst" keys. Additional keys
+        are set as edge properties.
+
+        Args:
+            label: Edge label for all created edges.
+            edges: List of dicts with "src", "dst", and optional edge properties.
+            src_label: Label of source nodes (empty string for any label).
+            dst_label: Label of destination nodes (empty string for any label).
+            src_key: Property name on source nodes to match against "src".
+            dst_key: Property name on destination nodes to match against "dst".
+            batch_size: Number of edges per UNWIND batch.
+
+        Returns:
+            Total number of edges created.
+        """
+        self._require_connection()
+        if not edges:
+            return 0
+
+        # Build MATCH patterns from label/key names (not user values -- safe to inline)
+        src_pat = f"(a:{src_label} {{{src_key}: e.src}})" if src_label else f"(a {{{src_key}: e.src}})"
+        dst_pat = f"(b:{dst_label} {{{dst_key}: e.dst}})" if dst_label else f"(b {{{dst_key}: e.dst}})"
+
+        # Collect edge property keys (beyond src/dst) from first row
+        edge_prop_keys = [k for k in edges[0] if k not in ("src", "dst")]
+        if edge_prop_keys:
+            set_clause = " SET " + ", ".join(f"r.{k} = e.{k}" for k in edge_prop_keys)
+        else:
+            set_clause = ""
+
+        cypher = f"UNWIND $edges AS e MATCH {src_pat} MATCH {dst_pat} CREATE (a)-[r:{label}]->(b){set_clause}"
+
+        total = 0
+        for batch in chunk_list(edges, batch_size):
+            cursor = self._connection.cursor()
+            cursor.execute(cypher, {"edges": batch})
+            cursor.close()
+            if self.autocommit:
+                self._connection.commit()
+            total += len(batch)
+
+        return total
+
+    @contextlib.contextmanager
+    def _autocommit_mode(self):
+        """Temporarily enable autocommit on the connection.
+
+        Memgraph requires DDL (CREATE/DROP INDEX) and storage info queries
+        (SHOW INDEX INFO) to run in autocommit (implicit transaction) mode.
+        """
+        prev = self._connection.autocommit
+        self._connection.autocommit = True
+        try:
+            yield
+        finally:
+            self._connection.autocommit = prev
+
+    def _run_ddl(self, statement: str) -> None:
+        """Execute a DDL statement (CREATE/DROP INDEX etc.) on Memgraph."""
+        with self._autocommit_mode():
+            cursor = self._connection.cursor()
+            cursor.execute(statement)
+            cursor.close()
+
     def get_capability(self, capability: BackendCapability) -> Any:
         """Get the value of a backend capability.
 
@@ -454,6 +634,9 @@ class MemgraphDB(CypherBackend):
                 return True
             case BackendCapability.STREAMING_SUPPORT:
                 # Memgraph supports native streaming via fetchmany()
+                return True
+            case BackendCapability.PROPERTY_INDEX:
+                # Memgraph supports CREATE/DROP INDEX ON :Label(prop)
                 return True
             case _:
                 # Delegate unknown capabilities to superclass
