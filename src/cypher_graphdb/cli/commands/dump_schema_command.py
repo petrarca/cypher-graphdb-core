@@ -20,6 +20,7 @@ class DumpSchemaCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_schema", tokens=["schema"])
+    completion = "label_only"
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the dump schema command.

@@ -17,6 +17,7 @@ class CreateEdgeCommand(BaseCommand):
     command_map_entry = BaseCommand.create_command_map_entry(
         pattern="[[create_edge", tokens=["create edge"], object_type=GraphObjectType.EDGE
     )
+    completion = {"type": "label_props", "complete_mandatory_props": True}
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""

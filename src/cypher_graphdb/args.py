@@ -102,6 +102,14 @@ def create_main_app() -> typer.Typer:
                 help="Disable progress bar (file mode).",
             ),
         ] = False,
+        model_path: Annotated[
+            str | None,
+            typer.Option(
+                "--model-path",
+                "-m",
+                help="Path to Python model module/directory to auto-load on startup.",
+            ),
+        ] = None,
     ) -> None:
         """CypherGraph CLI - A command-line interface for graph databases."""
         # Only run interactive CLI if no subcommand was invoked
@@ -125,6 +133,7 @@ def create_main_app() -> typer.Typer:
             "yes": yes,
             "verbose": verbose,
             "no_progress": no_progress,
+            "model_path": model_path,
         }
 
         # Filter out None and False values

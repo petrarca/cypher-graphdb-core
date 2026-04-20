@@ -15,6 +15,7 @@ class DropGraphCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[drop_graph", tokens=["drop graph"])
+    completion = "graphs"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the drop database graph command.

@@ -20,6 +20,7 @@ class UpdateGraphobjCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[update", tokens=["update"])
+    completion = {"type": "label_props", "label_from_model": False, "default_from_values": True}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the update graph object command.

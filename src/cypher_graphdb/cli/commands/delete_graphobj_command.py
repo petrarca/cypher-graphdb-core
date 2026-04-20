@@ -20,6 +20,7 @@ class DeleteGraphobjCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[delete", tokens=["delete"])
+    completion = {"type": "label_props", "label_from_model": False, "resolve_model_props": False}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the delete graph object command.

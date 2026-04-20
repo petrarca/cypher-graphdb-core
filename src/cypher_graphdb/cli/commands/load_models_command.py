@@ -38,7 +38,7 @@ class LoadModelsCommand(BaseCommand):
         module_name = parsed_cmd.get_arg(0)
         path = parsed_cmd.get_kwarg("path")
 
-        loaded_models, path = self.graphdb.db.model_provider.try_to_load_models(module_name, path)
+        loaded_models = self.graphdb.db.model_provider.try_to_load_models(module_name, path)
 
         if loaded_models is None:
             rich.print(
@@ -48,10 +48,10 @@ class LoadModelsCommand(BaseCommand):
             return False
 
         if loaded_models:
-            rich.print(f"[blue]Loaded models from '{path}'")
+            rich.print(f"[blue]Loaded {len(loaded_models)} model(s)")
             for v in loaded_models:
                 rich.print(f"[blue]  {v}")
         else:
-            rich.print(f"[yellow]No new models loaded from '{path}'")
+            rich.print(f"[yellow]No new models loaded from '{module_name}'")
 
         return True

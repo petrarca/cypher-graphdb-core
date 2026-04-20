@@ -19,6 +19,7 @@ class SearchCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="[[search]]", tokens=["search"])
+    completion = {"type": "props_only", "extra_props": ["language"]}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the search command.

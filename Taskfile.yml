@@ -203,6 +203,6 @@ tasks:
       - .venv/bin/python -m cypher_graphdb.main {{.CLI_ARGS}}
 
   run:cli:
-    desc: "Run the cypher-graphdb CLI (via entry point)"
+    desc: "Run the cgdb-cli (via entry point)"
     cmds:
-      - .venv/bin/cypher-graphdb {{.CLI_ARGS}}
+      - .venv/bin/cgdb-cli {{.CLI_ARGS}}

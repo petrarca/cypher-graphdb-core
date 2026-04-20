@@ -26,6 +26,25 @@ class BaseCommand(ABC):
     # Optional: Command map entry for CLI command mapping
     command_map_entry: dict[str, Any] | None = None
 
+    # Optional: Declarative completion spec for command arguments.
+    # Interpreted by CommandLineCompleter. Supported types:
+    #   - "label_props"              -- complete labels + properties (fetch/create)
+    #   - "label_only"               -- complete labels only (schema, models)
+    #   - "graphs"                   -- complete from graph list
+    #   - "variables"                -- complete from variable names
+    #   - "config"                   -- complete from config properties
+    #   - ["val1", "val2"]           -- complete from static list
+    #   - dict with keys:            -- fine-grained control:
+    #       type: "label_props" | "label_only" | "list_provider"
+    #       complete_mandatory_props: bool
+    #       label_from_model: bool
+    #       resolve_model_props: bool
+    #       default_from_values: bool
+    #       provider: str ("graphs", "variables", "config")
+    #       items: list[str]
+    #   - None                       -- no argument completion (default)
+    completion: str | list[str] | dict[str, Any] | None = None
+
     @classmethod
     def create_command_map_entry(
         cls, pattern: str, tokens: set[str | None], object_type: GraphObjectType | None = None, **kwargs: Any

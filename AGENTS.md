@@ -150,7 +150,17 @@ from cypher_graphdb.cli.commands.my_command import MyCommand
 registry.register(MyCommand)
 ```
 
-3. If tab-completion is needed, add entry to `cli/completer.py`.
+3. Add tab-completion via the `completion` class attribute (no completer.py changes needed):
+```python
+# Static list
+completion = ["all", "verbose"]
+# Dynamic provider
+completion = "graphs"       # or "variables", "config"
+# Label+property completion
+completion = "label_props"  # or "label_only"
+# Fine-grained control
+completion = {"type": "label_props", "complete_mandatory_props": True}
+```
 4. Update `cli/help/_overview.md` with the new command.
 
 ## Backend Architecture

@@ -15,6 +15,7 @@ class CreateNodeCommand(BaseCommand):
     command_map_entry = BaseCommand.create_command_map_entry(
         pattern="[[create_node", tokens=["create node"], object_type=GraphObjectType.NODE
     )
+    completion = {"type": "label_props", "complete_mandatory_props": True}
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""

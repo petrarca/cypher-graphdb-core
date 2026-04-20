@@ -100,6 +100,7 @@ class CypherGraphCLI(CLIRuntime):
 
         """
         self._resolve_cmdline_args(options)
+        self._model_path = options.get("model_path") or os.environ.get("CGDB_MODEL_PATH")
         logger.debug("cmdline_options:\n{}", options)
 
         # Parse execution mode options
@@ -165,6 +166,21 @@ class CypherGraphCLI(CLIRuntime):
                 "output_format",
                 "table" if self._with_prompt else "json",
             )
+
+        # Auto-load models if --model-path was provided
+        if self._model_path:
+            self._auto_load_models(self._model_path)
+
+    def _auto_load_models(self, model_path: str):
+        """Auto-load Python models from the given path on startup."""
+        module_name = os.path.basename(model_path)
+        path = os.path.dirname(model_path) if os.path.isfile(model_path) else model_path
+
+        loaded = self._graphdb.db.model_provider.try_to_load_models(module_name, path)
+        if loaded:
+            logger.info("Auto-loaded {} model(s) from '{}'", len(loaded), model_path)
+        else:
+            logger.warning("No models found at '{}'", model_path)
 
     def _run_interactive_mode(self):
         """Run the CLI in interactive mode with prompt."""

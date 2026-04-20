@@ -18,6 +18,7 @@ class SetCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(pattern="set_", tokens=["set"])
+    completion = "variables"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the set command.
