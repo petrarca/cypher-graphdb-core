@@ -17,7 +17,7 @@ class ClearGraphCommand(BaseCommand):
     command_name = "clear_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[clear_graph]]_", tokens=["clear", "clear graph"])
+    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[clear_graph]]_", tokens=["clear"])
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the clear graph command.

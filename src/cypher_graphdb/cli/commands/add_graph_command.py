@@ -15,7 +15,7 @@ class AddGraphCommand(BaseCommand):
     command_name = "add_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="add_graph_", tokens=["add", "add graph"])
+    command_map_entry = BaseCommand.create_command_map_entry(pattern="add_graph_", tokens=["add"])
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the add to graph command.

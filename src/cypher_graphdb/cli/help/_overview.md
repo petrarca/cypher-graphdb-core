@@ -1,5 +1,5 @@
-The command line (prompt) supports the folloing commands.
-Details about every command can be foud by **help {command}** like "help create nodes".
+The command line (prompt) supports the following commands.
+Details about every command can be found by **help {command}** like "help create node".
 
 Commands are in the form of {command} [options].
 
@@ -19,17 +19,19 @@ All other inputs are treated as **cypher statements**.
 - **export graph**: Import a graph to various target formats (e.g. Excel, CSV)
 - **connect**: Connect to a graph backend.
 - **disconnect**: Disconnect from a graph backend.
-- **create dbgraph**: Create a new graph the graph backend.
-- **drop dbgraph**: Drop a graph in the graph backend.
-- **dbgraph exists**: Check if a graph exists in a graph backend.
-- **change dbgraph**: Change the current working graph.
+- **create graph**: Create a new graph in the graph backend.
+- **drop graph**: Drop a graph in the graph backend.
+- **graph exists**: Check if a graph exists in a graph backend.
+- **use graph**, **use**: Switch to another graph.
+- **graphs**: List all graphs in the graph backend.
+- **indexes**: List property indexes on the current graph.
 - **commit**: Commit the current transaction.
 - **rollback**: Rollback the current transaction
 - **json**: Change output format to json
 - **table** Change output format to tabular format.
 - **list** List output format
-- **add graph**, **add**: Add result to internal, in-memory graph
-- **clear graph**, **clear**: Clear the internal, in-memory graph
+- **add**: Add result to internal, in-memory graph
+- **clear**: Clear the internal, in-memory graph
 - **resolve edges**: Load missing nodes into graph, which are referenced by edges in the graph
 - **tree**: Convert graph to tree and print as tree
 - **config**: Apply configuration

@@ -370,9 +370,9 @@ class AGEGraphDB(CypherBackend):
         """
         sql = SQLBuilder.resolve_graphs()
 
-        (result,), _, _ = self._execute_sql(sql, raw_data=True)
+        rows, _, _ = self._execute_sql(sql, raw_data=True)
 
-        return list(result)
+        return [row[0] for row in rows]
 
     def labels(self) -> list[LabelStatistics]:
         """Get statistics for all labels in the current graph.

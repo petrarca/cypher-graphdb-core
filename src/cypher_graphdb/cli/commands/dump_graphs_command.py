@@ -9,13 +9,13 @@ if TYPE_CHECKING:
     from cypher_graphdb.cli.promptparser import PromptParserCmd
 
 
-class DumpDbgraphsCommand(BaseCommand):
-    """Command to dump all database graphs."""
+class DumpGraphsCommand(BaseCommand):
+    """Command to list all graphs in the database."""
 
-    command_name = "dump_dbgraphs"
+    command_name = "dump_graphs"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_dbgraphs", tokens=["dbgraphs"])
+    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_graphs", tokens=["graphs"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump database graphs command.
