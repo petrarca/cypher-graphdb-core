@@ -138,8 +138,8 @@ class SQLBuilder:
     # ── Index management SQL ──────────────────────────────────────────────
 
     @classmethod
-    def label_table_exists(cls, graph_name: str) -> sql.SQL:
-        """Check which label tables exist in the graph schema via pg_class."""
+    def get_label_tables(cls, graph_name: str) -> sql.SQL:
+        """List all label tables in the graph schema via pg_class."""
         return sql.SQL(
             "SELECT c.relname FROM pg_class c "
             "JOIN pg_namespace n ON n.oid = c.relnamespace "

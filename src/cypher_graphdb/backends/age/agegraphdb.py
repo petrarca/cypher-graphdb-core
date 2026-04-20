@@ -692,7 +692,7 @@ class AGEGraphDB(CypherBackend):
         if not edges:
             return 0
 
-        # Build MATCH patterns
+        # Build MATCH patterns from label/key names (not user values -- safe to inline)
         src_pat = f"(a:{src_label} {{{src_key}: e.src}})" if src_label else f"(a {{{src_key}: e.src}})"
         dst_pat = f"(b:{dst_label} {{{dst_key}: e.dst}})" if dst_label else f"(b {{{dst_key}: e.dst}})"
 
@@ -706,7 +706,11 @@ class AGEGraphDB(CypherBackend):
     # ── Private helpers for bulk write ────────────────────────────────────
 
     def _write_node_batch(self, label: str, batch: list[dict]) -> None:
-        """Write one batch of node dicts via UNWIND CREATE."""
+        """Write one batch of node dicts via UNWIND CREATE.
+
+        All dicts in batch must have the same set of keys -- the SET clause
+        is derived from the first row and applied to all rows.
+        """
         props_keys = list(batch[0].keys())
         set_clause = ", ".join(f"n.{k} = props.{k}" for k in props_keys)
         cypher = f"UNWIND {to_cypher_list(batch)} AS props CREATE (n:{label}) SET {set_clause}"
@@ -724,7 +728,7 @@ class AGEGraphDB(CypherBackend):
     def _get_label_tables(self) -> set[str]:
         """Get the set of existing label table names in the graph schema."""
         with self._fetch_cursor(row_factory=None) as cursor:
-            cursor.execute(SQLBuilder.label_table_exists(self._graph_name), (self._graph_name,))
+            cursor.execute(SQLBuilder.get_label_tables(self._graph_name), (self._graph_name,))
             return {row[0] for row in cursor.fetchall()}
 
     @staticmethod
@@ -732,9 +736,7 @@ class AGEGraphDB(CypherBackend):
         """Parse a pg_indexes row into an IndexInfo object."""
         # Determine index type from the definition
         indexdef_upper = indexdef.upper()
-        if "USING GIN" in indexdef_upper:
-            idx_type = IndexType.PROPERTY
-        elif "UNIQUE" in indexdef_upper:
+        if "UNIQUE" in indexdef_upper:
             idx_type = IndexType.UNIQUE
         else:
             idx_type = IndexType.PROPERTY
