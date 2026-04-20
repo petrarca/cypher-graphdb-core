@@ -12,37 +12,44 @@ from ..statistics import LabelStatistics
 class SchemaMixin:
     """Mixin providing schema introspection methods for CypherGraphDB."""
 
-    def graphs(self) -> tuple[str]:
+    def graphs(self) -> list[str]:
         """Get list of available graphs in the database backend.
 
-        Returns all graph databases available on the connected backend
-        instance.
-            Useful for multi-tenant applications or database exploration.
-
-            Returns:
-                Sorted tuple of graph database names
-
-            Examples:
-                ```python
-                db = CypherGraphDB("memgraph").connect()
-
-                # List all available graphs
-                available_graphs = db.graphs()
-                print(f"Available graphs: {available_graphs}")
-                # Output: ('main', 'analytics', 'test_graph')
-
-                # Switch to a different graph if backend supports it
-                if "analytics" in available_graphs:
-                    # Reconnect to different graph
-                    db.disconnect()
-                    db.backend.graph_name = "analytics"
-                    db.connect()
-                ```
+        Returns:
+            Sorted list of graph names.
         """
         assert self._backend
-        result = self._backend.graphs()
+        return sorted(self._backend.graphs())
 
-        return sorted(result)
+    def graph_exists(self, graph_name: str) -> bool:
+        """Check if a graph exists in the database backend.
+
+        Args:
+            graph_name: Name of the graph to check.
+
+        Returns:
+            True if the graph exists, False otherwise.
+        """
+        assert self._backend
+        return self._backend.graph_exists(graph_name)
+
+    def create_graph(self, graph_name: str) -> None:
+        """Create a new graph in the database backend.
+
+        Args:
+            graph_name: Name of the graph to create.
+        """
+        assert self._backend
+        self._backend.create_graph(graph_name)
+
+    def drop_graph(self, graph_name: str) -> None:
+        """Drop a graph from the database backend.
+
+        Args:
+            graph_name: Name of the graph to drop.
+        """
+        assert self._backend
+        self._backend.drop_graph(graph_name)
 
     def labels(self) -> list[LabelStatistics]:
         """Get statistics for all labels (node types and relationship types)
