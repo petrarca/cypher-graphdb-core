@@ -31,6 +31,7 @@ from .connection_utils import (
 from .conversion_utils import isnan, resolve_properties, to_collection, type_to_default_value
 from .core_utils import SCALAR_TYPES, generate_unique_string_id, is_scalar_type, resolve_fileformat, split_path
 from .schema_merge import MergeAction, MergeConflict, SchemaMergeResult, merge_combined_schemas, merge_schemas_by_title
+from .schema_to_llm import format_schemas_for_llm
 from .schema_utils import combine_schemas, extract_schemas_from_model_infos, wrap_in_defs
 from .string_utils import (
     StringMatch,
@@ -103,6 +104,8 @@ __all__ = [
     "sanitize_connection_params_for_logging",
     "sanitize_connection_string_for_logging",
     "log_env",
+    # LLM utilities
+    "format_schemas_for_llm",
     # Schema utilities
     "combine_schemas",
     "extract_schemas_from_model_infos",

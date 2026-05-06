@@ -872,8 +872,11 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
         logger.debug(f"Execute cypher with stats {unnest_result=}, {fetch_one=}: \n{cypher_cmd}")
 
-        # Parse the query to get the parsed query object
-        parsed_query = self._parse_cypher(cypher_cmd)
+        # Use pre-parsed query if provided, otherwise parse the string
+        if isinstance(cypher_cmd, ParsedCypherQuery):
+            parsed_query = cypher_cmd
+        else:
+            parsed_query = self._parse_cypher(cypher_cmd)
 
         # Execute the query and get statistics
         result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
