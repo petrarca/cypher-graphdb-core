@@ -849,9 +849,15 @@ class AGEGraphDB(CypherBackend):
 
                 if self.autocommit:
                     self._connection.commit()
+            except psycopg.errors.UndefinedTable as e:
+                # Label table does not exist (never created). Close unusable connection.
+                self._connection.close()
+                self._connection = None
+                from cypher_graphdb.exceptions import LabelNotFoundError
+
+                raise LabelNotFoundError(f"Label does not exist in the graph: {e}") from e
             except (psycopg.errors.ProgrammingError, psycopg.errors.DataError) as e:
-                # Handling errors like syntax errors in the statement. In that case, connection get unusable.
-                # In that case as reconnect is forced
+                # Handling errors like syntax errors in the statement. Connection gets unusable.
                 self._connection.close()
                 self._connection = None
                 raise AGEExecutionError(f"AGE query execution failed: {e}") from e

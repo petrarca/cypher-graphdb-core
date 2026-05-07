@@ -1,6 +1,9 @@
 """Exceptions for the cypher_graphdb library.
 
 This module defines custom exceptions used throughout the library.
+Backend-specific exceptions (AGEExecutionError, etc.) live in their
+respective backend modules; this module holds backend-agnostic
+exceptions that consumers can catch without knowing the backend.
 """
 
 
@@ -17,4 +20,18 @@ class ReadOnlyModeError(Exception):
         >>> db.connect(read_only=True)
         >>> db.execute("CREATE (n:Node)")
         ReadOnlyModeError: Write operation not allowed in read-only mode...
+    """
+
+
+class LabelNotFoundError(Exception):
+    """Raised when a query references a node or edge label that does not exist.
+
+    In Apache AGE, labels are backed by PostgreSQL tables that are created
+    lazily on first CREATE. A MATCH on a label that has never been written
+    fails with ``UndefinedTable``. This exception wraps that backend-specific
+    error so consumers can catch it without importing psycopg.
+
+    Common scenario: running a cleanup/delete query on a fresh graph where
+    no nodes of a given type have ever been created. The correct response
+    is usually to skip the operation (nothing to delete).
     """

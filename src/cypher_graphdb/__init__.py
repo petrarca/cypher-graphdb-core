@@ -21,7 +21,7 @@ from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
 from .decorators import edge, extend_relation, extend_relations, node, relation
-from .exceptions import ReadOnlyModeError
+from .exceptions import LabelNotFoundError, ReadOnlyModeError
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 from .modelprovider import ModelProvider, model_provider
 from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
@@ -54,6 +54,7 @@ __all__ = [
     "Settings",
     "get_settings",
     "ReadOnlyModeError",
+    "LabelNotFoundError",
     "backend",
     "BackendCapability",
     "backend_provider",
