@@ -556,17 +556,22 @@ class AGEGraphDB(CypherBackend):
     # ── Index management ────────────────────────────────────────────────
 
     def create_property_index(self, label: str, *property_names: str) -> None:
-        """Create a GIN index on the properties column of a label table.
+        """Create indexes on a label table for fast property lookups.
 
-        AGE stores all node properties in a single agtype JSON column.
-        A GIN index on this column accelerates all property-based MATCH
-        lookups (the @> containment operator). The property_names parameter
-        is accepted for API compatibility but ignored -- one GIN index
-        covers all properties.
+        Creates two kinds of indexes:
+
+        1. **GIN index** on the whole ``properties`` column -- covers the
+           ``@>`` containment operator used by some internal AGE operations.
+        2. **Btree expression indexes** on each specified property -- covers
+           the ``agtype_access_operator`` expression that AGE generates for
+           Cypher ``WHERE n.prop = ...`` clauses. Without these, every property
+           lookup is a sequential scan regardless of the GIN index.
 
         Args:
             label: Node label to index (e.g. "Method").
-            *property_names: Ignored for AGE (GIN covers all properties).
+            *property_names: Property names to create expression indexes for.
+                Each gets its own btree index. If empty, only the GIN index
+                is created.
         """
         self._require_connection()
         graph_name = self._graph_name
@@ -579,17 +584,24 @@ class AGEGraphDB(CypherBackend):
             return
 
         with self._fetch_cursor(row_factory=None) as cursor:
+            # GIN on whole properties column (covers @> containment operator)
             cursor.execute(SQLBuilder.create_gin_index(graph_name, label))
+            # Btree expression index per property (covers agtype_access_operator in WHERE)
+            for prop in property_names:
+                cursor.execute(SQLBuilder.create_expression_index(graph_name, label, prop))
             self._connection.commit()
 
-        logger.debug("GIN property index created for label '{}' in graph '{}'", label, graph_name)
+        logger.debug("Property indexes created for label '{}': GIN + {} expression indexes", label, len(property_names))
 
     def drop_index(self, label: str, *property_names: str) -> None:
-        """Drop the GIN property index on a label table.
+        """Drop the GIN and expression indexes on a label table.
+
+        Drops the GIN index on the whole ``properties`` column, plus any
+        btree expression indexes for the specified properties.
 
         Args:
-            label: Node label whose index to drop.
-            *property_names: Ignored for AGE.
+            label: Node label whose indexes to drop.
+            *property_names: Property names whose expression indexes to drop.
         """
         self._require_connection()
         graph_name = self._graph_name
@@ -597,9 +609,11 @@ class AGEGraphDB(CypherBackend):
 
         with self._fetch_cursor(row_factory=None) as cursor:
             cursor.execute(SQLBuilder.drop_gin_index(graph_name, label))
+            for prop in property_names:
+                cursor.execute(SQLBuilder.drop_expression_index(graph_name, label, prop))
             self._connection.commit()
 
-        logger.debug("GIN property index dropped for label '{}' in graph '{}'", label, graph_name)
+        logger.debug("Property indexes dropped for label '{}': GIN + {} expression indexes", label, len(property_names))
 
     def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:
         """List all indexes on the current graph.
