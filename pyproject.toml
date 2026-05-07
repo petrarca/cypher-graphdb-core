@@ -23,7 +23,7 @@ dependencies = [
     "python-dotenv",
     "prompt-toolkit",
     "rich",
-    "apache-age-python",
+    "antlr4-python3-runtime==4.11.1",
     "openpyxl",
     "numpy",
     "pydantic",
@@ -76,13 +76,10 @@ docs = [
     "black",
 ]
 
-examples = [
-    "fastapi",
-    "uvicorn",
-]
+
 
 [tool.uv.sources]
-apache-age-python = { git = "https://github.com/apache/age.git", tag = "PG18/v1.7.0-rc0", subdirectory = "drivers/python" }
+
 
 [project.scripts]
 cgdb-cli = "cypher_graphdb.args:typer_main"

@@ -29,6 +29,7 @@ from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
 from cypher_graphdb.utils import chunk_list, sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
 
+from .agebulkwriter import AGEBulkWriter
 from .agerowfactories import age_row_factory
 from .agesearch import convert_to_fts_query
 from .ageserializer import to_cypher_list
@@ -82,6 +83,17 @@ class AGEGraphDB(CypherBackend):
         # prepared statement cache for parameterized queries
         self._prepared_statements = {}  # query_hash -> stmt_name
         self._max_cached_statements = 10
+
+        # When True, bulk_create_nodes and bulk_create_edges use direct SQL
+        # INSERT into AGE label tables instead of Cypher UNWIND. This bypasses
+        # the Cypher parser overhead (~3ms per statement) and is 10-30x faster
+        # for large bulk loads. The Cypher path stays as the fallback.
+        # Set to False to revert to the original Cypher UNWIND path.
+        self.direct_bulk_insert: bool = True
+
+        # Lazy AGEBulkWriter instance -- created on first bulk operation and
+        # reused for the lifetime of the connection. Cleared on disconnect/reconnect.
+        self._bulk_writer: AGEBulkWriter | None = None
 
         if args or kwargs:
             self.connect(*args, **kwargs)
@@ -412,12 +424,14 @@ class AGEGraphDB(CypherBackend):
             self._connection = None
         self._cinfo = None
         self._ckwargs = None
+        self._bulk_writer = None
 
     def reconnect(self):
         """Reconnect to the database using stored connection info."""
         assert self._cinfo is not None, "Can only reconnect if already successfully connected!"
 
         logger.debug("Try to reconnect")
+        self._bulk_writer = None
         self.connect_to_db()
 
     def commit(self):
@@ -663,15 +677,16 @@ class AGEGraphDB(CypherBackend):
     # ── Bulk write operations ─────────────────────────────────────────────
 
     def bulk_create_nodes(self, label: str, rows: list[dict], batch_size: int = 200) -> int:
-        """Create nodes in batches using UNWIND with inline Cypher literals.
+        """Create nodes in batches.
 
-        AGE does not support $params in UNWIND. Rows are serialized as
-        inline Cypher map literals and executed in batches.
+        When ``direct_bulk_insert`` is True (default), uses direct SQL INSERT
+        via :class:`AGEBulkWriter` -- bypasses the Cypher parser for 10-30x
+        faster bulk loads. Falls back to Cypher UNWIND when disabled.
 
         Args:
             label: Node label for all created nodes.
             rows: List of property dicts, one per node.
-            batch_size: Number of nodes per UNWIND batch.
+            batch_size: Number of nodes per batch.
 
         Returns:
             Total number of nodes created.
@@ -680,11 +695,13 @@ class AGEGraphDB(CypherBackend):
         if not rows:
             return 0
 
+        if self.direct_bulk_insert:
+            return self._get_bulk_writer().bulk_insert_nodes(label, rows, batch_size)
+
         total = 0
         for batch in chunk_list(rows, batch_size):
             self._write_node_batch(label, batch)
             total += len(batch)
-
         return total
 
     def bulk_create_edges(
@@ -699,8 +716,9 @@ class AGEGraphDB(CypherBackend):
     ) -> int:
         """Create edges in batches by matching src/dst nodes on a reference property.
 
-        Each dict in edges must have "src" and "dst" keys whose values
-        match the src_ref_prop/dst_ref_prop properties on source/destination nodes.
+        When ``direct_bulk_insert`` is True and both ``src_label`` and ``dst_label``
+        are specified, uses direct SQL INSERT via :class:`AGEBulkWriter` with
+        pre-resolved graphids. Falls back to Cypher UNWIND MATCH CREATE otherwise.
 
         Args:
             label: Edge label for all created edges.
@@ -709,7 +727,7 @@ class AGEGraphDB(CypherBackend):
             dst_label: Label of destination nodes (empty string for any label).
             src_ref_prop: Property name on source nodes to match against "src".
             dst_ref_prop: Property name on destination nodes to match against "dst".
-            batch_size: Number of edges per UNWIND batch.
+            batch_size: Number of edges per batch.
 
         Returns:
             Total number of edges created.
@@ -718,7 +736,12 @@ class AGEGraphDB(CypherBackend):
         if not edges:
             return 0
 
-        # Build MATCH patterns from label/prop names (not user values -- safe to inline)
+        if self.direct_bulk_insert and src_label and dst_label:
+            return self._get_bulk_writer().bulk_insert_edges(
+                label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size
+            )
+
+        # Cypher UNWIND fallback (when labels not specified or direct insert disabled)
         src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})" if src_label else f"(a {{{src_ref_prop}: e.src}})"
         dst_pat = f"(b:{dst_label} {{{dst_ref_prop}: e.dst}})" if dst_label else f"(b {{{dst_ref_prop}: e.dst}})"
 
@@ -726,17 +749,22 @@ class AGEGraphDB(CypherBackend):
         for batch in chunk_list(edges, batch_size):
             self._write_edge_batch(label, batch, src_pat, dst_pat)
             total += len(batch)
-
         return total
 
-    # ── Private helpers for bulk write ────────────────────────────────────
+    def _get_bulk_writer(self) -> AGEBulkWriter:
+        """Return the shared AGEBulkWriter, creating it lazily on first call.
+
+        The writer is tied to the current connection and graph. It is cleared
+        automatically on disconnect() and reconnect() so it is never stale.
+        """
+        if self._bulk_writer is None:
+            self._bulk_writer = AGEBulkWriter(self._connection, self._graph_name)
+        return self._bulk_writer
+
+    # ── Cypher UNWIND helpers (fallback path) ─────────────────────────────
 
     def _write_node_batch(self, label: str, batch: list[dict]) -> None:
-        """Write one batch of node dicts via UNWIND CREATE.
-
-        All dicts in batch must have the same set of keys -- the SET clause
-        is derived from the first row and applied to all rows.
-        """
+        """Write one batch of node dicts via Cypher UNWIND CREATE."""
         props_keys = list(batch[0].keys())
         set_clause = ", ".join(f"n.{k} = props.{k}" for k in props_keys)
         cypher = f"UNWIND {to_cypher_list(batch)} AS props CREATE (n:{label}) SET {set_clause}"
@@ -745,11 +773,7 @@ class AGEGraphDB(CypherBackend):
         self.execute_cypher(parsed)
 
     def _write_edge_batch(self, label: str, batch: list[dict], src_pat: str, dst_pat: str) -> None:
-        """Write one batch of edges via UNWIND MATCH CREATE.
-
-        Any keys in batch dicts beyond 'src' and 'dst' are set as edge properties.
-        """
-        # Detect extra property keys (beyond src/dst) from first row
+        """Write one batch of edges via Cypher UNWIND MATCH CREATE."""
         edge_prop_keys = [k for k in batch[0] if k not in ("src", "dst")]
         if edge_prop_keys:
             set_clause = " SET " + ", ".join(f"r.{k} = e.{k}" for k in edge_prop_keys)

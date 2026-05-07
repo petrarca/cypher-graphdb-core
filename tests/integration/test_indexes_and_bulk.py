@@ -346,3 +346,151 @@ class TestBulkCreateTyped:
         assert fetched.id == "alice"
         assert fetched.name == "Alice"
         assert fetched.age == 30
+
+
+# ── Data correctness tests for bulk write ─────────────────────────────────────
+
+
+class TestBulkDataCorrectness:
+    """Verify that bulk-written data round-trips correctly through the graph.
+
+    These tests go beyond count assertions: they read back specific property
+    values, verify types (int, float, bool, str), and check edge properties.
+    Runs on both backends to ensure the direct SQL path (AGE) and Cypher
+    UNWIND path (Memgraph) produce identical results.
+    """
+
+    @pytest.fixture
+    def test_db(self, request):
+        return request.getfixturevalue(request.param)
+
+    @pytest.fixture
+    def clean_db(self, test_db):
+        yield test_db
+        test_db.execute("MATCH (n) DETACH DELETE n")
+        test_db.commit()
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_node_string_properties_preserved(self, clean_db):
+        """String values are preserved exactly, including empty strings."""
+        rows = [
+            {"id": "s1", "name": "Alice", "bio": ""},
+            {"id": "s2", "name": "Bob", "bio": "A developer"},
+        ]
+        clean_db.bulk_create_nodes(rows, label="StrNode")
+        clean_db.commit()
+
+        result = clean_db.execute("MATCH (n:StrNode) RETURN n.id, n.name, n.bio ORDER BY n.id")
+        assert len(result) == 2
+        assert result[0] == ("s1", "Alice", "")
+        assert result[1] == ("s2", "Bob", "A developer")
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_node_numeric_types_preserved(self, clean_db):
+        """Integer and float property values are preserved with correct types."""
+        rows = [{"id": "n1", "qty": 42, "score": 3.14, "zero": 0, "neg": -7}]
+        clean_db.bulk_create_nodes(rows, label="NumNode")
+        clean_db.commit()
+
+        result = clean_db.execute("MATCH (n:NumNode {id: 'n1'}) RETURN n.qty, n.score, n.zero, n.neg", unnest_result=True)
+        assert result[0] == 42
+        assert abs(result[1] - 3.14) < 0.001
+        assert result[2] == 0
+        assert result[3] == -7
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_node_boolean_properties_preserved(self, clean_db):
+        """Boolean values are stored and retrieved as booleans, not ints."""
+        rows = [{"id": "b1", "active": True, "deleted": False}]
+        clean_db.bulk_create_nodes(rows, label="BoolNode")
+        clean_db.commit()
+
+        result = clean_db.execute("MATCH (n:BoolNode {id: 'b1'}) RETURN n.active, n.deleted", unnest_result=True)
+        assert result[0] is True
+        assert result[1] is False
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_node_special_characters_in_strings(self, clean_db):
+        """Special characters (quotes, backslash, newline, tab) survive round-trip."""
+        rows = [
+            {"id": "x1", "val": 'say "hello"'},
+            {"id": "x2", "val": "path\\to\\file"},
+            {"id": "x3", "val": "line1\nline2"},
+            {"id": "x4", "val": "tab\there"},
+            {"id": "x5", "val": "single 'quote' here"},
+        ]
+        clean_db.bulk_create_nodes(rows, label="SpecNode")
+        clean_db.commit()
+
+        result = clean_db.execute("MATCH (n:SpecNode) RETURN n.id, n.val ORDER BY n.id")
+        assert len(result) == 5
+        assert result[0][1] == 'say "hello"'
+        assert result[1][1] == "path\\to\\file"
+        assert result[2][1] == "line1\nline2"
+        assert result[3][1] == "tab\there"
+        assert result[4][1] == "single 'quote' here"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_edge_properties_preserved(self, clean_db):
+        """Edge properties (confidence, line number) survive round-trip."""
+        clean_db.bulk_create_nodes([{"id": "m1"}, {"id": "m2"}], label="Meth")
+        clean_db.create_property_index("Meth", "id")
+        clean_db.commit()
+
+        edges = [{"src": "m1", "dst": "m2", "confidence": "EXTRACTED", "line": 42, "weight": 0.95}]
+        clean_db.bulk_create_edges(edges, label="CALLS", src_label="Meth", dst_label="Meth")
+        clean_db.commit()
+
+        result = clean_db.execute(
+            "MATCH ()-[r:CALLS]->() RETURN r.confidence, r.line, r.weight",
+            unnest_result=True,
+        )
+        assert result[0] == "EXTRACTED"
+        assert result[1] == 42
+        assert abs(result[2] - 0.95) < 0.001
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_edge_without_properties(self, clean_db):
+        """Edges with no properties (structural edges) work correctly."""
+        clean_db.bulk_create_nodes([{"id": "a"}, {"id": "b"}], label="Node")
+        clean_db.create_property_index("Node", "id")
+        clean_db.commit()
+
+        edges = [{"src": "a", "dst": "b"}]
+        count = clean_db.bulk_create_edges(edges, label="LINKS", src_label="Node", dst_label="Node")
+        clean_db.commit()
+
+        assert count == 1
+        result = clean_db.execute("MATCH (a:Node {id: 'a'})-[:LINKS]->(b:Node {id: 'b'}) RETURN b.id", unnest_result=True)
+        assert result == "b"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_many_nodes_all_queryable(self, clean_db):
+        """Bulk insert of 500 nodes should all be individually queryable."""
+        rows = [{"id": f"bulk_{i}", "value": i * 10} for i in range(500)]
+        clean_db.bulk_create_nodes(rows, label="BulkQ", batch_size=100)
+        clean_db.commit()
+
+        # Spot-check individual nodes
+        for i in [0, 99, 250, 499]:
+            result = clean_db.execute(f"MATCH (n:BulkQ {{id: 'bulk_{i}'}}) RETURN n.value", unnest_result=True)
+            assert result == i * 10, f"Node bulk_{i} should have value {i * 10}"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_edge_direction_correct(self, clean_db):
+        """Edges go from src to dst, not the other way around."""
+        clean_db.bulk_create_nodes([{"id": "src_node"}, {"id": "dst_node"}], label="DirNode")
+        clean_db.create_property_index("DirNode", "id")
+        clean_db.commit()
+
+        edges = [{"src": "src_node", "dst": "dst_node"}]
+        clean_db.bulk_create_edges(edges, label="POINTS_TO", src_label="DirNode", dst_label="DirNode")
+        clean_db.commit()
+
+        # Forward direction should match
+        fwd = clean_db.execute("MATCH (a:DirNode {id: 'src_node'})-[:POINTS_TO]->(b) RETURN b.id", unnest_result=True)
+        assert fwd == "dst_node"
+
+        # Reverse direction should not match
+        rev = clean_db.execute("MATCH (a:DirNode {id: 'dst_node'})-[:POINTS_TO]->(b) RETURN b.id")
+        assert rev == [] or rev is None

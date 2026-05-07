@@ -203,6 +203,36 @@ class SQLBuilder:
             idx=sql.Identifier(idx_name),
         )
 
+    # ── Direct SQL bulk insert (bypasses Cypher parser) ─────────────────
+
+    @classmethod
+    def lookup_label_id_sql(cls) -> sql.SQL:
+        """SQL to look up the numeric label_id for a label name within a graph.
+
+        Returns a parameterised query with two bind positions: (graph_name, label_name).
+        """
+        return sql.SQL(
+            "SELECT l.id FROM ag_catalog.ag_label l "
+            "JOIN ag_catalog.ag_graph g ON g.graphid = l.graph "
+            "WHERE g.name = %s AND l.name = %s"
+        )
+
+    @classmethod
+    def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_prop: str) -> sql.SQL:
+        """SQL to look up graphids of nodes by a property value.
+
+        Returns SQL that takes a list of ref values and returns (ref_value, graphid) pairs.
+        Uses the agtype_access_operator for property extraction (covered by expression indexes).
+        """
+        return sql.SQL(
+            "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
+            "FROM {schema}.{table}"
+        ).format(
+            schema=sql.Identifier(graph_name),
+            table=sql.Identifier(label),
+            prop=sql.Literal(f'"{ref_prop}"'),
+        )
+
     @classmethod
     def list_indexes(cls, graph_name: str) -> sql.SQL:
         """List all user-created indexes in the graph schema via pg_indexes."""
