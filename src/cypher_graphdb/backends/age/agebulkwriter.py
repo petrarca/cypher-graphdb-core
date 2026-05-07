@@ -8,8 +8,13 @@ for large bulk loads.
 
 The writer is stateless: it receives a connection and graph_name, performs
 the INSERT, and returns. Transaction control (commit/rollback) is the
-caller's responsibility.
+caller's responsibility, with one exception: when a label does not yet exist,
+``_ensure_label`` creates it via DDL inside a savepoint so that the DDL is
+committed immediately (DDL cannot run inside a user transaction in PostgreSQL)
+without affecting any surrounding data already written by the caller.
 """
+
+from typing import Literal
 
 import psycopg
 from loguru import logger
@@ -160,29 +165,46 @@ class AGEBulkWriter:
 
     # -- Internal helpers -----------------------------------------------------
 
-    def _ensure_label(self, label: str, kind: str = "v") -> int:
+    def _ensure_label(self, label: str, kind: Literal["v", "e"] = "v") -> int:
         """Look up the numeric label_id, creating the label if needed.
+
+        When the label does not exist, creates it via a savepoint so that the
+        DDL commit is isolated. PostgreSQL DDL (CREATE TABLE, which AGE's
+        create_vlabel/create_elabel issue internally) cannot run inside an open
+        transaction; committing via savepoint releases the DDL without
+        discarding any data already written by the caller in the outer
+        transaction.
 
         Args:
             label: Label name (e.g. "Method", "CALLS").
-            kind: 'v' for vertex, 'e' for edge.
+            kind: ``"v"`` for vertex label, ``"e"`` for edge label.
 
         Returns:
             The integer label_id for the label.
+
+        Raises:
+            ValueError: If the label cannot be created or looked up.
         """
-        lookup_sql = SQLBuilder.lookup_label_id_sql(self._graph_name)
+        lookup_sql = SQLBuilder.lookup_label_id_sql()
         with self._conn.cursor() as cursor:
             cursor.execute(lookup_sql, (self._graph_name, label))
             row = cursor.fetchone()
             if row:
                 return row[0]
 
-            # Label doesn't exist -- create it (AGE normally does this lazily via Cypher CREATE)
-            if kind == "v":
-                cursor.execute(SQLBuilder.create_vlabel(self._graph_name, label))
-            else:
-                cursor.execute(SQLBuilder.create_elabel(self._graph_name, label))
-            self._conn.commit()
+            # Label doesn't exist -- create it inside a savepoint so that the
+            # DDL commit does not affect the caller's surrounding transaction.
+            cursor.execute("SAVEPOINT _age_ensure_label")
+            try:
+                if kind == "v":
+                    cursor.execute(SQLBuilder.create_vlabel(self._graph_name, label))
+                else:
+                    cursor.execute(SQLBuilder.create_elabel(self._graph_name, label))
+                cursor.execute("RELEASE SAVEPOINT _age_ensure_label")
+                self._conn.commit()
+            except Exception:
+                cursor.execute("ROLLBACK TO SAVEPOINT _age_ensure_label")
+                raise
 
             cursor.execute(lookup_sql, (self._graph_name, label))
             row = cursor.fetchone()

@@ -206,50 +206,11 @@ class SQLBuilder:
     # ── Direct SQL bulk insert (bypasses Cypher parser) ─────────────────
 
     @classmethod
-    def bulk_insert_node_sql(cls, graph_name: str, label: str) -> sql.SQL:
-        """SQL for direct INSERT of a single vertex row into an AGE label table.
+    def lookup_label_id_sql(cls) -> sql.SQL:
+        """SQL to look up the numeric label_id for a label name within a graph.
 
-        Uses _graphid(_label_id(...), nextval(...)) for ID generation --
-        the same pattern AGE's own test suite uses (age_global_graph.sql).
-        Properties are passed as a single agtype parameter.
-
-        Returns SQL with two %s placeholders: (label_id_int, properties_json).
-        The caller should executemany() with [(label_id, json_str), ...] tuples.
+        Returns a parameterised query with two bind positions: (graph_name, label_name).
         """
-        seq_name = f'{graph_name}."{label}_id_seq"'
-        return sql.SQL(
-            "INSERT INTO {schema}.{table} (id, properties) VALUES ("
-            "ag_catalog._graphid(%s::int, nextval({seq}::regclass)), "
-            "%s::ag_catalog.agtype"
-            ")"
-        ).format(
-            schema=sql.Identifier(graph_name),
-            table=sql.Identifier(label),
-            seq=sql.Literal(seq_name),
-        )
-
-    @classmethod
-    def bulk_insert_edge_sql(cls, graph_name: str, label: str) -> sql.SQL:
-        """SQL for direct INSERT of a single edge row into an AGE edge label table.
-
-        Returns SQL with four %s placeholders: (label_id_int, start_graphid, end_graphid, properties_json).
-        """
-        seq_name = f'{graph_name}."{label}_id_seq"'
-        return sql.SQL(
-            "INSERT INTO {schema}.{table} (id, start_id, end_id, properties) VALUES ("
-            "ag_catalog._graphid(%s::int, nextval({seq}::regclass)), "
-            "%s::ag_catalog.graphid, %s::ag_catalog.graphid, "
-            "%s::ag_catalog.agtype"
-            ")"
-        ).format(
-            schema=sql.Identifier(graph_name),
-            table=sql.Identifier(label),
-            seq=sql.Literal(seq_name),
-        )
-
-    @classmethod
-    def lookup_label_id_sql(cls, graph_name: str) -> sql.SQL:
-        """SQL to look up the numeric label_id for a label name within a graph."""
         return sql.SQL(
             "SELECT l.id FROM ag_catalog.ag_label l "
             "JOIN ag_catalog.ag_graph g ON g.graphid = l.graph "

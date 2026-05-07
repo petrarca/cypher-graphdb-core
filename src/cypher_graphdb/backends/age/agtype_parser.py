@@ -140,9 +140,8 @@ def _detect_suffix(raw: str) -> str | None:
     return None
 
 
-def _parse_vertex(json_str: str) -> Vertex:
-    """Parse a vertex JSON object into an age.models.Vertex."""
-    d = json.loads(json_str)
+def _vertex_from_dict(d: dict) -> Vertex:
+    """Construct a Vertex from a parsed agtype object dict."""
     v = Vertex()
     v.id = d.get("id")
     v.label = d.get("label", "")
@@ -150,9 +149,8 @@ def _parse_vertex(json_str: str) -> Vertex:
     return v
 
 
-def _parse_edge(json_str: str) -> Edge:
-    """Parse an edge JSON object into an age.models.Edge."""
-    d = json.loads(json_str)
+def _edge_from_dict(d: dict) -> Edge:
+    """Construct an Edge from a parsed agtype object dict."""
     e = Edge()
     e.id = d.get("id")
     e.label = d.get("label", "")
@@ -162,8 +160,22 @@ def _parse_edge(json_str: str) -> Edge:
     return e
 
 
+def _parse_vertex(json_str: str) -> Vertex:
+    """Parse a vertex JSON string into a Vertex."""
+    return _vertex_from_dict(json.loads(json_str))
+
+
+def _parse_edge(json_str: str) -> Edge:
+    """Parse an edge JSON string into an Edge."""
+    return _edge_from_dict(json.loads(json_str))
+
+
 def _parse_path(raw: str) -> Path:
-    """Parse a path: [{...}::vertex, {...}::edge, ...]::path into an age.models.Path."""
+    """Parse a path agtype string into a Path.
+
+    Path format: [{...}::vertex, {...}::edge, {...}::vertex]::path
+    Alternating even-index vertices and odd-index edges.
+    """
     # Strip outer ::path and the surrounding brackets
     inner = raw[: -len("::path")]
 
@@ -175,20 +187,8 @@ def _parse_path(raw: str) -> Path:
     entities = []
     for i, elem in enumerate(elements_raw):
         if i % 2 == 0:
-            # Even positions are vertices
-            v = Vertex()
-            v.id = elem.get("id")
-            v.label = elem.get("label", "")
-            v.properties = elem.get("properties", {})
-            entities.append(v)
+            entities.append(_vertex_from_dict(elem))
         else:
-            # Odd positions are edges
-            e = Edge()
-            e.id = elem.get("id")
-            e.label = elem.get("label", "")
-            e.start_id = elem.get("start_id")
-            e.end_id = elem.get("end_id")
-            e.properties = elem.get("properties", {})
-            entities.append(e)
+            entities.append(_edge_from_dict(elem))
 
     return Path(entities)

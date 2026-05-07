@@ -91,6 +91,10 @@ class AGEGraphDB(CypherBackend):
         # Set to False to revert to the original Cypher UNWIND path.
         self.direct_bulk_insert: bool = True
 
+        # Lazy AGEBulkWriter instance -- created on first bulk operation and
+        # reused for the lifetime of the connection. Cleared on disconnect/reconnect.
+        self._bulk_writer: AGEBulkWriter | None = None
+
         if args or kwargs:
             self.connect(*args, **kwargs)
 
@@ -420,12 +424,14 @@ class AGEGraphDB(CypherBackend):
             self._connection = None
         self._cinfo = None
         self._ckwargs = None
+        self._bulk_writer = None
 
     def reconnect(self):
         """Reconnect to the database using stored connection info."""
         assert self._cinfo is not None, "Can only reconnect if already successfully connected!"
 
         logger.debug("Try to reconnect")
+        self._bulk_writer = None
         self.connect_to_db()
 
     def commit(self):
@@ -690,8 +696,7 @@ class AGEGraphDB(CypherBackend):
             return 0
 
         if self.direct_bulk_insert:
-            writer = AGEBulkWriter(self._connection, self._graph_name)
-            return writer.bulk_insert_nodes(label, rows, batch_size)
+            return self._get_bulk_writer().bulk_insert_nodes(label, rows, batch_size)
 
         total = 0
         for batch in chunk_list(rows, batch_size):
@@ -732,8 +737,9 @@ class AGEGraphDB(CypherBackend):
             return 0
 
         if self.direct_bulk_insert and src_label and dst_label:
-            writer = AGEBulkWriter(self._connection, self._graph_name)
-            return writer.bulk_insert_edges(label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size)
+            return self._get_bulk_writer().bulk_insert_edges(
+                label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size
+            )
 
         # Cypher UNWIND fallback (when labels not specified or direct insert disabled)
         src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})" if src_label else f"(a {{{src_ref_prop}: e.src}})"
@@ -744,6 +750,16 @@ class AGEGraphDB(CypherBackend):
             self._write_edge_batch(label, batch, src_pat, dst_pat)
             total += len(batch)
         return total
+
+    def _get_bulk_writer(self) -> AGEBulkWriter:
+        """Return the shared AGEBulkWriter, creating it lazily on first call.
+
+        The writer is tied to the current connection and graph. It is cleared
+        automatically on disconnect() and reconnect() so it is never stale.
+        """
+        if self._bulk_writer is None:
+            self._bulk_writer = AGEBulkWriter(self._connection, self._graph_name)
+        return self._bulk_writer
 
     # ── Cypher UNWIND helpers (fallback path) ─────────────────────────────
 
