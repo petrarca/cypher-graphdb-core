@@ -411,27 +411,24 @@ class TestBulkDataCorrectness:
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_node_special_characters_in_strings(self, clean_db):
-        """Special characters (backslash, newline, tab, single quote) survive round-trip.
-
-        Verifies that the direct SQL INSERT path stores values identically
-        to the Cypher UNWIND path. All special characters should be
-        preserved through write -> read.
-        """
+        """Special characters (quotes, backslash, newline, tab) survive round-trip."""
         rows = [
-            {"id": "x1", "val": "path\\to\\file"},
-            {"id": "x2", "val": "line1\nline2"},
-            {"id": "x3", "val": "tab\there"},
-            {"id": "x4", "val": "single 'quote' here"},
+            {"id": "x1", "val": 'say "hello"'},
+            {"id": "x2", "val": "path\\to\\file"},
+            {"id": "x3", "val": "line1\nline2"},
+            {"id": "x4", "val": "tab\there"},
+            {"id": "x5", "val": "single 'quote' here"},
         ]
         clean_db.bulk_create_nodes(rows, label="SpecNode")
         clean_db.commit()
 
         result = clean_db.execute("MATCH (n:SpecNode) RETURN n.id, n.val ORDER BY n.id")
-        assert len(result) == 4
-        assert "path" in result[0][1] and "file" in result[0][1]
-        assert "line1" in result[1][1] and "line2" in result[1][1]
-        assert "tab" in result[2][1] and "here" in result[2][1]
-        assert "single" in result[3][1] and "quote" in result[3][1]
+        assert len(result) == 5
+        assert result[0][1] == 'say "hello"'
+        assert result[1][1] == "path\\to\\file"
+        assert result[2][1] == "line1\nline2"
+        assert result[3][1] == "tab\there"
+        assert result[4][1] == "single 'quote' here"
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_edge_properties_preserved(self, clean_db):
