@@ -94,12 +94,16 @@ class SQLBuilder:
         # Strip trailing semicolon from Cypher query - AGE doesn't accept it in cypher() function
         cypher_clean = cypher_query.parsed_query.rstrip(";").strip()
 
-        # Build cypher() function call with optional params
-        # For prepared statements, use $1 placeholder for agtype parameter
+        # Build cypher() function call with optional params.
+        # Use a tagged dollar-quote ($age_cypher$...$age_cypher$) instead of bare
+        # $$ so that property values containing $$ (e.g. file paths, Angular
+        # identifiers) do not prematurely terminate the quote block.
+        # The tag 'age_cypher' cannot appear in user data (source paths, class
+        # names, field names) so it is safe as a delimiter.
         if params:
-            cypher_call = f"cypher('{graph_name}', $$ {cypher_clean} $$, $1)"
+            cypher_call = f"cypher('{graph_name}', $age_cypher$ {cypher_clean} $age_cypher$, $1)"
         else:
-            cypher_call = f"cypher('{graph_name}', $$ {cypher_clean} $$)"
+            cypher_call = f"cypher('{graph_name}', $age_cypher$ {cypher_clean} $age_cypher$)"
 
         # TODO: select explicit fields from return argmentents: select p1, ..
         return (sql.SQL(f"SELECT {column_list} FROM {cypher_call} as ({result_types})"), None)

@@ -110,3 +110,22 @@ class TestToCypherList:
     def test_numeric_values(self):
         result = to_cypher_list([{"start_line": 10, "end_line": 20, "score": 0.95}])
         assert result == "[{start_line: 10, end_line: 20, score: 0.95}]"
+
+    def test_dollar_sign_in_value(self):
+        # Single $ is safe -- only $$ terminates the dollar-quote block
+        result = to_cypher_list([{"name": "price$tag"}])
+        assert '"price$tag"' in result
+
+    def test_double_dollar_in_value(self):
+        # $$ in a value would terminate the AGE dollar-quote block if not escaped.
+        # escape_value must not let $$ pass through unmodified inside a string literal.
+        # The value is wrapped in double-quotes so $$ inside is already safe from the
+        # dollar-quote perspective (the delimiter is outside the string). This test
+        # documents the expected behaviour and guards against regression.
+        result = escape_value("path$$name")
+        assert result == '"path$$name"'
+        # The serialized form is safe because the $$ is inside the double-quoted string,
+        # not in the surrounding Cypher text. The outer $age_cypher$ tag in the SQL
+        # builder (not $$) provides the protection against premature termination.
+        serialized = to_cypher_list([{"symbol": "fld:pkg.Cls$$inner.field"}])
+        assert '"fld:pkg.Cls$$inner.field"' in serialized
