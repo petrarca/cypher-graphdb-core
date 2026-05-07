@@ -29,6 +29,7 @@ from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
 from cypher_graphdb.utils import chunk_list, sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
 
+from .agebulkwriter import AGEBulkWriter
 from .agerowfactories import age_row_factory
 from .agesearch import convert_to_fts_query
 from .ageserializer import to_cypher_list
@@ -673,8 +674,8 @@ class AGEGraphDB(CypherBackend):
         """Create nodes in batches.
 
         When ``direct_bulk_insert`` is True (default), uses direct SQL INSERT
-        into the AGE label table -- bypasses the Cypher parser for 10-30x faster
-        bulk loads. Falls back to Cypher UNWIND when disabled.
+        via :class:`AGEBulkWriter` -- bypasses the Cypher parser for 10-30x
+        faster bulk loads. Falls back to Cypher UNWIND when disabled.
 
         Args:
             label: Node label for all created nodes.
@@ -689,7 +690,8 @@ class AGEGraphDB(CypherBackend):
             return 0
 
         if self.direct_bulk_insert:
-            return self._bulk_insert_nodes_sql(label, rows, batch_size)
+            writer = AGEBulkWriter(self._connection, self._graph_name)
+            return writer.bulk_insert_nodes(label, rows, batch_size)
 
         total = 0
         for batch in chunk_list(rows, batch_size):
@@ -710,8 +712,8 @@ class AGEGraphDB(CypherBackend):
         """Create edges in batches by matching src/dst nodes on a reference property.
 
         When ``direct_bulk_insert`` is True and both ``src_label`` and ``dst_label``
-        are specified, uses direct SQL INSERT with pre-resolved graphids for the
-        endpoints. Falls back to Cypher UNWIND MATCH CREATE otherwise.
+        are specified, uses direct SQL INSERT via :class:`AGEBulkWriter` with
+        pre-resolved graphids. Falls back to Cypher UNWIND MATCH CREATE otherwise.
 
         Args:
             label: Edge label for all created edges.
@@ -730,7 +732,8 @@ class AGEGraphDB(CypherBackend):
             return 0
 
         if self.direct_bulk_insert and src_label and dst_label:
-            return self._bulk_insert_edges_sql(label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size)
+            writer = AGEBulkWriter(self._connection, self._graph_name)
+            return writer.bulk_insert_edges(label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size)
 
         # Cypher UNWIND fallback (when labels not specified or direct insert disabled)
         src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})" if src_label else f"(a {{{src_ref_prop}: e.src}})"
@@ -742,14 +745,10 @@ class AGEGraphDB(CypherBackend):
             total += len(batch)
         return total
 
-    # ── Private helpers for bulk write ────────────────────────────────────
+    # ── Cypher UNWIND helpers (fallback path) ─────────────────────────────
 
     def _write_node_batch(self, label: str, batch: list[dict]) -> None:
-        """Write one batch of node dicts via UNWIND CREATE.
-
-        All dicts in batch must have the same set of keys -- the SET clause
-        is derived from the first row and applied to all rows.
-        """
+        """Write one batch of node dicts via Cypher UNWIND CREATE."""
         props_keys = list(batch[0].keys())
         set_clause = ", ".join(f"n.{k} = props.{k}" for k in props_keys)
         cypher = f"UNWIND {to_cypher_list(batch)} AS props CREATE (n:{label}) SET {set_clause}"
@@ -758,11 +757,7 @@ class AGEGraphDB(CypherBackend):
         self.execute_cypher(parsed)
 
     def _write_edge_batch(self, label: str, batch: list[dict], src_pat: str, dst_pat: str) -> None:
-        """Write one batch of edges via UNWIND MATCH CREATE.
-
-        Any keys in batch dicts beyond 'src' and 'dst' are set as edge properties.
-        """
-        # Detect extra property keys (beyond src/dst) from first row
+        """Write one batch of edges via Cypher UNWIND MATCH CREATE."""
         edge_prop_keys = [k for k in batch[0] if k not in ("src", "dst")]
         if edge_prop_keys:
             set_clause = " SET " + ", ".join(f"r.{k} = e.{k}" for k in edge_prop_keys)
@@ -773,119 +768,6 @@ class AGEGraphDB(CypherBackend):
 
         parsed = self.parse_cypher(cypher)
         self.execute_cypher(parsed)
-
-    # ── Direct SQL bulk insert (fast path) ──────────────────────────────
-
-    def _get_label_id(self, label: str, kind: str = "v") -> int:
-        """Look up the numeric label_id for a label, creating it if needed.
-
-        Args:
-            label: Label name (e.g. "Method", "CALLS").
-            kind: 'v' for vertex, 'e' for edge.
-        """
-        lookup_sql = SQLBuilder.lookup_label_id_sql(self._graph_name)
-        with self._fetch_cursor(row_factory=None) as cursor:
-            cursor.execute(lookup_sql, (self._graph_name, label))
-            row = cursor.fetchone()
-            if row:
-                return row[0]
-
-            # Label doesn't exist yet — create it within the same cursor/transaction
-            if kind == "v":
-                cursor.execute(SQLBuilder.create_vlabel(self._graph_name, label))
-            else:
-                cursor.execute(SQLBuilder.create_elabel(self._graph_name, label))
-            self._connection.commit()
-
-            # Re-query after creation
-            cursor.execute(lookup_sql, (self._graph_name, label))
-            row = cursor.fetchone()
-
-        if not row:
-            raise ValueError(f"Failed to create label '{label}' in graph '{self._graph_name}'")
-        return row[0]
-
-    def _build_graphid_index(self, label: str, ref_prop: str) -> dict[str, int]:
-        """Load a {ref_prop_value: graphid} mapping for all nodes of a label.
-
-        Values are returned as agtype-quoted strings (e.g. '"mth:foo.bar"'),
-        so we strip the surrounding quotes to match the plain string values
-        in edge dicts.
-        """
-        sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, ref_prop)
-        with self._fetch_cursor(row_factory=None) as cursor:
-            cursor.execute(sql_stmt)
-            rows = cursor.fetchall()
-        # agtype_access_operator returns values as '"foo"' (with quotes) -- strip them
-        return {str(r[0]).strip('"'): r[1] for r in rows}
-
-    def _bulk_insert_nodes_sql(self, label: str, rows: list[dict], batch_size: int) -> int:
-        """Insert nodes via direct SQL INSERT into the AGE label table.
-
-        Bypasses the Cypher parser entirely. Uses _graphid() + nextval() for
-        ID generation and ::agtype cast for properties — the same pattern
-        AGE's own test suite uses (age_global_graph.sql).
-        """
-        label_id = self._get_label_id(label)
-        insert_sql = SQLBuilder.bulk_insert_node_sql(self._graph_name, label)
-
-        total = 0
-        with self._fetch_cursor(row_factory=None) as cursor:
-            for batch in chunk_list(rows, batch_size):
-                params = [(label_id, json.dumps(row)) for row in batch]
-                cursor.executemany(insert_sql, params)
-                total += len(batch)
-
-        logger.debug("Direct SQL: {} {} nodes inserted", total, label)
-        return total
-
-    def _bulk_insert_edges_sql(
-        self, label: str, edges: list[dict], src_label: str, dst_label: str, src_ref_prop: str, dst_ref_prop: str, batch_size: int
-    ) -> int:
-        """Insert edges via direct SQL INSERT into the AGE edge label table.
-
-        First builds graphid lookup maps for source and destination nodes,
-        then INSERTs edges with resolved start_id/end_id — no Cypher MATCH
-        needed at write time.
-
-        Edges whose src or dst reference cannot be resolved are silently
-        skipped (same behaviour as Cypher MATCH — unmatched patterns produce
-        no rows).
-        """
-        label_id = self._get_label_id(label, kind="e")
-
-        # Build {ref_value: graphid} maps for source and destination nodes
-        src_map = self._build_graphid_index(src_label, src_ref_prop)
-        if src_label == dst_label and src_ref_prop == dst_ref_prop:
-            dst_map = src_map  # same label+prop — reuse the map
-        else:
-            dst_map = self._build_graphid_index(dst_label, dst_ref_prop)
-
-        insert_sql = SQLBuilder.bulk_insert_edge_sql(self._graph_name, label)
-
-        total = 0
-        skipped = 0
-        with self._fetch_cursor(row_factory=None) as cursor:
-            for batch in chunk_list(edges, batch_size):
-                params = []
-                for edge in batch:
-                    src_gid = src_map.get(edge["src"])
-                    dst_gid = dst_map.get(edge["dst"])
-                    if src_gid is None or dst_gid is None:
-                        skipped += 1
-                        continue
-                    # Edge properties: everything except src/dst
-                    props = {k: v for k, v in edge.items() if k not in ("src", "dst")}
-                    params.append((label_id, src_gid, dst_gid, json.dumps(props) if props else "{}"))
-                if params:
-                    cursor.executemany(insert_sql, params)
-                    total += len(params)
-
-        if skipped:
-            logger.debug("Direct SQL: {} {} edges inserted, {} skipped (unresolved endpoints)", total, label, skipped)
-        else:
-            logger.debug("Direct SQL: {} {} edges inserted", total, label)
-        return total
 
     def _get_label_tables(self) -> set[str]:
         """Get the set of existing label table names in the graph schema."""
