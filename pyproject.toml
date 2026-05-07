@@ -23,7 +23,7 @@ dependencies = [
     "python-dotenv",
     "prompt-toolkit",
     "rich",
-
+    "antlr4-python3-runtime==4.11.1",
     "openpyxl",
     "numpy",
     "pydantic",
@@ -76,10 +76,7 @@ docs = [
     "black",
 ]
 
-examples = [
-    "fastapi",
-    "uvicorn",
-]
+
 
 [tool.uv.sources]
 
