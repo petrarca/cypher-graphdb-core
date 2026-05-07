@@ -8,7 +8,6 @@ providers.
 from collections.abc import Sequence
 from typing import Any
 
-import age
 from psycopg.cursor import BaseCursor
 from psycopg.rows import BaseRowFactory, RowMaker, T
 
@@ -16,15 +15,17 @@ from cypher_graphdb.backend import ExecStatistics
 from cypher_graphdb.modelprovider import ModelProvider
 from cypher_graphdb.models import GraphEdge, GraphNode, GraphPath
 
+from . import agtype_parser
 
-def _create_graph_node(value: age.models.Vertex, stats: ExecStatistics, provider: ModelProvider) -> GraphNode:
+
+def _create_graph_node(value: agtype_parser.Vertex, stats: ExecStatistics, provider: ModelProvider) -> GraphNode:
     """Create a GraphNode from an AGE Vertex."""
     node = provider.create_node(value.label, value.properties, id_=value.id)
     stats.track_node(node)
     return node
 
 
-def _create_graph_edge(value: age.models.Edge, stats: ExecStatistics, provider: ModelProvider) -> GraphEdge:
+def _create_graph_edge(value: agtype_parser.Edge, stats: ExecStatistics, provider: ModelProvider) -> GraphEdge:
     """Create a GraphEdge from an AGE Edge."""
     edge = provider.create_edge(value.label, value.start_id, value.end_id, value.properties, id_=value.id)
     stats.track_edge(edge)
@@ -36,11 +37,11 @@ def _create_graph_path(value, stats: ExecStatistics, provider: ModelProvider) ->
     path = GraphPath()
 
     for entity in value.entities:
-        if isinstance(entity, age.models.Vertex):
+        if isinstance(entity, agtype_parser.Vertex):
             # Don't update stats here, will be updated when path stats are updated
             node = provider.create_node(entity.label, entity.properties, id_=entity.id)
             path.append(node)
-        elif isinstance(entity, age.models.Edge):
+        elif isinstance(entity, agtype_parser.Edge):
             # Don't update stats here, will be updated when path stats are updated
             edge = provider.create_edge(entity.label, entity.start_id, entity.end_id, entity.properties, id_=entity.id)
             path.append(edge)
@@ -53,11 +54,11 @@ def _create_graph_path(value, stats: ExecStatistics, provider: ModelProvider) ->
 
 def _map_age_value(value, stats: ExecStatistics, provider: ModelProvider):
     """Map an AGE value to the appropriate graph object type."""
-    if isinstance(value, age.models.Vertex):
+    if isinstance(value, agtype_parser.Vertex):
         return _create_graph_node(value, stats, provider)
-    elif isinstance(value, age.models.Edge):
+    elif isinstance(value, agtype_parser.Edge):
         return _create_graph_edge(value, stats, provider)
-    elif isinstance(value, age.models.Path):
+    elif isinstance(value, agtype_parser.Path):
         return _create_graph_path(value, stats, provider)
     else:
         # Only count non-null values (matching Memgraph behavior)

@@ -7,10 +7,10 @@ quotes with ``strip('"')`` without unescaping ``\\"`` inside the string, causing
 double-quote characters in property values to be returned with literal backslash
 escapes.
 
-This module replaces the ANTLR parser with Python's ``json.loads``, which
-correctly handles all JSON escape sequences. The type annotations are stripped
-before parsing and used to construct the appropriate ``age.models`` objects
-(``Vertex``, ``Edge``, ``Path``).
+This module replaces the ANTLR parser entirely -- no dependency on the ``age``
+package or ANTLR runtime. Uses Python's ``json.loads`` for correct JSON escape
+handling, and defines its own Vertex/Edge/Path data classes that are API-compatible
+with the ``age.models`` originals.
 
 Performance: ``json.loads`` is implemented in C and is significantly faster than
 the ANTLR parser for large result sets.
@@ -22,7 +22,68 @@ import json
 import re
 from typing import Any
 
-from age.models import Edge, Path, Vertex
+# ── Graph data classes (replace age.models) ───────────────────────────────────
+
+
+class Vertex:
+    """A graph vertex parsed from agtype ``::vertex`` data."""
+
+    def __init__(self, id=None, label=None, properties=None):
+        self.id = id
+        self.label = label
+        self.properties = properties or {}
+
+    def __repr__(self):
+        return f"Vertex(id={self.id}, label={self.label!r}, properties={self.properties})"
+
+    def __getitem__(self, name):
+        return self.properties.get(name)
+
+    def __setitem__(self, name, value):
+        self.properties[name] = value
+
+
+class Edge:
+    """A graph edge parsed from agtype ``::edge`` data."""
+
+    def __init__(self, id=None, label=None, start_id=None, end_id=None, properties=None):
+        self.id = id
+        self.label = label
+        self.start_id = start_id
+        self.end_id = end_id
+        self.properties = properties or {}
+
+    def __repr__(self):
+        return f"Edge(id={self.id}, label={self.label!r}, start={self.start_id}, end={self.end_id})"
+
+    def __getitem__(self, name):
+        return self.properties.get(name)
+
+    def __setitem__(self, name, value):
+        self.properties[name] = value
+
+
+class Path:
+    """A graph path parsed from agtype ``::path`` data -- a list of alternating vertices and edges."""
+
+    def __init__(self, entities=None):
+        self.entities = entities or []
+
+    def __repr__(self):
+        return f"Path(len={len(self.entities)})"
+
+    def __len__(self):
+        return len(self.entities)
+
+    def __iter__(self):
+        return iter(self.entities)
+
+    def __getitem__(self, index):
+        return self.entities[index]
+
+    def append(self, entity):
+        self.entities.append(entity)
+
 
 # Regex to strip ::type annotation from the end of an agtype value.
 # Matches ::vertex, ::edge, ::path, ::numeric (AGE's known type annotations).

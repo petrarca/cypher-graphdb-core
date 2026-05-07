@@ -1,8 +1,6 @@
 """Tests for the JSON-based agtype parser (replaces ANTLR parser)."""
 
-from age.models import Edge, Path, Vertex
-
-from cypher_graphdb.backends.age.agtype_parser import parse_agtype
+from cypher_graphdb.backends.age.agtype_parser import Edge, Path, Vertex, parse_agtype
 
 
 class TestScalars:
