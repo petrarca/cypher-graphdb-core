@@ -1,6 +1,11 @@
 """Utilities for handling column names and resolving wildcards in query results."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cypher_graphdb.cyphergraphdb.result import QueryResult
 
 
 def resolve_column_names(return_arguments: dict[str, str], result_data: Any, col_count: int) -> dict[str, str]:
@@ -61,6 +66,50 @@ def resolve_column_names(return_arguments: dict[str, str], result_data: Any, col
     resolved.update(explicit_cols)
 
     return resolved
+
+
+def build_render_kwargs(query_result: QueryResult) -> dict:
+    """Build the kwargs dict for ``ResultRenderer.render()`` from a ``QueryResult``.
+
+    Resolves column names from the parsed query's RETURN clause and returns a
+    kwargs dict suitable for passing directly to ``ResultRenderer.render()``.
+    Handles both the normal case (named columns) and the ``RETURN *`` case
+    (wildcard expansion into numeric + explicit column keys).
+
+    This is the canonical implementation of the column-name resolution logic --
+    use it instead of duplicating the ``resolve_column_names`` + wildcard
+    branching inline wherever query results are rendered.
+
+    Args:
+        query_result: QueryResult from ``CypherGraphDB.execute_with_stats()``.
+
+    Returns:
+        kwargs dict for ``ResultRenderer.render(result.data, kwargs=...)``.
+        Empty dict when no parsed query or no RETURN arguments are available.
+
+    Example::
+
+        result = cdb.execute_with_stats(parsed_query)
+        kwargs = build_render_kwargs(result)
+        renderer.render(result.data, kwargs=kwargs)
+    """
+    if not query_result.parsed_query or not query_result.parsed_query.return_arguments:
+        return {}
+
+    return_args = query_result.parsed_query.return_arguments
+    resolved = resolve_column_names(return_args, query_result.data, query_result.exec_statistics.col_count)
+
+    if "*" in return_args:
+        # RETURN * case: numeric string keys for wildcard columns, named keys
+        # for explicit columns. Pass col_headers=None to signal wildcard mode.
+        sorted_keys = sorted(resolved.keys())
+        return {
+            "col_headers": None,
+            "wildcard_cols": [resolved[k] for k in sorted_keys if k.isdigit()],
+            "explicit_cols": [resolved[k] for k in resolved if not k.isdigit()],
+        }
+
+    return {"col_headers": list(resolved.keys())}
 
 
 def _detect_column_names(result_data: Any, expected_count: int) -> list[str]:

@@ -4,7 +4,7 @@ import rich
 
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
-from cypher_graphdb.utils import resolve_column_names
+from cypher_graphdb.utils import build_render_kwargs
 
 
 class ExecuteCypherCommand(BaseCommand):
@@ -63,39 +63,11 @@ class ExecuteCypherCommand(BaseCommand):
             self.graph_data.last_result = result
 
             # Label columns based on cached parsed query
-            if self.graph_data.last_parsed_query and self.graph_data.last_parsed_query.return_arguments:
-                return_args = self.graph_data.last_parsed_query.return_arguments
-                stats = self.graph_data.last_exec_statistics
+            render_kwargs = build_render_kwargs(query_result)
+            self.renderer.render(result, kwargs=render_kwargs)
 
-                # Resolve wildcards in column names
-                resolved_col_names = resolve_column_names(return_args, result, stats.col_count)
-
-                # Handle RETURN * case
-                # When wildcard is present, resolved_col_names has numeric keys
-                # for wildcard columns (e.g., "0", "1", "2") and original keys
-                # for explicit columns
-                if "*" in return_args:
-                    # Extract the resolved wildcard column values
-                    # (these have numeric string keys)
-                    sorted_keys = sorted(resolved_col_names.keys())
-                    wildcard_cols = [resolved_col_names[k] for k in sorted_keys if k.isdigit()]
-                    # Extract explicit column values (non-numeric keys)
-                    explicit_cols = [resolved_col_names[k] for k in resolved_col_names if not k.isdigit()]
-
-                    # Pass None to signal wildcard, plus resolved column names
-                    col_headers = None
-                    render_kwargs = {"col_headers": col_headers, "wildcard_cols": wildcard_cols, "explicit_cols": explicit_cols}
-                else:
-                    col_headers = list(resolved_col_names.keys())
-                    render_kwargs = {"col_headers": col_headers}
-
-                self.renderer.render(result, kwargs=render_kwargs)
-
-                # Show execution statistics if enabled
-                if self._cli_runtime.exec_stats_enabled:
-                    rich.print(f"[bright_magenta]{self.graph_data.last_exec_statistics}\n")
-            else:
-                # No parsed query available, render without column headers
-                self.renderer.render(result)
+            # Show execution statistics if enabled
+            if self._cli_runtime.exec_stats_enabled:
+                rich.print(f"[bright_magenta]{self.graph_data.last_exec_statistics}\n")
 
         return True

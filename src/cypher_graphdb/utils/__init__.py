@@ -20,7 +20,7 @@ from .collection_utils import (
     sort_nested_dict,
     unnest_result,
 )
-from .column_utils import resolve_column_names
+from .column_utils import build_render_kwargs, resolve_column_names
 from .connection_utils import (
     log_env,
     parse_connection_uri,
@@ -76,6 +76,7 @@ __all__ = [
     "unnest_result",
     # Column utilities
     "resolve_column_names",
+    "build_render_kwargs",
     # String utilities
     "convert_to_str",
     "dict_to_non_quoted_json",
