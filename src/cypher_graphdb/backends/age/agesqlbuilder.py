@@ -219,10 +219,11 @@ class SQLBuilder:
 
     @classmethod
     def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_prop: str) -> sql.SQL:
-        """SQL to look up graphids of nodes by a property value.
+        """SQL to look up graphids of all nodes of a label by a property value.
 
-        Returns SQL that takes a list of ref values and returns (ref_value, graphid) pairs.
-        Uses the agtype_access_operator for property extraction (covered by expression indexes).
+        Returns (ref_value, graphid) pairs for every row in the label table.
+        Use ``lookup_node_graphids_filtered_sql`` when only a subset of values
+        is needed (avoids scanning hundreds of thousands of rows).
         """
         return sql.SQL(
             "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
@@ -231,6 +232,31 @@ class SQLBuilder:
             schema=sql.Identifier(graph_name),
             table=sql.Identifier(label),
             prop=sql.Literal(f'"{ref_prop}"'),
+        )
+
+    @classmethod
+    def lookup_node_graphids_filtered_sql(cls, graph_name: str, label: str, ref_prop: str, ref_values: set[str]) -> sql.SQL:
+        """SQL to look up graphids for a specific set of property values.
+
+        Uses a WHERE ... IN (...) clause with the same agtype_access_operator
+        expression as the expression index, so the btree index is used for
+        the filter. For 500 ref values against a 200K+ row table this turns
+        a sequential scan into 500 index lookups.
+
+        The ref values are cast to ``::ag_catalog.agtype`` to match the
+        expression index type exactly.
+        """
+        # Build the IN list: each value is a double-quoted agtype string literal
+        in_values = ", ".join(sql.Literal(f'"{v}"').as_string(None) + "::ag_catalog.agtype" for v in ref_values)
+        return sql.SQL(
+            "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
+            "FROM {schema}.{table} "
+            "WHERE ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype]) IN ({in_vals})"
+        ).format(
+            schema=sql.Identifier(graph_name),
+            table=sql.Identifier(label),
+            prop=sql.Literal(f'"{ref_prop}"'),
+            in_vals=sql.SQL(in_values),
         )
 
     @classmethod

@@ -37,6 +37,13 @@ class AGEBulkWriter:
     def __init__(self, connection: psycopg.Connection, graph_name: str) -> None:
         self._conn = connection
         self._graph_name = graph_name
+        # Cache for {(label, ref_prop): {ref_value: graphid}} maps.
+        # Avoids repeated full-table scans when bulk_insert_edges is called
+        # many times with the same src/dst labels (e.g. 400+ batches of CALLS
+        # edges all resolving against Method.qualified_name).
+        # Invalidated by invalidate_graphid_cache() after node inserts that
+        # change the graphid mapping.
+        self._graphid_cache: dict[tuple[str, str], dict[str, int]] = {}
 
     # -- Public API -----------------------------------------------------------
 
@@ -83,6 +90,9 @@ class AGEBulkWriter:
                 total += len(batch)
 
         logger.debug("Direct SQL: {} {} nodes inserted", total, label)
+        # Invalidate cached graphid maps for this label so subsequent edge
+        # inserts see the newly created nodes.
+        self.invalidate_graphid_cache(label)
         return total
 
     def bulk_insert_edges(
@@ -122,12 +132,17 @@ class AGEBulkWriter:
 
         label_id = self._ensure_label(label, kind="e")
 
-        # Build {ref_value: graphid} maps for source and destination nodes
-        src_map = self._build_graphid_index(src_label, src_ref_prop)
+        # Collect the unique ref values we actually need -- avoids loading
+        # the entire label table (which can be 200K+ rows in a shared graph).
+        src_refs = {e["src"] for e in edges}
+        dst_refs = {e["dst"] for e in edges}
+
+        # Build {ref_value: graphid} maps for only the referenced nodes
+        src_map = self._build_graphid_index(src_label, src_ref_prop, ref_values=src_refs)
         if src_label == dst_label and src_ref_prop == dst_ref_prop:
-            dst_map = src_map
+            dst_map = self._build_graphid_index(dst_label, dst_ref_prop, ref_values=src_refs | dst_refs)
         else:
-            dst_map = self._build_graphid_index(dst_label, dst_ref_prop)
+            dst_map = self._build_graphid_index(dst_label, dst_ref_prop, ref_values=dst_refs)
 
         total = 0
         skipped = 0
@@ -240,14 +255,68 @@ class AGEBulkWriter:
         inner = inner.replace("'", "''")
         return "'" + inner + "'"
 
-    def _build_graphid_index(self, label: str, ref_prop: str) -> dict[str, int]:
-        """Load a {ref_prop_value: graphid} mapping for all nodes of a label.
+    def invalidate_graphid_cache(self, label: str | None = None) -> None:
+        """Drop cached graphid maps so the next lookup re-reads from the database.
+
+        Call after inserting nodes into a label that is later used as an edge
+        endpoint, so the graphid map includes the newly inserted nodes.
+
+        Args:
+            label: If given, only invalidate caches for this label.
+                   If None, clear the entire cache.
+        """
+        if label is None:
+            self._graphid_cache.clear()
+        else:
+            keys_to_drop = [k for k in self._graphid_cache if k[0] == label]
+            for k in keys_to_drop:
+                del self._graphid_cache[k]
+
+    def _build_graphid_index(self, label: str, ref_prop: str, ref_values: set[str] | None = None) -> dict[str, int]:
+        """Load a {ref_prop_value: graphid} mapping for nodes of a label.
+
+        When ``ref_values`` is provided, only loads graphids for those specific
+        property values (using a WHERE IN clause). This is critical for shared
+        graphs where a label table may contain hundreds of thousands of rows
+        across all sources, but only a small subset is needed for the current
+        edge batch.
+
+        When ``ref_values`` is None, loads the entire table (used for small
+        labels like structural edges).
+
+        Results are cached per (label, ref_prop) and incrementally extended
+        when new ref_values are requested.
 
         Values returned by agtype_access_operator are agtype-quoted strings
         (e.g. '"mth:foo.bar"'), so we strip the surrounding quotes.
         """
-        sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, ref_prop)
+        cache_key = (label, ref_prop)
+        cached = self._graphid_cache.get(cache_key)
+
+        if ref_values is not None and cached is not None:
+            # Check if all requested values are already in the cache
+            missing = ref_values - cached.keys()
+            if not missing:
+                return cached
+            # Only query the missing values
+            ref_values = missing
+
+        if ref_values is not None and ref_values:
+            sql_stmt = SQLBuilder.lookup_node_graphids_filtered_sql(self._graph_name, label, ref_prop, ref_values)
+        else:
+            sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, ref_prop)
+
         with self._conn.cursor() as cursor:
             cursor.execute(sql_stmt)
             rows = cursor.fetchall()
-        return {str(r[0]).strip('"'): r[1] for r in rows}
+        result = {str(r[0]).strip('"'): r[1] for r in rows}
+
+        # Merge into cache
+        if cached is not None:
+            cached.update(result)
+            logger.debug("Graphid index extended for {}.{}: +{} entries (total {})", label, ref_prop, len(result), len(cached))
+            return cached
+
+        self._graphid_cache[cache_key] = result
+        logger.debug("Graphid index built for {}.{}: {} entries", label, ref_prop, len(result))
+        return result
