@@ -494,3 +494,106 @@ class TestBulkDataCorrectness:
         # Reverse direction should not match
         rev = clean_db.execute("MATCH (a:DirNode {id: 'dst_node'})-[:POINTS_TO]->(b) RETURN b.id")
         assert rev == [] or rev is None
+
+
+# ── Bulk delete nodes ─────────────────────────────────────────────────────
+
+
+class TestBulkDeleteNodes:
+    """Test bulk_delete_nodes for both backends."""
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_delete_by_single_filter(self, clean_db):
+        """bulk_delete_nodes should remove only matching nodes."""
+        clean_db.bulk_create_nodes(
+            [{"id": f"a{i}", "source_key": "alpha", "lang": "py"} for i in range(5)],
+            label="DelNode",
+        )
+        clean_db.bulk_create_nodes(
+            [{"id": f"b{i}", "source_key": "beta", "lang": "py"} for i in range(3)],
+            label="DelNode",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_nodes("DelNode", {"source_key": "alpha"})
+        clean_db.commit()
+
+        assert deleted == 5
+        remaining = clean_db.execute("MATCH (n:DelNode) RETURN count(n)", unnest_result=True)
+        assert remaining == 3
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_delete_by_multiple_filters(self, clean_db):
+        """bulk_delete_nodes with multiple filters should AND them."""
+        clean_db.bulk_create_nodes(
+            [{"id": f"a{i}", "source_key": "src", "lang": "py"} for i in range(4)],
+            label="MFNode",
+        )
+        clean_db.bulk_create_nodes(
+            [{"id": f"b{i}", "source_key": "src", "lang": "ts"} for i in range(3)],
+            label="MFNode",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_nodes("MFNode", {"source_key": "src", "lang": "py"})
+        clean_db.commit()
+
+        assert deleted == 4
+        remaining = clean_db.execute("MATCH (n:MFNode) RETURN count(n)", unnest_result=True)
+        assert remaining == 3
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_delete_cascades_to_edges(self, clean_db):
+        """bulk_delete_nodes should also remove edges referencing deleted nodes."""
+        clean_db.bulk_create_nodes(
+            [{"id": "x1", "source_key": "s"}, {"id": "x2", "source_key": "s"}],
+            label="CascNode",
+        )
+        clean_db.bulk_create_nodes(
+            [{"id": "y1", "source_key": "other"}],
+            label="CascNode",
+        )
+        clean_db.create_property_index("CascNode", "id")
+        clean_db.commit()
+
+        clean_db.bulk_create_edges(
+            [{"src": "x1", "dst": "x2"}, {"src": "x1", "dst": "y1"}],
+            label="LINKS",
+            src_label="CascNode",
+            dst_label="CascNode",
+        )
+        clean_db.commit()
+
+        # Verify edges exist
+        edge_count = clean_db.execute("MATCH ()-[r:LINKS]->() RETURN count(r)", unnest_result=True)
+        assert edge_count == 2
+
+        # Delete only source_key='s' nodes
+        deleted = clean_db.bulk_delete_nodes("CascNode", {"source_key": "s"})
+        clean_db.commit()
+
+        assert deleted == 2
+        # Both edges should be gone (x1 was start of both)
+        edge_count = clean_db.execute("MATCH ()-[r:LINKS]->() RETURN count(r)", unnest_result=True)
+        assert edge_count == 0
+        # y1 should still exist
+        remaining = clean_db.execute("MATCH (n:CascNode) RETURN count(n)", unnest_result=True)
+        assert remaining == 1
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_delete_no_match_returns_zero(self, clean_db):
+        """bulk_delete_nodes with no matching nodes should return 0."""
+        clean_db.bulk_create_nodes([{"id": "z1", "source_key": "keep"}], label="NoMatch")
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_nodes("NoMatch", {"source_key": "nonexistent"})
+        assert deleted == 0
+
+        remaining = clean_db.execute("MATCH (n:NoMatch) RETURN count(n)", unnest_result=True)
+        assert remaining == 1
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_delete_empty_filters_raises(self, clean_db):
+        """bulk_delete_nodes with empty filters should raise ValueError."""
+        with pytest.raises(ValueError, match="filters must not be empty"):
+            clean_db.bulk_delete_nodes("SomeLabel", {})

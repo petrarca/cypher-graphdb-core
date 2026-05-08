@@ -6,6 +6,7 @@ CypherBackend: Abstract base class for implementing graph database backends.
 """
 
 import abc
+import re
 from enum import Enum, auto
 from typing import Any
 
@@ -18,6 +19,11 @@ from .modelprovider import ModelProvider
 from .models import TabularResult
 from .statistics import GraphStatistics, IndexInfo, LabelStatistics
 
+# Regex for safe property names and values in the Cypher fallback.
+# Matches alphanumeric, underscore, hyphen — sufficient for source_key / lang values.
+_SAFE_FILTER_KEY_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+_SAFE_FILTER_VAL_RE = re.compile(r"^[a-zA-Z0-9_.:\-]+$")
+
 
 class BackendCapability(Enum):
     """Enumeration of backend capabilities for feature detection."""
@@ -29,6 +35,7 @@ class BackendCapability(Enum):
     UNIQUE_CONSTRAINT = auto()  # Supports create_unique_constraint
     FULLTEXT_INDEX = auto()  # Supports create_fulltext_index
     VECTOR_INDEX = auto()  # Supports create_vector_index
+    BULK_DELETE = auto()  # Supports bulk_delete_nodes (optimized batch deletion with edge cascade)
 
 
 class ExecStatistics(GraphStatistics):
@@ -384,6 +391,44 @@ class CypherBackend(abc.ABC):
             NotImplementedError: If the backend does not support bulk_create_edges.
         """
         raise NotImplementedError(f"Backend {self.name} does not support bulk_create_edges")
+
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+        """Delete all nodes of a label matching property filters, cascading to edges.
+
+        Removes nodes where all specified property key=value pairs match, plus
+        all edges referencing the deleted nodes (equivalent to Cypher DETACH DELETE).
+
+        The default implementation uses Cypher DETACH DELETE. Backends that declare
+        ``BULK_DELETE`` capability override this with an optimized implementation
+        (e.g. direct table access).
+
+        Args:
+            label: Node label to delete from (e.g. "Method", "Class").
+            filters: Property filters to match. All must match (AND semantics).
+                     Example: {"source_key": "nais-platform", "lang": "ts"}
+
+        Returns:
+            Number of nodes deleted.
+        """
+        if not filters:
+            raise ValueError("filters must not be empty (would delete all nodes of the label)")
+        if not _SAFE_FILTER_KEY_RE.match(label):
+            raise ValueError(f"label must be alphanumeric/underscore, got: {label!r}")
+        for k, v in filters.items():
+            if not _SAFE_FILTER_KEY_RE.match(k):
+                raise ValueError(f"filter key must be alphanumeric/underscore, got: {k!r}")
+            if not _SAFE_FILTER_VAL_RE.match(v):
+                raise ValueError(f"filter value must be alphanumeric/underscore/hyphen/dot/colon, got: {v!r}")
+        where_parts = " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
+        count_cypher = f"MATCH (n:{label}) WHERE {where_parts} RETURN count(n)"
+        parsed = self.parse_cypher(count_cypher)
+        result, _ = self.execute_cypher(parsed)
+        count = result[0][0] if result else 0
+        if count > 0:
+            delete_cypher = f"MATCH (n:{label}) WHERE {where_parts} DETACH DELETE n"
+            parsed = self.parse_cypher(delete_cypher)
+            self.execute_cypher(parsed)
+        return count
 
     @property
     def __dict__(self):

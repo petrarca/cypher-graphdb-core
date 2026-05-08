@@ -19,11 +19,30 @@ from typing import Literal
 import psycopg
 from loguru import logger
 from psycopg.sql import SQL, Identifier
+from psycopg.sql import Literal as SQLLiteral
 
 from cypher_graphdb.utils import chunk_list
 
 from .ageserializer import escape_value
 from .agesqlbuilder import SQLBuilder
+
+
+def _build_agtype_conditions(filters: dict[str, str], alias: str | None = None) -> str:
+    """Build a SQL WHERE expression matching AGE vertex properties.
+
+    Uses agtype_access_operator so the expression btree index is used.
+    Values are escaped via SQLLiteral to prevent injection.
+
+    Args:
+        filters: Property key=value pairs (all ANDed together).
+        alias: Optional table alias prefix (e.g. "n" produces "n.properties").
+    """
+    prefix = f"{alias}." if alias else ""
+    return " AND ".join(
+        f"ag_catalog.agtype_access_operator(VARIADIC ARRAY[{prefix}properties, "
+        f"{SQLLiteral(chr(34) + k + chr(34)).as_string(None)}::ag_catalog.agtype])::text = {SQLLiteral(v).as_string(None)}"
+        for k, v in filters.items()
+    )
 
 
 class AGEBulkWriter:
@@ -44,6 +63,10 @@ class AGEBulkWriter:
         # Invalidated by invalidate_graphid_cache() after node inserts that
         # change the graphid mapping.
         self._graphid_cache: dict[tuple[str, str], dict[str, int]] = {}
+        # Cached list of edge label names for bulk_delete_nodes.
+        # Edge labels are stable within a connection lifetime -- populated on
+        # first call to _list_edge_labels() and reused for all subsequent deletes.
+        self._edge_labels_cache: list[str] | None = None
 
     # -- Public API -----------------------------------------------------------
 
@@ -177,6 +200,91 @@ class AGEBulkWriter:
         else:
             logger.debug("Direct SQL: {} {} edges inserted", total, label)
         return total
+
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+        """Delete nodes matching property filters via direct SQL, cascading to edges.
+
+        Uses server-side joined DELETEs -- PostgreSQL resolves the node filter
+        via the expression index on the vertex table, then joins to each edge
+        table via the indexed start_id/end_id columns. No large ID arrays are
+        transferred to Python; the entire operation runs inside the database.
+
+        On a fresh graph where the label table does not yet exist, returns 0.
+
+        Args:
+            label: Vertex label to delete from (e.g. "Method").
+            filters: Property key=value filters (AND semantics).
+
+        Returns:
+            Number of nodes deleted.
+        """
+        if not filters:
+            raise ValueError("filters must not be empty (would delete all nodes of the label)")
+
+        # Build filter conditions in two forms:
+        # - with alias "n." for the USING join (edge DELETE references vertex as n)
+        # - without alias for the plain vertex DELETE
+        join_conditions = _build_agtype_conditions(filters, alias="n")
+        node_conditions = _build_agtype_conditions(filters, alias=None)
+        edge_labels = self._list_edge_labels()
+
+        try:
+            with self._conn.cursor() as cursor:
+                # Step 1: delete edges via JOIN -- lets PG use expression indexes
+                # on the vertex table + start_id/end_id indexes on edge tables.
+                for elabel in edge_labels:
+                    cursor.execute(
+                        SQL(
+                            "DELETE FROM {egraph}.{etable} e "
+                            "USING {vgraph}.{vtable} n "
+                            "WHERE (e.start_id = n.id OR e.end_id = n.id) "
+                            "AND {cond}"
+                        ).format(
+                            egraph=Identifier(self._graph_name),
+                            etable=Identifier(elabel),
+                            vgraph=Identifier(self._graph_name),
+                            vtable=Identifier(label),
+                            cond=SQL(join_conditions),
+                        )
+                    )
+                # Step 2: delete the nodes
+                cursor.execute(
+                    SQL("DELETE FROM {schema}.{table} WHERE {cond} RETURNING id").format(
+                        schema=Identifier(self._graph_name),
+                        table=Identifier(label),
+                        cond=SQL(node_conditions),
+                    )
+                )
+                deleted = len(cursor.fetchall())
+        except psycopg.errors.UndefinedTable:
+            # Label table does not exist (fresh graph, never written to).
+            self._conn.rollback()
+            return 0
+
+        self.invalidate_graphid_cache(label)
+        logger.debug("Direct SQL: {} {} nodes deleted (+ edges from {} edge tables)", deleted, label, len(edge_labels))
+        return deleted
+
+    def _list_edge_labels(self) -> list[str]:
+        """Return all edge label names in the graph, cached for the connection lifetime.
+
+        Edge labels are stable within a session -- they grow monotonically as new
+        labels are created, never shrink. Caching avoids repeated catalog queries
+        when bulk_delete_nodes is called many times in the same cleanup pass.
+        """
+        if self._edge_labels_cache is not None:
+            return self._edge_labels_cache
+        with self._conn.cursor() as cursor:
+            cursor.execute(
+                SQL(
+                    "SELECT name FROM ag_catalog.ag_label "
+                    "WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = %s) "
+                    "AND kind = 'e' AND name != '_ag_label_edge'"
+                ),
+                (self._graph_name,),
+            )
+            self._edge_labels_cache = [row[0] for row in cursor.fetchall()]
+        return self._edge_labels_cache
 
     # -- Internal helpers -----------------------------------------------------
 

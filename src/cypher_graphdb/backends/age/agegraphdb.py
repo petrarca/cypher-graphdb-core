@@ -525,6 +525,8 @@ class AGEGraphDB(CypherBackend):
             case BackendCapability.PROPERTY_INDEX:
                 # AGE supports GIN property indexes via PostgreSQL SQL
                 return True
+            case BackendCapability.BULK_DELETE:
+                return True
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)
@@ -673,6 +675,13 @@ class AGEGraphDB(CypherBackend):
             return True
         # Edge traversal indexes -- auto-created on edge label tables
         return bool(indexname.endswith("_start_id_idx") or indexname.endswith("_end_id_idx"))
+
+    # ── Bulk delete operations ─────────────────────────────────────────────
+
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+        """Delete nodes matching property filters, cascading to edges."""
+        self._require_connection()
+        return self._get_bulk_writer().bulk_delete_nodes(label, filters)
 
     # ── Bulk write operations ─────────────────────────────────────────────
 

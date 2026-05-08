@@ -93,6 +93,24 @@ class IndexingMixin:
         assert self._backend
         return self._backend.list_indexes(include_internal=include_internal)
 
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+        """Delete all nodes of a label matching property filters, cascading to edges.
+
+        Delegates to the backend's ``bulk_delete_nodes``. Backends that declare
+        ``BULK_DELETE`` capability provide an optimized implementation; others
+        fall back to Cypher DETACH DELETE.
+
+        Args:
+            label: Node label to delete from (e.g. "Method", "Class").
+            filters: Property key=value filters (AND semantics).
+                     Example: {"source_key": "nais-platform", "lang": "ts"}
+
+        Returns:
+            Number of nodes deleted.
+        """
+        assert self._backend
+        return self._backend.bulk_delete_nodes(label, filters)
+
     def bulk_create_nodes(
         self,
         rows: Sequence[dict] | Sequence[GraphNode],
