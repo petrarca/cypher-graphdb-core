@@ -9,6 +9,8 @@ from psycopg import sql
 
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 
+from .ageserializer import escape_string_inner
+
 
 class SQLBuilder:
     """SQL query builder for Apache AGE graph operations.
@@ -244,10 +246,16 @@ class SQLBuilder:
         a sequential scan into 500 index lookups.
 
         The ref values are cast to ``::ag_catalog.agtype`` to match the
-        expression index type exactly.
+        expression index type exactly. Values containing double quotes or
+        backslashes are escaped for the agtype JSON string format before
+        being wrapped in the PostgreSQL string literal via sql.Literal.
         """
-        # Build the IN list: each value is a double-quoted agtype string literal
-        in_values = ", ".join(sql.Literal(f'"{v}"').as_string(None) + "::ag_catalog.agtype" for v in ref_values)
+        # Build the IN list: each value is a double-quoted agtype string literal.
+        # escape_string_inner handles backslashes, double quotes, control chars,
+        # and null bytes -- identical escaping to the Cypher UNWIND path.
+        in_values = ", ".join(
+            sql.Literal('"' + escape_string_inner(v) + '"').as_string(None) + "::ag_catalog.agtype" for v in ref_values
+        )
         return sql.SQL(
             "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
             "FROM {schema}.{table} "

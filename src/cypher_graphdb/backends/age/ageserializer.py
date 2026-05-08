@@ -16,12 +16,30 @@ Example output:
 """
 
 
+def escape_string_inner(v: str) -> str:
+    """Escape a string for use inside a double-quoted agtype/Cypher literal.
+
+    Returns the escaped content without the surrounding double quotes.
+    Null bytes are stripped (agtype does not support them).
+
+    Order matters: backslashes must be escaped before other characters.
+    """
+    return (
+        v.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\0", "")
+    )
+
+
 def escape_value(v: object) -> str:
     """Escape a Python value for inline AGE Cypher literals.
 
     Handles None, bool, int, float, and str-coercible values. Strings are
     escaped for double-quoted Cypher literals: backslashes, double quotes,
-    newlines, carriage returns, and tabs are all escaped.
+    newlines, carriage returns, tabs, and null bytes are all handled.
 
     Args:
         v: Python value (None, bool, int, float, or str-coercible).
@@ -35,17 +53,7 @@ def escape_value(v: object) -> str:
         return "true" if v else "false"
     if isinstance(v, int | float):
         return str(v)
-    # Order matters: escape backslashes first, then other characters
-    escaped = (
-        str(v)
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-        .replace("\0", "")
-    )
-    return f'"{escaped}"'
+    return f'"{escape_string_inner(str(v))}"'
 
 
 def to_cypher_list(rows: list[dict]) -> str:
