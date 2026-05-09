@@ -8,6 +8,7 @@ Classes:
     AGEGraphDB: Main backend class for Apache AGE database operations.
 """
 
+import contextlib
 import hashlib
 import json
 import time
@@ -203,7 +204,11 @@ class AGEGraphDB(CypherBackend):
         return hashlib.md5(query.encode()).hexdigest()[:8]
 
     def _get_or_prepare_statement(self, cypher_sql, query: str) -> str:
-        """Get existing prepared statement or create a new one."""
+        """Get existing prepared statement or create a new one.
+
+        Rolls back the connection if PREPARE fails so the connection is
+        returned to the pool in a clean state rather than left in INERROR.
+        """
         query_hash = self._get_query_hash(query)
 
         if query_hash not in self._prepared_statements:
@@ -226,9 +231,16 @@ class AGEGraphDB(CypherBackend):
             stmt_name = f"cypher_stmt_{query_hash}"
             logger.trace("Creating new prepared statement {} for query hash {}", stmt_name, query_hash)
 
-            with self._fetch_cursor(row_factory=None) as cursor:
-                prepare_sql = SQL("PREPARE {} AS {}").format(Identifier(stmt_name), cypher_sql)
-                cursor.execute(prepare_sql)
+            try:
+                with self._fetch_cursor(row_factory=None) as cursor:
+                    prepare_sql = SQL("PREPARE {} AS {}").format(Identifier(stmt_name), cypher_sql)
+                    cursor.execute(prepare_sql)
+            except psycopg.Error as e:
+                # PREPARE failed -- roll back so the connection is not left in
+                # INERROR state (which would corrupt the connection pool).
+                with contextlib.suppress(Exception):
+                    self._connection.rollback()
+                raise e
 
             self._prepared_statements[query_hash] = stmt_name
             logger.trace("Prepared statement cached. Total cached: {}", len(self._prepared_statements))
