@@ -293,6 +293,7 @@ class AGEGraphDB(CypherBackend):
 
         except Exception as e:
             error_details = f"AGE query execution failed: {e}"
+            self._prepared_statements.clear()
             self._connection.close()
             self._connection = None
             raise AGEExecutionError(error_details) from e

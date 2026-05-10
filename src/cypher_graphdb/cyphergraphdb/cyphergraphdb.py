@@ -256,6 +256,11 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     settings = property(lambda self: self.get_settings())
 
     @property
+    def connected(self) -> bool:
+        """Return True if the backend has an active connection."""
+        return self._backend.connected if self._backend else False
+
+    @property
     def read_only(self) -> bool:
         """Check if the connection is in read-only mode.
 

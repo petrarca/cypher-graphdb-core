@@ -249,6 +249,8 @@ class CypherGraphDBPool:
 
         Silently ignores connections not tracked by this pool. If the pool
         has been closed the connection is disconnected instead of re-queued.
+        Disconnected instances (connection lost during use) are discarded
+        rather than re-queued to prevent stale connections re-entering idle.
         """
         if db is None:
             return
@@ -261,6 +263,11 @@ class CypherGraphDBPool:
                 with contextlib.suppress(Exception):
                     db.disconnect()
                 logger.trace("Release disconnect (closed) id={}", id(db))
+                return
+            # Discard instances that lost their connection during use.
+            if not db.connected:
+                logger.debug("Release discard id={} (disconnected)", id(db))
+                self._not_empty.notify()
                 return
             # compute and append expiry (0.0 sentinel if no TTL)
             self._idle.append((self._expiry(), db))

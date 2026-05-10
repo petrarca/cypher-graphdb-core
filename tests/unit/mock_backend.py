@@ -29,6 +29,10 @@ class MockBackend(CypherBackend):
         self.next_edge_id = 1000
         self._commits = 0
 
+    @property
+    def connected(self) -> bool:
+        return True
+
     # ---- abstract method implementations (no-op/trivial) ----
     def connect(self, *args, **kwargs):  # noqa: D401
         return None
