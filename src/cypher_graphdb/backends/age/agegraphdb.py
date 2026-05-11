@@ -763,18 +763,9 @@ class AGEGraphDB(CypherBackend):
                 label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size
             )
 
-        # Cypher UNWIND fallback -- significantly slower than direct SQL on AGE.
-        # Callers should provide both src_label and dst_label for optimal performance.
-        if not src_label or not dst_label:
-            logger.warning(
-                "bulk_create_edges falling back to Cypher UNWIND for {} edges (src_label={!r}, dst_label={!r}). "
-                "Provide both labels to use the fast direct SQL path.",
-                label,
-                src_label,
-                dst_label,
-            )
-        src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})" if src_label else f"(a {{{src_ref_prop}: e.src}})"
-        dst_pat = f"(b:{dst_label} {{{dst_ref_prop}: e.dst}})" if dst_label else f"(b {{{dst_ref_prop}: e.dst}})"
+        # Cypher UNWIND fallback (direct_bulk_insert disabled).
+        src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})"
+        dst_pat = f"(b:{dst_label} {{{dst_ref_prop}: e.dst}})"
 
         total = 0
         for batch in chunk_list(edges, batch_size):
