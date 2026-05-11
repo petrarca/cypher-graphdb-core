@@ -235,7 +235,7 @@ class TestBulkCreateEdges:
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
     def test_bulk_create_edges_empty(self, clean_db):
         """bulk_create_edges with empty list should return 0."""
-        count = clean_db.bulk_create_edges([], label="KNOWS")
+        count = clean_db.bulk_create_edges([], label="KNOWS", src_label="Person", dst_label="Person")
         assert count == 0
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)

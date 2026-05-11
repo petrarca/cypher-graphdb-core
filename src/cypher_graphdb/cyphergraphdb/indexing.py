@@ -156,11 +156,11 @@ class IndexingMixin:
     def bulk_create_edges(
         self,
         edges: Sequence[dict] | Sequence[GraphEdge],
+        src_label: str,
+        dst_label: str,
         src_refs: Sequence[Any] | None = None,
         dst_refs: Sequence[Any] | None = None,
         label: str | None = None,
-        src_label: str = "",
-        dst_label: str = "",
         src_ref_prop: str = "id",
         dst_ref_prop: str = "id",
         batch_size: int = 500,
@@ -187,8 +187,8 @@ class IndexingMixin:
             dst_refs: Parallel list of destination match values. Required for
                 typed input; must be None for dict input.
             label: Edge label. Required for dicts; optional for typed input.
-            src_label: Label of source nodes (empty string for any label).
-            dst_label: Label of destination nodes (empty string for any label).
+            src_label: Label of source nodes. Required for optimal performance on AGE.
+            dst_label: Label of destination nodes. Required for optimal performance on AGE.
             src_ref_prop: Property name on source nodes to match against src refs.
             dst_ref_prop: Property name on destination nodes to match against dst refs.
             batch_size: Number of edges per batch.

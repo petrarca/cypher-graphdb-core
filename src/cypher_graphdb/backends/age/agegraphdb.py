@@ -730,8 +730,8 @@ class AGEGraphDB(CypherBackend):
         self,
         label: str,
         edges: list[dict],
-        src_label: str = "",
-        dst_label: str = "",
+        src_label: str,
+        dst_label: str,
         src_ref_prop: str = "id",
         dst_ref_prop: str = "id",
         batch_size: int = 500,
@@ -745,8 +745,8 @@ class AGEGraphDB(CypherBackend):
         Args:
             label: Edge label for all created edges.
             edges: List of dicts with at least "src" and "dst" keys.
-            src_label: Label of source nodes (empty string for any label).
-            dst_label: Label of destination nodes (empty string for any label).
+            src_label: Label of source nodes. Required for optimal performance on AGE.
+            dst_label: Label of destination nodes. Required for optimal performance on AGE.
             src_ref_prop: Property name on source nodes to match against "src".
             dst_ref_prop: Property name on destination nodes to match against "dst".
             batch_size: Number of edges per batch.

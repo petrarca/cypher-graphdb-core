@@ -170,7 +170,7 @@ class TestDefaultBackendMethods:
 
     def test_bulk_create_edges_raises(self):
         with pytest.raises(NotImplementedError, match="does not support bulk_create_edges"):
-            self.backend.bulk_create_edges("Label", [{"src": "a", "dst": "b"}])
+            self.backend.bulk_create_edges("Label", [{"src": "a", "dst": "b"}], "SrcLabel", "DstLabel")
 
     def test_has_capability_false_for_property_index(self):
         """MinimalBackend doesn't override get_capability, so PROPERTY_INDEX is unsupported."""
