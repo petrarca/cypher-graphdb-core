@@ -274,23 +274,26 @@ class AGEGraphDB(CypherBackend):
         execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
 
         try:
-            with self._fetch_cursor(
-                row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
-            ) as exec_cursor:
-                exec_cursor.execute(execute_sql, (params_json,))
-
-                if fetch_one:
-                    row = exec_cursor.fetchone()
-                    result = [row] if row is not None else []
-                else:
-                    result = exec_cursor.fetchall()
-
-                col_names = [col.name for col in exec_cursor.description] if exec_cursor.description else []
-                sql_stats = SqlStatistics(sql_stmt=cypher_sql.as_string(), col_names=col_names)
-
-            if self.autocommit:
-                self._connection.commit()
-
+            result, sql_stats = self._run_prepared(execute_sql, params_json, cypher_sql, exec_stats, fetch_one, raw_data)
+        except psycopg.errors.InvalidSqlStatementName:
+            # Server-side prepared statement was dropped (connection recycled,
+            # PgBouncer reset, idle timeout). Roll back, evict the stale cache
+            # entry, re-prepare, and retry once.
+            logger.debug("Prepared statement {} gone from server, re-preparing", stmt_name)
+            with contextlib.suppress(Exception):
+                self._connection.rollback()
+            query_hash = self._get_query_hash(cypher_query.parsed_query)
+            self._prepared_statements.pop(query_hash, None)
+            stmt_name = self._get_or_prepare_statement(cypher_sql, cypher_query.parsed_query)
+            execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+            try:
+                result, sql_stats = self._run_prepared(execute_sql, params_json, cypher_sql, exec_stats, fetch_one, raw_data)
+            except Exception as e:
+                error_details = f"AGE query execution failed after re-prepare: {e}"
+                self._prepared_statements.clear()
+                self._connection.close()
+                self._connection = None
+                raise AGEExecutionError(error_details) from e
         except Exception as e:
             error_details = f"AGE query execution failed: {e}"
             self._prepared_statements.clear()
@@ -302,6 +305,27 @@ class AGEGraphDB(CypherBackend):
         logger.debug("AGE exec_time={:.4f}s", exec_stats.exec_time)
 
         return (result, exec_stats, sql_stats)
+
+    def _run_prepared(self, execute_sql, params_json, cypher_sql, exec_stats, fetch_one, raw_data):
+        """Execute a prepared statement and return (result, sql_stats)."""
+        with self._fetch_cursor(
+            row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
+        ) as exec_cursor:
+            exec_cursor.execute(execute_sql, (params_json,))
+
+            if fetch_one:
+                row = exec_cursor.fetchone()
+                result = [row] if row is not None else []
+            else:
+                result = exec_cursor.fetchall()
+
+            col_names = [col.name for col in exec_cursor.description] if exec_cursor.description else []
+            sql_stats = SqlStatistics(sql_stmt=cypher_sql.as_string(), col_names=col_names)
+
+        if self.autocommit:
+            self._connection.commit()
+
+        return result, sql_stats
 
     def _cleanup_prepared_statements(self):
         """Deallocate all cached prepared statements."""
