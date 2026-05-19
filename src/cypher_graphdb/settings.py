@@ -51,10 +51,12 @@ class Settings(BaseSettings):
         validation_alias="CGDB_CREATE_GRAPH_IF_NOT_EXISTS",
     )
     query_timeout_s: int | None = Field(
-        default=None,
+        default=30,
         description=(
             "Maximum seconds a single query may run before the backend cancels it. "
-            "None means no timeout (backend default). "
+            "Default is 30s -- enough for any legitimate graph query while preventing "
+            "runaway queries from exhausting the connection pool. "
+            "Set to 0 or None to disable. "
             "AGE: sets PostgreSQL statement_timeout at connection time. "
             "Memgraph: sets database setting query.timeout after connecting."
         ),

@@ -119,7 +119,8 @@ class MemgraphDB(CypherBackend):
             # parameter for this, so we set it via Cypher immediately after
             # establishing the connection. SET DATABASE SETTING is a server-wide
             # setting -- it affects all sessions until changed again.
-            if self._query_timeout_s is not None:
+            # 0 means unlimited -- skip to leave Memgraph at its server default.
+            if self._query_timeout_s:
                 self._apply_query_timeout(self._query_timeout_s)
 
             logger.debug(f"Successfully connected to Memgraph with autocommit={self.autocommit}")

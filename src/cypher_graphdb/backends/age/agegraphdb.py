@@ -146,7 +146,8 @@ class AGEGraphDB(CypherBackend):
         # parameter. This sets the timeout once at connection creation time so
         # it applies to every statement on this connection without a per-query
         # SET LOCAL round-trip. PostgreSQL expects the value in milliseconds.
-        if self._query_timeout_s is not None:
+        # 0 means unlimited in PostgreSQL -- skip injection in that case.
+        if self._query_timeout_s:
             timeout_ms = int(self._query_timeout_s * 1000)
             existing_options = kwargs.pop("options", "")
             timeout_option = f"-c statement_timeout={timeout_ms}"
