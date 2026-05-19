@@ -132,13 +132,25 @@ class AGEGraphDB(CypherBackend):
         self._set_graph_if_not_exists = kwargs.pop("set_graph_if_not_exists", True)
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
         self._read_only = kwargs.pop("read_only", self._read_only)
+        self._query_timeout_s = kwargs.pop("query_timeout_s", self._query_timeout_s)
 
         logger.debug(
-            "cinfo=%s, graph_name=%s, autocommit=%s",
+            "cinfo=%s, graph_name=%s, autocommit=%s, query_timeout_s=%s",
             sanitize_connection_string_for_logging("" if cinfo is None else cinfo),
             graph_name,
             self.autocommit,
+            self._query_timeout_s,
         )
+
+        # Inject statement_timeout into the PostgreSQL session via the options
+        # parameter. This sets the timeout once at connection creation time so
+        # it applies to every statement on this connection without a per-query
+        # SET LOCAL round-trip. PostgreSQL expects the value in milliseconds.
+        if self._query_timeout_s is not None:
+            timeout_ms = int(self._query_timeout_s * 1000)
+            existing_options = kwargs.pop("options", "")
+            timeout_option = f"-c statement_timeout={timeout_ms}"
+            kwargs["options"] = f"{existing_options} {timeout_option}".strip() if existing_options else timeout_option
 
         self._cinfo = conninfo.make_conninfo("" if cinfo is None else cinfo, **kwargs)
         logger.debug(
@@ -966,6 +978,13 @@ class AGEGraphDB(CypherBackend):
         self._require_connection()
 
         return self._connection.cursor(row_factory=row_factory)
+
+    def _check_connection(self) -> bool:
+        """Verify AGE connection by executing SELECT 1."""
+        with self._connection.cursor() as cur:
+            cur.execute("SELECT 1")
+            result = cur.fetchone()
+            return result is not None and result[0] == 1
 
     def _require_connection(self):
         """Ensure database connection is available, reconnecting if needed."""

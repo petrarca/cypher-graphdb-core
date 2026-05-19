@@ -84,6 +84,7 @@ class MemgraphDB(CypherBackend):
 
         self.autocommit = kwargs.pop("autocommit", self.autocommit)
         self._read_only = kwargs.pop("read_only", self._read_only)
+        self._query_timeout_s = kwargs.pop("query_timeout_s", self._query_timeout_s)
 
         # Parse connection info from cinfo string and merge with kwargs
         cinfo_params = {}
@@ -102,12 +103,24 @@ class MemgraphDB(CypherBackend):
         self._graph_name = "memgraph"
 
         logger.debug(
-            "host=%s, port=%s, username_masked=%s, autocommit=%s", host, port, "***MASKED***" if username else "", self.autocommit
+            "host=%s, port=%s, username_masked=%s, autocommit=%s, query_timeout_s=%s",
+            host,
+            port,
+            "***MASKED***" if username else "",
+            self.autocommit,
+            self._query_timeout_s,
         )
 
         try:
             # Connect to Memgraph with retry logic
             self._connection = self._connect_with_retry(host, port, username, password)
+
+            # Apply query timeout if configured. Memgraph has no connect-time
+            # parameter for this, so we set it via Cypher immediately after
+            # establishing the connection. SET DATABASE SETTING is a server-wide
+            # setting -- it affects all sessions until changed again.
+            if self._query_timeout_s is not None:
+                self._apply_query_timeout(self._query_timeout_s)
 
             logger.debug(f"Successfully connected to Memgraph with autocommit={self.autocommit}")
         except Exception as e:
@@ -160,6 +173,23 @@ class MemgraphDB(CypherBackend):
             username=username,
             password=password,
         )
+
+    def _apply_query_timeout(self, timeout_s: int) -> None:
+        """Apply query execution timeout via Memgraph database setting.
+
+        Memgraph does not support a connect-time query timeout parameter.
+        The closest equivalent is SET DATABASE SETTING 'query.timeout', which
+        is a server-wide setting expressed in milliseconds. Zero disables the
+        timeout. Note: this affects all connections to the database, not only
+        the current session.
+        """
+        timeout_ms = int(timeout_s * 1000)
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute(f"SET DATABASE SETTING 'query.timeout' TO '{timeout_ms}'")
+            logger.debug("Memgraph query timeout set to {}ms", timeout_ms)
+        finally:
+            cursor.close()
 
     def execute_cypher(
         self,
@@ -358,6 +388,16 @@ class MemgraphDB(CypherBackend):
 
         # Reconnect using stored parameters
         self.connect(**self._ckwargs)
+
+    def _check_connection(self) -> bool:
+        """Verify Memgraph connection by executing RETURN 1."""
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("RETURN 1")
+            result = cursor.fetchone()
+            return result is not None and result[0] == 1
+        finally:
+            cursor.close()
 
     def _require_connection(self):
         """Ensure database connection is available, reconnecting if needed."""

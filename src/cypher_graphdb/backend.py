@@ -65,6 +65,10 @@ class CypherBackend(abc.ABC):
         self._graph_name = kwargs.get("graph_name")
         self._read_only = kwargs.get("read_only", False)
 
+        # Maximum seconds a single query may run before the backend cancels it.
+        # None means no timeout (backend default). Set via connect(query_timeout_s=N).
+        self._query_timeout_s: int | None = kwargs.get("query_timeout_s")
+
         # use global model provider if not injected in constructor
         self._model_provider = kwargs.get("model_provider", modelprovider.model_provider)
 
@@ -163,6 +167,33 @@ class CypherBackend(abc.ABC):
     def connected(self) -> bool:
         """Return True if currently connected to the backend."""
         return self._connection is not None
+
+    def check_connection(self) -> bool:
+        """Verify the connection is alive by executing a trivial query.
+
+        Returns True if the backend responds, False otherwise.
+        Unlike the ``connected`` property (which only checks whether the
+        Python connection object is non-None), this performs a real
+        round-trip to the database.
+        """
+        if not self.connected:
+            return False
+        try:
+            return self._check_connection()
+        except Exception as e:
+            logger.debug("check_connection probe failed: {}", e)
+            return False
+
+    def _check_connection(self) -> bool:
+        """Backend-specific live-connection probe.
+
+        Subclasses must override this to run a trivial query (e.g.
+        ``SELECT 1`` for AGE, ``RETURN 1`` for Memgraph). The base
+        implementation logs a warning and returns ``True`` without
+        probing -- override in every backend to get a real liveness check.
+        """
+        logger.warning("_check_connection not implemented for {}, returning True without probing", type(self).__name__)
+        return True
 
     @abc.abstractmethod
     def create_graph(self, graph_name=None):

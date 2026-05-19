@@ -6,7 +6,7 @@ the defaults below. A ``Settings`` instance is intended to be retrieved via
 ``get_settings`` which caches the object for reuse across the process.
 
 Environment variables: ``CGDB_BACKEND``, ``CGDB_CINFO``, ``CGDB_GRAPH``,
-``CGDB_READ_ONLY``.
+``CGDB_READ_ONLY``, ``CGDB_QUERY_TIMEOUT_S``.
 """
 
 from functools import lru_cache
@@ -49,6 +49,16 @@ class Settings(BaseSettings):
         default=False,
         description="Auto-create graph if it does not exist (AGE only)",
         validation_alias="CGDB_CREATE_GRAPH_IF_NOT_EXISTS",
+    )
+    query_timeout_s: int | None = Field(
+        default=None,
+        description=(
+            "Maximum seconds a single query may run before the backend cancels it. "
+            "None means no timeout (backend default). "
+            "AGE: sets PostgreSQL statement_timeout at connection time. "
+            "Memgraph: sets database setting query.timeout after connecting."
+        ),
+        validation_alias="CGDB_QUERY_TIMEOUT_S",
     )
 
     @computed_field  # type: ignore[misc]

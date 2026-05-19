@@ -113,6 +113,8 @@ class ConnectionMixin:
                 merged_kwargs["read_only"] = self.settings.read_only
             if "create_graph" not in kwargs:
                 merged_kwargs["create_graph"] = self.settings.create_graph
+            if "query_timeout_s" not in kwargs and self.settings.query_timeout_s is not None:
+                merged_kwargs["query_timeout_s"] = self.settings.query_timeout_s
 
             # Explicit kwargs override settings
             merged_kwargs.update(kwargs)

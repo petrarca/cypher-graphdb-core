@@ -260,6 +260,18 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         """Return True if the backend has an active connection."""
         return self._backend.connected if self._backend else False
 
+    def check_connection(self) -> bool:
+        """Verify the connection is alive by executing a trivial query.
+
+        Returns True if the backend responds, False otherwise.
+        Unlike the ``connected`` property (which only checks whether the
+        Python connection object is non-None), this performs a real
+        round-trip to the database.
+        """
+        if not self._backend:
+            return False
+        return self._backend.check_connection()
+
     @property
     def read_only(self) -> bool:
         """Check if the connection is in read-only mode.
