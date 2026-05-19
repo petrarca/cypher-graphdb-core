@@ -220,25 +220,29 @@ class AGEGraphDB(CypherBackend):
         """Get existing prepared statement or create a new one.
 
         Rolls back the connection if PREPARE fails so the connection is
-        returned to the pool in a clean state rather than left in INERROR.
+        not left in PostgreSQL's INERROR state. The connection remains
+        usable after a PREPARE failure (only the statement is rejected).
         """
         query_hash = self._get_query_hash(query)
 
         if query_hash not in self._prepared_statements:
             logger.trace("Cache miss for query hash {}: creating new prepared statement", query_hash)
 
-            # Remove oldest statement if cache is full
+            # Evict the oldest entry if the cache is full. Remove from the
+            # Python cache first so the entry is gone even if DEALLOCATE fails
+            # (e.g. the statement was already dropped by the server).
             if len(self._prepared_statements) >= self._max_cached_statements:
                 oldest_hash = next(iter(self._prepared_statements))
-                oldest_stmt = self._prepared_statements[oldest_hash]
-
+                oldest_stmt = self._prepared_statements.pop(oldest_hash)
                 logger.trace("Cache full: deallocating oldest statement {} (hash {})", oldest_stmt, oldest_hash)
-
-                # Deallocate old statement
-                with self._fetch_cursor(row_factory=None) as cursor:
-                    cursor.execute(SQL("DEALLOCATE {}").format(Identifier(oldest_stmt)))
-
-                del self._prepared_statements[oldest_hash]
+                try:
+                    with self._fetch_cursor(row_factory=None) as cursor:
+                        cursor.execute(SQL("DEALLOCATE {}").format(Identifier(oldest_stmt)))
+                except psycopg.Error:
+                    # Statement may already be gone (server recycled). Roll back
+                    # to clear the INERROR state, then continue with PREPARE.
+                    with contextlib.suppress(Exception):
+                        self._connection.rollback()
 
             # Create new prepared statement
             stmt_name = f"cypher_stmt_{query_hash}"
@@ -248,12 +252,13 @@ class AGEGraphDB(CypherBackend):
                 with self._fetch_cursor(row_factory=None) as cursor:
                     prepare_sql = SQL("PREPARE {} AS {}").format(Identifier(stmt_name), cypher_sql)
                     cursor.execute(prepare_sql)
-            except psycopg.Error as e:
+            except psycopg.Error:
                 # PREPARE failed -- roll back so the connection is not left in
-                # INERROR state (which would corrupt the connection pool).
+                # INERROR state. The connection is still usable; only this
+                # particular PREPARE was rejected (e.g. syntax error in query).
                 with contextlib.suppress(Exception):
                     self._connection.rollback()
-                raise e
+                raise
 
             self._prepared_statements[query_hash] = stmt_name
             logger.trace("Prepared statement cached. Total cached: {}", len(self._prepared_statements))
@@ -290,28 +295,40 @@ class AGEGraphDB(CypherBackend):
             result, sql_stats = self._run_prepared(execute_sql, params_json, cypher_sql, exec_stats, fetch_one, raw_data)
         except psycopg.errors.InvalidSqlStatementName:
             # Server-side prepared statement was dropped (connection recycled,
-            # PgBouncer reset, idle timeout). Roll back, evict the stale cache
-            # entry, re-prepare, and retry once.
+            # PgBouncer reset, idle timeout, or AGE crash recovery wiping all
+            # backend-process state). Two sub-cases:
+            #
+            #   A. Connection alive, statement gone -- rollback succeeds,
+            #      re-prepare on the same connection.
+            #   B. Connection dead (AGE crash killed the backend process) --
+            #      rollback fails, close the broken connection and reconnect.
+            #
+            # Clear the full cache (not just one entry) because if the server
+            # lost one statement it likely lost all of them (crash recovery).
             logger.debug("Prepared statement {} gone from server, re-preparing", stmt_name)
-            with contextlib.suppress(Exception):
-                self._connection.rollback()
-            query_hash = self._get_query_hash(cypher_query.parsed_query)
-            self._prepared_statements.pop(query_hash, None)
-            stmt_name = self._get_or_prepare_statement(cypher_sql, cypher_query.parsed_query)
-            execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+            self._prepared_statements.clear()
             try:
+                self._connection.rollback()
+            except Exception:
+                # Rollback failed -- connection is dead (sub-case B).
+                # Close the broken connection so _require_connection() reconnects.
+                with contextlib.suppress(Exception):
+                    self._connection.close()
+                self._connection = None
+            self._require_connection()
+            try:
+                stmt_name = self._get_or_prepare_statement(cypher_sql, cypher_query.parsed_query)
+                execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
                 result, sql_stats = self._run_prepared(execute_sql, params_json, cypher_sql, exec_stats, fetch_one, raw_data)
             except Exception as e:
                 error_details = f"AGE query execution failed after re-prepare: {e}"
                 self._prepared_statements.clear()
-                self._connection.close()
-                self._connection = None
+                self._close_connection()
                 raise AGEExecutionError(error_details) from e
         except Exception as e:
             error_details = f"AGE query execution failed: {e}"
             self._prepared_statements.clear()
-            self._connection.close()
-            self._connection = None
+            self._close_connection()
             raise AGEExecutionError(error_details) from e
 
         exec_stats.exec_time = time.perf_counter() - start_time
@@ -477,10 +494,20 @@ class AGEGraphDB(CypherBackend):
         self._bulk_writer = None
 
     def reconnect(self):
-        """Reconnect to the database using stored connection info."""
+        """Reconnect to the database using stored connection info.
+
+        Safely closes the old connection (if any), clears the prepared-
+        statement cache (server-side statements are gone on the new
+        backend process), and establishes a fresh connection.
+        """
         assert self._cinfo is not None, "Can only reconnect if already successfully connected!"
 
         logger.debug("Try to reconnect")
+        self._prepared_statements.clear()
+        if self._connection is not None:
+            with contextlib.suppress(Exception):
+                self._connection.close()
+            self._connection = None
         self._bulk_writer = None
         self.connect_to_db()
 
@@ -986,6 +1013,17 @@ class AGEGraphDB(CypherBackend):
             cur.execute("SELECT 1")
             result = cur.fetchone()
             return result is not None and result[0] == 1
+
+    def _close_connection(self) -> None:
+        """Close the connection and set to None, suppressing errors.
+
+        Safe to call when the connection may already be dead or None.
+        Used by error-recovery paths to ensure a clean state.
+        """
+        if self._connection is not None:
+            with contextlib.suppress(Exception):
+                self._connection.close()
+            self._connection = None
 
     def _require_connection(self):
         """Ensure database connection is available, reconnecting if needed."""

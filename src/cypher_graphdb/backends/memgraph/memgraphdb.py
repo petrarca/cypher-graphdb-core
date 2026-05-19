@@ -183,14 +183,19 @@ class MemgraphDB(CypherBackend):
         is a server-wide setting expressed in milliseconds. Zero disables the
         timeout. Note: this affects all connections to the database, not only
         the current session.
+
+        Memgraph requires SET DATABASE SETTING to run in an implicit
+        (autocommit) transaction, so we temporarily switch the connection
+        to autocommit mode via _autocommit_mode().
         """
         timeout_ms = int(timeout_s * 1000)
-        cursor = self._connection.cursor()
-        try:
-            cursor.execute(f"SET DATABASE SETTING 'query.timeout' TO '{timeout_ms}'")
-            logger.debug("Memgraph query timeout set to {}ms", timeout_ms)
-        finally:
-            cursor.close()
+        with self._autocommit_mode():
+            cursor = self._connection.cursor()
+            try:
+                cursor.execute(f"SET DATABASE SETTING 'query.timeout' TO '{timeout_ms}'")
+                logger.debug("Memgraph query timeout set to {}ms", timeout_ms)
+            finally:
+                cursor.close()
 
     def execute_cypher(
         self,
