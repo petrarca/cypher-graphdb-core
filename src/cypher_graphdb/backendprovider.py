@@ -79,13 +79,18 @@ class BackendProvider(collections.abc.Collection):
         return self._backends.get(name.casefold(), None)
 
     def resolve(self, name: str) -> CypherBackend:
-        """Load and instantiate the backend for the given name.
+        """Load and return a fresh backend instance for the given name.
+
+        Each call returns a **new instance** so that multiple pools using the
+        same backend type (e.g. two AGE pools with different graph names) get
+        independent backend objects. The registry always stores the class, never
+        a cached instance.
 
         Args:
             name: Identifier of the backend to resolve (case-insensitive).
 
         Returns:
-            An instantiated CypherBackend, or None if resolution fails.
+            A new CypherBackend instance, or None if resolution fails.
 
         """
         with self._lock:
@@ -100,13 +105,17 @@ class BackendProvider(collections.abc.Collection):
                 if not phase and not self._try_to_load_backend(name):
                     break
 
-            # Instantiate only if result is a backend class (not an instance already)
-            if result and isinstance(result, type) and issubclass(result, CypherBackend):
-                result = result()
-                # replace class with singleton instance
-                self._backends[normalized_name] = result
+            if result is None:
+                return None
 
-            return result
+            # Always instantiate from the class. If the registry already holds
+            # an instance (legacy / pre-existing code path), use its class.
+            if isinstance(result, type) and issubclass(result, CypherBackend):
+                return result()
+            if isinstance(result, CypherBackend):
+                return type(result)()
+
+            return None
 
     def items(self) -> dict[str, CypherBackend | type[CypherBackend]]:
         """Return a snapshot of the registry mapping names to backends.
