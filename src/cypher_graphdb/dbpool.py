@@ -21,6 +21,7 @@ from .backendprovider import backend_provider
 
 if TYPE_CHECKING:  # pragma: no cover
     from .cyphergraphdb import CypherGraphDB
+    from .modelprovider import ModelProvider
 
 
 @dataclass(slots=True)
@@ -70,6 +71,7 @@ class CypherGraphDBPool:
         min_size: int = 0,
         ttl: float | None = None,
         auto_connect: bool = True,
+        model_provider: ModelProvider | None = None,
     ):
         """Initialize a new pool.
 
@@ -82,6 +84,9 @@ class CypherGraphDBPool:
             ttl: Idle lifetime in seconds; expired connections are discarded
                 lazily. `None` disables expiration.
             auto_connect: If True, new instances are connected automatically.
+            model_provider: Optional ModelProvider instance shared by all
+                connections in this pool. If None, each connection uses the
+                global model_provider singleton.
         Raises:
             ValueError: If `min_size` > `pool_size`.
         """
@@ -89,6 +94,7 @@ class CypherGraphDBPool:
         assert self._backend
 
         self._connect_params = connect_params
+        self._model_provider = model_provider
         self._pool_size = max(1, int(pool_size))
         self._min_size = max(0, int(min_size))
         if self._min_size > self._pool_size:
@@ -351,6 +357,7 @@ class CypherGraphDBPool:
         db = CypherGraphDB(
             self._backend,
             connect_params=None,
+            model_provider=self._model_provider,
         )
         if self._auto_connect and self._connect_params:
             with contextlib.suppress(Exception):

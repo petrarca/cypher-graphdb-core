@@ -178,12 +178,13 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         backend: CypherBackend | str | None = None,
         connect_url: str | None = None,
         connect_params: dict | None = None,
+        model_provider: modelprovider.ModelProvider | None = None,
     ):
         backend = self._resolve_backend(backend)
         assert backend
 
         self._backend = backend
-        self._model_provider = modelprovider.model_provider
+        self._model_provider = model_provider if model_provider is not None else modelprovider.model_provider
         # inject into the backend
         self._backend.model_provider = self._model_provider
 

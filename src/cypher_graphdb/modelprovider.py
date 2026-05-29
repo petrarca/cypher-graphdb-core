@@ -304,6 +304,16 @@ class ModelProvider(collections.abc.Collection):
         logger.debug(f"Successfully loaded {loaded_count} module(s) from {path}")
         return (True, file_to_models)
 
+    @staticmethod
+    def _path_has_python_models(models_path: str) -> bool:
+        """Check if a path points to a Python file or a directory with .py files."""
+        p = os.path.abspath(models_path)
+        if os.path.isfile(p):
+            return p.endswith(".py")
+        if os.path.isdir(p):
+            return any(f.endswith(".py") and f != "__init__.py" for f in os.listdir(p))
+        return False
+
     def _update_source_and_collect(self, file_to_models: dict[str, list[str]]) -> list[GraphModelInfo]:
         """Update source property for loaded models and collect their info.
 
@@ -410,6 +420,11 @@ class ModelProvider(collections.abc.Collection):
         Loads models from the specified path (file or directory) and extracts
         their JSON schemas. Optionally combines them into a single enriched schema.
 
+        If models are already registered (e.g. from a previous load or import
+        side-effect), their schemas are still extracted. This makes the method
+        idempotent -- calling it multiple times with the same path produces
+        the same result.
+
         Args:
             models_path: Path to Python file or directory with models
             combine: If True, return combined schema with $defs format.
@@ -438,6 +453,14 @@ class ModelProvider(collections.abc.Collection):
         from .utils.schema_utils import combine_schemas, extract_schemas_from_model_infos
 
         loaded_models = self.try_to_load_models(None, models_path)
+
+        # If no new models were loaded, they may already be registered
+        # (e.g. from a prior load or import side-effect). Fall back to
+        # all source="model" models only if the path contains loadable
+        # Python files (not an empty directory or non-Python files).
+        if not loaded_models and self._path_has_python_models(models_path):
+            loaded_models = [info for info in self._models.values() if info.source == "model"]
+
         if not loaded_models:
             return {} if combine else []
 
