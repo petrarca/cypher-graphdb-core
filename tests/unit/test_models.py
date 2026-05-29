@@ -294,3 +294,97 @@ class TestMergeKeysDecorator:
             name: str | None = None
 
         assert TestNoKeys.graph_info_.merge_keys is None
+
+
+class TestRegisterFromModule:
+    """ModelProvider.register_from_module -- populates provider from decorated classes."""
+
+    def test_registers_decorated_classes(self):
+        """Classes with graph_info_ are registered into the provider."""
+        import types
+
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider_a = ModelProvider()
+
+        @node(label="Widget", provider=provider_a)
+        class Widget(GraphNode):
+            key: str
+
+        module = types.SimpleNamespace(Widget=Widget, unrelated="string", number=42)
+        target = ModelProvider()
+        count = target.register_from_module(module)
+
+        assert count == 1
+        assert target.get("Widget") is not None
+        assert target.get("Widget").graph_model is Widget
+
+    def test_two_modules_same_label_isolated(self):
+        """Two modules defining the same label register independently."""
+        import types
+
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider_a = ModelProvider()
+        provider_b = ModelProvider()
+
+        @node(label="Product", provider=provider_a)
+        class ProductA(GraphNode):
+            key: str
+            revenue: float | None = None
+
+        @node(label="Product", provider=provider_b)
+        class ProductB(GraphNode):
+            key: str
+            fitness_score: float | None = None
+
+        module_a = types.SimpleNamespace(ProductA=ProductA)
+        module_b = types.SimpleNamespace(ProductB=ProductB)
+
+        pool_a = ModelProvider()
+        pool_b = ModelProvider()
+        pool_a.register_from_module(module_a)
+        pool_b.register_from_module(module_b)
+
+        assert pool_a.get("Product").graph_model is ProductA
+        assert pool_b.get("Product").graph_model is ProductB
+        assert "revenue" in pool_a.get("Product").graph_model.model_fields
+        assert "fitness_score" in pool_b.get("Product").graph_model.model_fields
+
+    def test_skips_non_class_attributes(self):
+        """Non-class attributes and classes without graph_info_ are skipped."""
+        import types
+
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        module = types.SimpleNamespace(
+            some_string="hello",
+            some_int=42,
+            PlainClass=type("PlainClass", (), {}),  # no graph_info_
+        )
+        provider = ModelProvider()
+        count = provider.register_from_module(module)
+        assert count == 0
+
+    def test_returns_count(self):
+        """Returns the number of classes registered."""
+        import types
+
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider_src = ModelProvider()
+
+        @node(label="Alpha", provider=provider_src)
+        class Alpha(GraphNode):
+            x: str
+
+        @node(label="Beta", provider=provider_src)
+        class Beta(GraphNode):
+            y: str
+
+        module = types.SimpleNamespace(Alpha=Alpha, Beta=Beta)
+        target = ModelProvider()
+        assert target.register_from_module(module) == 2

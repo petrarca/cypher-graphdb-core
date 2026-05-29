@@ -122,6 +122,43 @@ class ModelProvider(collections.abc.Collection):
             self._models[modelinfo.label_] = modelinfo
             logger.debug("Registered {} '{}' in provider {}", modelinfo.type_, modelinfo.label_, id(self))
 
+    def register_from_module(self, module: object) -> int:
+        """Register all ``@node``/``@edge`` decorated classes from a module.
+
+        Scans ``module`` for classes with a ``graph_info_`` attribute (set
+        by the ``@node``/``@edge`` decorators) and registers each into this
+        provider.
+
+        This is the correct way to populate an isolated provider with real
+        Python classes after module-level imports have already fired the
+        decorators into the global provider. Because ``graph_info_.graph_model``
+        always references the original decorated class, two plugins with the
+        same label (e.g. both define ``Product``) are correctly isolated when
+        each registers from its own module into its own provider. The global
+        provider collision is irrelevant.
+
+        Usage::
+
+            import plugins.tech_assessment.graph_models as ta_models
+
+            provider = ModelProvider()
+            provider.register_from_module(ta_models)
+
+        Args:
+            module: Python module (or any namespace) containing
+                ``@node``/``@edge`` decorated classes.
+
+        Returns:
+            Number of model classes registered.
+        """
+        count = 0
+        for attr_name in dir(module):
+            obj = getattr(module, attr_name, None)
+            if isinstance(obj, type) and hasattr(obj, "graph_info_"):
+                self.register(obj.graph_info_)
+                count += 1
+        return count
+
     def remove(self, modelinfo: GraphModelInfo) -> bool:
         """Remove a registered model and return True if it existed."""
         with self._lock:
