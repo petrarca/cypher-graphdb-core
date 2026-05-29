@@ -96,14 +96,26 @@ class CypherBuilder:
         pattern (identity). All other properties are applied via SET.
         If ``merge_keys`` is empty, MERGE matches on label alone (singleton).
 
+        The bare ``SET`` runs on both create and match (Apache AGE does
+        not support ``ON CREATE SET`` / ``ON MATCH SET``). Callers that
+        must preserve create-only properties such as ``gid_`` should load
+        the existing node first and re-supply its stored value, so the
+        SET writes back the same value rather than overwriting it. The
+        ``create_or_merge`` entry point handles this for ``gid_``.
+
         Args:
             label: Node label.
             merge_keys: Property names for the MERGE identity pattern.
-                Empty list means MERGE on label alone.
+                Empty list means MERGE on label alone (singleton). Each
+                key must be present in ``properties``.
             properties: All properties to set (including merge key values).
 
         Returns:
             (query, params) tuple.
+
+        Raises:
+            ValueError: If a declared merge key is missing from ``properties``
+                (fail loud rather than degrade to a label-only match).
 
         Example:
             >>> query, params = CypherBuilder.merge_node_by_keys(
@@ -114,18 +126,19 @@ class CypherBuilder:
             >>> # SET n.title = $p_title, n.language = $p_language, ...
             >>> # RETURN n
         """
-        params = {}
+        missing = [k for k in merge_keys if k not in properties]
+        if missing:
+            raise ValueError(f"merge_keys missing from properties: {missing}")
 
-        # Build MERGE pattern from merge keys
-        if merge_keys:
-            merge_props = {k: properties[k] for k in merge_keys if k in properties}
-            merge_fragment, merge_params = _props_to_params(merge_props, "mk_")
-            params.update(merge_params)
-        else:
-            merge_fragment = ""
+        params: dict = {}
 
-        # Build SET clause from remaining properties
-        set_props = {k: v for k, v in properties.items() if k not in merge_keys} if merge_keys else properties
+        # MERGE pattern from merge keys (empty -> label-only singleton match)
+        merge_props = {k: properties[k] for k in merge_keys}
+        merge_fragment, merge_params = _props_to_params(merge_props, "mk_")
+        params.update(merge_params)
+
+        # SET clause from non-merge-key properties.
+        set_props = {k: v for k, v in properties.items() if k not in merge_keys}
         if set_props:
             set_clause, set_params = _set_to_params(set_props, "n")
             params.update(set_params)

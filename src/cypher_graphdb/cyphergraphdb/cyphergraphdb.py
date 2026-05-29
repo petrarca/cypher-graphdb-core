@@ -965,8 +965,18 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         return obj
 
     def _merge_node_by_keys(self, obj, merge_keys: list[str]) -> GraphNode:
-        """MERGE node using business key properties instead of gid_ lookup."""
-        obj.create_gid_if_missing()
+        """MERGE node using business key properties instead of gid_ lookup.
+
+        Preserves a stable ``gid_``: if a node with the same business key
+        already exists, its stored gid is reused so the bare SET writes
+        back the same value (Apache AGE has no ``ON CREATE SET``).
+        """
+        existing_gid = self._fetch_gid_by_merge_keys(obj, merge_keys)
+        if existing_gid is not None:
+            obj.properties_[config.PROP_GID] = existing_gid
+        else:
+            obj.create_gid_if_missing()
+
         properties = obj.flatten_properties()
         cypher_cmd, params = CypherBuilder.merge_node_by_keys(obj.label_, merge_keys, properties)
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
@@ -978,6 +988,21 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         obj.__dict__.update(updated_node.__dict__)
 
         return obj
+
+    def _fetch_gid_by_merge_keys(self, obj, merge_keys: list[str]) -> str | None:
+        """Return the stored gid_ of an existing node matching the merge keys, or None.
+
+        For singleton nodes (empty merge_keys) the lookup matches on label
+        alone -- the first existing node of that label provides the gid.
+        """
+        criteria = MatchNodeCriteria(
+            prefix_="n",
+            label_=obj.label_,
+            properties_={k: getattr(obj, k, None) for k in merge_keys},
+            projection_=[config.PROP_GID],
+        )
+        result = self._fetch_node_by_criteria(criteria, True, True)
+        return result if isinstance(result, str) else None
 
     def _fetch_node_by_criteria(self, criteria: MatchCriteria, unnest_result: str, fetch_one: bool):
         cypher_cmd, params = CypherBuilder.fetch_node_by_criteria(criteria)
