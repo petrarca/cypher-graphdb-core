@@ -5,7 +5,7 @@ extensions into compact, LLM-friendly text formats optimized for AI agents.
 """
 
 
-def format_schemas_for_llm(enriched_schema: dict) -> str:
+def format_schemas_for_llm(enriched_schema: dict, *, include_internal: bool = False) -> str:
     """Convert combined enriched JSON schema to compact LLM-friendly format.
 
     Takes a combined enriched schema with $defs structure and converts it to
@@ -16,8 +16,15 @@ def format_schemas_for_llm(enriched_schema: dict) -> str:
     - Edge types with properties
     - Relationships between nodes
 
+    By default, infrastructure nodes and edges whose labels start with
+    ``_`` are excluded (convention: underscore-prefixed labels are internal
+    metadata, e.g. ``_GraphModel``, ``_GraphDescription``, ``_NamedQuery``).
+    Pass ``include_internal=True`` to include them.
+
     Args:
         enriched_schema: Combined enriched schema dict with $defs structure
+        include_internal: If True, include infrastructure types whose labels
+            start with ``_``. Default: False.
 
     Returns:
         Formatted string optimized for LLM consumption
@@ -35,7 +42,7 @@ def format_schemas_for_llm(enriched_schema: dict) -> str:
     """
     # Extract schemas from $defs and separate nodes/edges
     individual_schemas = list(enriched_schema["$defs"].values())
-    nodes, edges = _separate_schemas(individual_schemas)
+    nodes, edges = _separate_schemas(individual_schemas, include_internal=include_internal)
     schema_title = enriched_schema.get("title", "Graph Schema")
     schema_description = enriched_schema.get("description", "")
 
@@ -76,11 +83,12 @@ def format_schemas_for_llm(enriched_schema: dict) -> str:
     return "\n".join(lines)
 
 
-def _separate_schemas(schemas: list[dict]) -> tuple[list[dict], list[dict]]:
+def _separate_schemas(schemas: list[dict], *, include_internal: bool = False) -> tuple[list[dict], list[dict]]:
     """Separate schemas into nodes and edges.
 
     Args:
         schemas: List of JSON Schema objects
+        include_internal: If True, include labels starting with ``_``.
 
     Returns:
         Tuple of (nodes, edges)
@@ -90,6 +98,9 @@ def _separate_schemas(schemas: list[dict]) -> tuple[list[dict], list[dict]]:
 
     for schema in schemas:
         x_graph = schema.get("x-graph", {})
+        label = x_graph.get("label", "")
+        if not include_internal and label.startswith("_"):
+            continue
         if x_graph.get("type") == "NODE":
             nodes.append(schema)
         elif x_graph.get("type") == "EDGE":
