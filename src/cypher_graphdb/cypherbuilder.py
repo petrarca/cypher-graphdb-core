@@ -89,6 +89,53 @@ class CypherBuilder:
         return query, params
 
     @classmethod
+    def merge_node_by_keys(cls, label: str, merge_keys: list[str], properties: dict) -> tuple[str, dict]:
+        """Build a parameterized MERGE node query using business key properties.
+
+        The ``merge_keys`` define which properties are used in the MERGE
+        pattern (identity). All other properties are applied via SET.
+        If ``merge_keys`` is empty, MERGE matches on label alone (singleton).
+
+        Args:
+            label: Node label.
+            merge_keys: Property names for the MERGE identity pattern.
+                Empty list means MERGE on label alone.
+            properties: All properties to set (including merge key values).
+
+        Returns:
+            (query, params) tuple.
+
+        Example:
+            >>> query, params = CypherBuilder.merge_node_by_keys(
+            ...     "_NamedQuery", ["query_key"],
+            ...     {"query_key": "hub-tech", "title": "Hub", "language": "cypher"},
+            ... )
+            >>> # MERGE (n:_NamedQuery {query_key: $mk_query_key})
+            >>> # SET n.title = $p_title, n.language = $p_language, ...
+            >>> # RETURN n
+        """
+        params = {}
+
+        # Build MERGE pattern from merge keys
+        if merge_keys:
+            merge_props = {k: properties[k] for k in merge_keys if k in properties}
+            merge_fragment, merge_params = _props_to_params(merge_props, "mk_")
+            params.update(merge_params)
+        else:
+            merge_fragment = ""
+
+        # Build SET clause from remaining properties
+        set_props = {k: v for k, v in properties.items() if k not in merge_keys} if merge_keys else properties
+        if set_props:
+            set_clause, set_params = _set_to_params(set_props, "n")
+            params.update(set_params)
+            query = f"MERGE (n:{label} {merge_fragment}) SET {set_clause} RETURN n"
+        else:
+            query = f"MERGE (n:{label} {merge_fragment}) RETURN n"
+
+        return query, params
+
+    @classmethod
     def create_edge(cls, label: str, start_id: int, end_id: int, properties: dict) -> tuple[str, dict]:
         """Build a parameterized CREATE edge query.
 

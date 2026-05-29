@@ -919,9 +919,14 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def _create_or_merge_node(self, obj, strategy) -> GraphNode:
         obj.resolve()
 
+        # Check for merge_keys on the model's graph_info_
+        merge_keys = getattr(getattr(obj, "graph_info_", None), "merge_keys", None)
+
         match strategy:
             case "merge":
-                if self._resolve_obj_id(obj, self._fetch_node_by_criteria):
+                if merge_keys is not None:
+                    return self._merge_node_by_keys(obj, merge_keys)
+                elif self._resolve_obj_id(obj, self._fetch_node_by_criteria):
                     return self._merge_node(obj)
                 else:
                     return self._create_node(obj)
@@ -954,6 +959,21 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
         # merge results back from the retrieved one, could be modified in the meantime
         # result is [(node_obj,)], extract the node object from the tuple
+        updated_node = result[0][0]
+        obj.__dict__.update(updated_node.__dict__)
+
+        return obj
+
+    def _merge_node_by_keys(self, obj, merge_keys: list[str]) -> GraphNode:
+        """MERGE node using business key properties instead of gid_ lookup."""
+        obj.create_gid_if_missing()
+        properties = obj.flatten_properties()
+        cypher_cmd, params = CypherBuilder.merge_node_by_keys(obj.label_, merge_keys, properties)
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
+
+        if result is None:
+            return -1
+
         updated_node = result[0][0]
         obj.__dict__.update(updated_node.__dict__)
 

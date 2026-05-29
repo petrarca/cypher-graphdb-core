@@ -145,6 +145,11 @@ class GraphObject(BaseModel):
     pass
 
 
+def _coerce_value(value: Any) -> Any:
+    """Coerce Enum members to their underlying scalar value."""
+    return value.value if isinstance(value, Enum) else value
+
+
 class GraphPropertiesMixin:
     """Mixin for managing dynamic properties and model field resolution."""
 
@@ -163,13 +168,13 @@ class GraphPropertiesMixin:
                 # to avoid recursion
                 is_graph_type = isinstance(value, (GraphNode, GraphEdge, GraphPath, Graph))
                 if value is not None and not is_graph_type:
-                    result[field_name] = value
+                    result[field_name] = _coerce_value(value)
 
         # Merge dynamic properties from properties_ dict
         if hasattr(self, "properties_"):
             for key, value in self.properties_.items():
                 if key not in result:
-                    result[key] = value
+                    result[key] = _coerce_value(value)
 
         # Remove internal fields (ending with _ except those starting with _)
         for k in list(result.keys()):
