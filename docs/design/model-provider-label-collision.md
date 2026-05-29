@@ -165,23 +165,50 @@ for result parsing uses the connection's graph name to disambiguate.
 **Con:** Requires callers to know the graph name at class definition time.
 Breaks if the same class is used in multiple graphs.
 
-## Recommended path
+## Solution (implemented)
 
-**Short term**: enforce label uniqueness per process as a convention.
-Document that two graph schemas in the same process must not share labels.
-Use `ModelProvider.register()` logging to detect collisions at
-registration time (currently silent overwrite -- at minimum warn).
+The global provider is irrelevant in pool-based usage. The solution
+is to treat each named pool's ``ModelProvider`` as the only provider
+that matters, and populate it explicitly from the plugin's module object.
 
-**Long term**: Option 1 (qualified class name as key) with Option 3
-(per-pool isolation) as the mechanism. The pool provider receives real
-Python classes via explicit promotion from the global provider after
-all imports have settled, keyed by qualified name to avoid collision.
+``ModelProvider.register_from_module(module)`` scans a module for all
+``@node``/``@edge`` decorated classes (identified by the ``graph_info_``
+attribute set at decoration time) and registers each into this provider.
+Because ``graph_info_.graph_model`` always references the original Python
+class, two plugins both defining ``Product`` are correctly isolated:
+each pool provider gets its own class directly from its own module --
+the global provider collision is bypassed entirely.
 
-## Open questions
+```python
+import plugins.tech_assessment.graph_models as ta_models
+import plugins.tech_stack.graph_models as ts_models
 
-1. Should `register()` warn or raise on label collision instead of
-   silently overwriting?
-2. Can `load_from_json_schemas()` (which creates dynamic classes) coexist
-   with qualified-name keying, or does it always key by label?
-3. Is the global provider a first-class concept that should be
-   deprecated in favor of always using named pools?
+provider_ta = ModelProvider()
+provider_ts = ModelProvider()
+
+provider_ta.register_from_module(ta_models)  # gets ProductA (fitness_score)
+provider_ts.register_from_module(ts_models)  # gets ProductB (revenue)
+```
+
+Import order does not matter. The global provider state does not matter.
+Each pool provider is populated declaratively from the module object.
+
+**Relation declarations** (``@relation(to_type="Technology")``) store
+the target as a plain string label. They are purely declarative --
+used only for schema documentation and LLM output. They are never
+resolved to a class at runtime. Each graph object is independent.
+No cross-class resolution is needed.
+
+**Remaining convention**: label uniqueness is still recommended within
+a single pool's provider (two classes with the same label in the same
+pool would overwrite each other). Across pools, labels can freely
+collide -- each pool is isolated.
+
+## Remaining open questions
+
+1. Should `register()` warn or raise on label collision within the
+   same provider (two classes with the same label in the same pool)?
+   Currently silent overwrite. A warning would surface mistakes early.
+2. Should the global provider be formally deprecated in favour of
+   always using named pools? The global provider is still useful for
+   single-graph scripts and tools outside the pool pattern.
