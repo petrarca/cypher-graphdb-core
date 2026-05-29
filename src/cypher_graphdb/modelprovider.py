@@ -11,13 +11,38 @@ import re
 import sys
 import threading
 import traceback
-from typing import Any, Final
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 
 from loguru import logger
 
 from . import config, utils
 from .modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from .models import GraphEdge, GraphNode, GraphObject, GraphObjectType
+
+# Thread-local stack of active providers. When a provider is activated
+# via ``provider.activate()``, decorators register into it instead of
+# the global ``model_provider`` singleton.
+_active_provider: threading.local = threading.local()
+
+
+def get_active_provider() -> ModelProvider:
+    """Return the currently active ModelProvider.
+
+    If a provider has been activated via ``provider.activate()``,
+    returns that provider. Otherwise returns the global
+    ``model_provider`` singleton.
+
+    Used by ``@node`` and ``@edge`` decorators to resolve the default
+    provider when no explicit ``provider=`` argument is given.
+    """
+    stack = getattr(_active_provider, "stack", None)
+    if stack:
+        provider = stack[-1]
+        logger.trace("Active provider: {} (activated, depth={})", id(provider), len(stack))
+        return provider
+    return model_provider
 
 
 class ModelProvider(collections.abc.Collection):
@@ -36,6 +61,39 @@ class ModelProvider(collections.abc.Collection):
 
         # passed to callbacks
         self._ctx = ctx
+
+    @contextmanager
+    def activate(self) -> Iterator[ModelProvider]:
+        """Temporarily make this provider the active registration target.
+
+        While active, ``@node()`` and ``@edge()`` decorators (without
+        an explicit ``provider=`` argument) will register models into
+        this provider instead of the global singleton.
+
+        Thread-safe: uses a thread-local stack, so concurrent threads
+        can each have their own active provider.
+
+        Usage::
+
+            pool_provider = ModelProvider()
+            with pool_provider.activate():
+                import my_graph_models  # @node() registers here
+            # global provider is restored
+
+        Yields:
+            This ModelProvider instance.
+        """
+        stack = getattr(_active_provider, "stack", None)
+        if stack is None:
+            _active_provider.stack = []
+            stack = _active_provider.stack
+        stack.append(self)
+        logger.debug("ModelProvider {} activated (depth={})", id(self), len(stack))
+        try:
+            yield self
+        finally:
+            stack.pop()
+            logger.debug("ModelProvider {} deactivated (depth={})", id(self), len(stack))
 
     @classmethod
     def sort_model_names(cls, model_names: set[str] | list[str]) -> list[str]:
@@ -62,6 +120,7 @@ class ModelProvider(collections.abc.Collection):
         """Register a model class under its label."""
         with self._lock:
             self._models[modelinfo.label_] = modelinfo
+            logger.debug("Registered {} '{}' in provider {}", modelinfo.type_, modelinfo.label_, id(self))
 
     def remove(self, modelinfo: GraphModelInfo) -> bool:
         """Remove a registered model and return True if it existed."""
@@ -743,5 +802,7 @@ class ModelProvider(collections.abc.Collection):
         return self.model_dump()
 
 
-# pylint: disable=C0103
-model_provider: Final[ModelProvider] = ModelProvider()
+# Global default provider. Decorators use ``get_active_provider()`` to
+# resolve the registration target: the active provider if one is set
+# via ``provider.activate()``, or this global instance otherwise.
+model_provider: ModelProvider = ModelProvider()

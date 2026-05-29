@@ -11,7 +11,7 @@ from . import config
 from .cardinality import Cardinality
 from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
-from .modelprovider import ModelProvider, model_provider
+from .modelprovider import ModelProvider, get_active_provider
 from .models import GraphEdge, GraphNode
 
 T = TypeVar("T")
@@ -137,7 +137,7 @@ def node(
         label_ = cls.__name__ if label is None else label
 
         if provider is None:
-            provider = model_provider
+            provider = get_active_provider()
 
         # Collect inherited relations from parent classes (if enabled)
         inherited_relations = _collect_inherited_relations(cls) if inherit_relations else []
@@ -147,7 +147,7 @@ def node(
             # decorator is called before (!) @node.
             # Also required because label might override default and
             # provider needs to be updated when already registered.
-            model_provider.remove(node_info)
+            provider.remove(node_info)
 
             # will be registered under this label in the provider
             node_info.label_ = label_
@@ -210,7 +210,7 @@ def edge(
         cls.graph_info_ = edge_info
 
         if provider is None:
-            provider = model_provider
+            provider = get_active_provider()
 
         # register in the factory
         provider.register(edge_info)
@@ -341,7 +341,7 @@ def _extend_relation_impl(
 ):
     """Internal implementation for extending a single relation."""
     if provider is None:
-        provider = model_provider
+        provider = get_active_provider()
 
     target_label = _resolve_label(target, "target")
     rel_type_name = _resolve_label(rel_type, "rel_type")
@@ -449,7 +449,7 @@ def extend_relations(
         ... ])
     """
     if provider is None:
-        provider = model_provider
+        provider = get_active_provider()
 
     target_label = _resolve_label(target, "target")
     node_info = _get_validated_node_info(target_label, provider)
