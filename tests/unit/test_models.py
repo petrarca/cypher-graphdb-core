@@ -1,3 +1,5 @@
+from enum import Enum, StrEnum
+
 import pytest
 
 from cypher_graphdb import config
@@ -36,6 +38,39 @@ def test_flatten_properties_filters_internal_and_keeps_gid():
     assert flattened["name"] == "Alice"
     # internal style suffix field removed
     assert "temp_" not in flattened
+
+
+class TestFlattenPropertiesEnumCoercion:
+    """Enum values in model fields and dynamic properties are coerced to scalars."""
+
+    def test_str_enum_field_coerced_to_string(self):
+        class Color(StrEnum):
+            RED = "red"
+            BLUE = "blue"
+
+        node = GraphNode(label_="Thing", properties_={"color": Color.RED})
+        flattened = node.flatten_properties()
+        assert flattened["color"] == "red"
+        assert isinstance(flattened["color"], str)
+
+    def test_int_enum_field_coerced_to_int(self):
+        class Priority(int, Enum):
+            LOW = 1
+            HIGH = 3
+
+        node = GraphNode(label_="Task", properties_={"priority": Priority.HIGH})
+        flattened = node.flatten_properties()
+        assert flattened["priority"] == 3
+        assert isinstance(flattened["priority"], int)
+
+    def test_plain_enum_field_coerced_to_value(self):
+        class Status(Enum):
+            ACTIVE = "active"
+            ARCHIVED = "archived"
+
+        node = GraphNode(label_="Item", properties_={"status": Status.ACTIVE})
+        flattened = node.flatten_properties()
+        assert flattened["status"] == "active"
 
 
 def test_create_gid_if_missing():
@@ -209,3 +244,44 @@ def test_edge_serialization_without_type_context():
     assert dumped["id_"] == 701
     assert dumped["label_"] == "REL"
     assert dumped["properties_"]["w"] == 2
+
+
+class TestMergeKeysDecorator:
+    """merge_keys parameter on @node decorator."""
+
+    def test_merge_keys_stored_on_graph_info(self):
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider = ModelProvider()
+
+        @node(label="_TestMergeKeys", merge_keys=["query_key"], provider=provider)
+        class TestQuery(GraphNode):
+            query_key: str | None = None
+            title: str | None = None
+
+        assert TestQuery.graph_info_.merge_keys == ["query_key"]
+
+    def test_empty_merge_keys_for_singleton(self):
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider = ModelProvider()
+
+        @node(label="_TestSingleton", merge_keys=[], provider=provider)
+        class TestSingleton(GraphNode):
+            name: str | None = None
+
+        assert TestSingleton.graph_info_.merge_keys == []
+
+    def test_no_merge_keys_default(self):
+        from cypher_graphdb.decorators import node
+        from cypher_graphdb.modelprovider import ModelProvider
+
+        provider = ModelProvider()
+
+        @node(label="_TestNoKeys", provider=provider)
+        class TestNoKeys(GraphNode):
+            name: str | None = None
+
+        assert TestNoKeys.graph_info_.merge_keys is None

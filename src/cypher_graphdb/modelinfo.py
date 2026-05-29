@@ -25,6 +25,11 @@ class GraphModelInfo(BaseModel):
         graph_schema: Generated schema information.
         source: Source location URI of the model file.
         display: Display configuration for UI rendering.
+        merge_keys: Property names used as business keys for MERGE.
+            When set, ``create_or_merge`` uses these properties to
+            identify existing nodes instead of ``gid_`` lookup.
+            Empty list means MERGE on label alone (singleton node).
+            None (default) means use the standard ``gid_`` resolution.
     """
 
     label_: str
@@ -32,6 +37,7 @@ class GraphModelInfo(BaseModel):
     graph_schema: GraphObjectSchema | None = None
     source: str | None = None
     display: DisplayConfig | None = None
+    merge_keys: list[str] | None = None
 
     def model_post_init(self, __context: Any) -> None:
         """Initialize schema after model creation."""

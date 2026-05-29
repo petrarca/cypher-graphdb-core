@@ -90,6 +90,62 @@ def test_merge_node_by_id():
     assert params["p_active"] is True
 
 
+class TestMergeNodeByKeys:
+    def test_single_merge_key(self):
+        query, params = CypherBuilder.merge_node_by_keys(
+            "_NamedQuery", ["query_key"], {"query_key": "hub-tech", "title": "Hub", "language": "cypher"}
+        )
+        assert "MERGE (n:_NamedQuery {query_key: $mk_query_key})" in query
+        assert "n.title = $p_title" in query
+        assert "n.language = $p_language" in query
+        assert "RETURN n" in query
+        assert params["mk_query_key"] == "hub-tech"
+        assert params["p_title"] == "Hub"
+
+    def test_empty_merge_keys_singleton(self):
+        query, params = CypherBuilder.merge_node_by_keys("_GraphModel", [], {"name": "tech_stack", "data": "{}"})
+        # Empty merge keys -> label-only match (empty map {} matches any node of label)
+        assert "MERGE (n:_GraphModel {})" in query
+        assert "n.name = $p_name" in query
+        assert "n.data = $p_data" in query
+
+    def test_multiple_merge_keys(self):
+        query, params = CypherBuilder.merge_node_by_keys(
+            "Config", ["env", "key"], {"env": "prod", "key": "timeout", "value": "30"}
+        )
+        assert "$mk_env" in query
+        assert "$mk_key" in query
+        assert "n.value = $p_value" in query
+        assert params["mk_env"] == "prod"
+        assert params["mk_key"] == "timeout"
+        assert params["p_value"] == "30"
+
+    def test_no_extra_properties(self):
+        query, params = CypherBuilder.merge_node_by_keys("_GraphModel", [], {})
+        assert "MERGE" in query
+        assert "RETURN n" in query
+
+    def test_missing_merge_key_raises(self):
+        with pytest.raises(ValueError, match="merge_keys missing from properties"):
+            CypherBuilder.merge_node_by_keys("_NamedQuery", ["query_key"], {"title": "No Key"})
+
+    def test_gid_emitted_as_plain_set(self):
+        # gid_ preservation is handled by _merge_node_by_keys (caller), not
+        # the builder -- AGE has no COALESCE in SET, so the builder uses a
+        # plain assignment.
+        query, params = CypherBuilder.merge_node_by_keys(
+            "_NamedQuery", ["query_key"], {"query_key": "k", "title": "T", "gid_": "abc123"}
+        )
+        assert "n.gid_ = $p_gid_" in query
+        assert params["p_gid_"] == "abc123"
+
+    def test_gid_only_properties(self):
+        query, params = CypherBuilder.merge_node_by_keys("_GraphModel", [], {"gid_": "xyz"})
+        assert "n.gid_ = $p_gid_" in query
+        assert params["p_gid_"] == "xyz"
+        assert "RETURN n" in query
+
+
 def test_merge_edge_by_id():
     query, params = CypherBuilder.merge_edge_by_id(456, {"weight": 0.9})
     assert "MATCH (s)-[e]->(t)" in query

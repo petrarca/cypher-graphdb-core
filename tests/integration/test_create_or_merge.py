@@ -300,3 +300,70 @@ class TestRoundTrip:
         assert final_edge.id_ == edge_id
         assert final_edge.since == 2020
         assert final_edge.role == "best_friend"
+
+
+@node(label="BizKeyNode", merge_keys=["biz_key"])
+class BizKeyNode(GraphNode):
+    """Node merged on a business key instead of gid_."""
+
+    biz_key: str
+    title: str | None = None
+    rank: int | None = None
+
+
+@node(label="SingletonNode", merge_keys=[])
+class SingletonNode(GraphNode):
+    """Singleton node merged on label alone."""
+
+    payload: str | None = None
+
+
+class TestMergeByKeys:
+    """create_or_merge with merge_keys (business-key MERGE)."""
+
+    def test_merge_by_key_creates_then_updates_same_node(self, test_db):
+        n1 = test_db.create_or_merge(BizKeyNode(biz_key="alpha", title="First", rank=1))
+        first_id = n1.id_
+        assert isinstance(first_id, int)
+
+        n2 = test_db.create_or_merge(BizKeyNode(biz_key="alpha", title="Second", rank=2))
+        # Same node matched by business key
+        assert n2.id_ == first_id
+
+        # Only one node exists
+        node_count = test_db.execute("MATCH (n:BizKeyNode) RETURN count(n)", unnest_result=True)
+        assert node_count == 1
+
+        # Properties updated
+        fetched = test_db.fetch_nodes({"label_": "BizKeyNode", "biz_key": "alpha"}, unnest_result=True, fetch_one=True)
+        assert fetched.title == "Second"
+        assert fetched.rank == 2
+
+    def test_merge_by_key_preserves_gid_across_remerge(self, test_db):
+        """gid_ must be stable across re-merge (COALESCE, not overwrite)."""
+        n1 = test_db.create_or_merge(BizKeyNode(biz_key="beta", title="A"))
+        original_gid = n1.gid_
+        assert original_gid is not None
+
+        n2 = test_db.create_or_merge(BizKeyNode(biz_key="beta", title="B"))
+        assert n2.gid_ == original_gid
+
+        # Verify in the graph directly
+        stored_gid = test_db.execute(
+            "MATCH (n:BizKeyNode {biz_key: 'beta'}) RETURN n.gid_",
+            unnest_result=True,
+            fetch_one=True,
+        )
+        assert stored_gid == original_gid
+
+    def test_singleton_merge_on_label(self, test_db):
+        s1 = test_db.create_or_merge(SingletonNode(payload="v1"))
+        s1_gid = s1.gid_
+        s2 = test_db.create_or_merge(SingletonNode(payload="v2"))
+
+        count = test_db.execute("MATCH (n:SingletonNode) RETURN count(n)", unnest_result=True)
+        assert count == 1
+        assert s2.gid_ == s1_gid
+
+        fetched = test_db.fetch_nodes({"label_": "SingletonNode"}, unnest_result=True, fetch_one=True)
+        assert fetched.payload == "v2"

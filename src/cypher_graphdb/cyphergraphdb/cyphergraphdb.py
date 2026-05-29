@@ -919,9 +919,14 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def _create_or_merge_node(self, obj, strategy) -> GraphNode:
         obj.resolve()
 
+        # Check for merge_keys on the model's graph_info_
+        merge_keys = getattr(getattr(obj, "graph_info_", None), "merge_keys", None)
+
         match strategy:
             case "merge":
-                if self._resolve_obj_id(obj, self._fetch_node_by_criteria):
+                if merge_keys is not None:
+                    return self._merge_node_by_keys(obj, merge_keys)
+                elif self._resolve_obj_id(obj, self._fetch_node_by_criteria):
                     return self._merge_node(obj)
                 else:
                     return self._create_node(obj)
@@ -958,6 +963,46 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         obj.__dict__.update(updated_node.__dict__)
 
         return obj
+
+    def _merge_node_by_keys(self, obj, merge_keys: list[str]) -> GraphNode:
+        """MERGE node using business key properties instead of gid_ lookup.
+
+        Preserves a stable ``gid_``: if a node with the same business key
+        already exists, its stored gid is reused so the bare SET writes
+        back the same value (Apache AGE has no ``ON CREATE SET``).
+        """
+        existing_gid = self._fetch_gid_by_merge_keys(obj, merge_keys)
+        if existing_gid is not None:
+            obj.properties_[config.PROP_GID] = existing_gid
+        else:
+            obj.create_gid_if_missing()
+
+        properties = obj.flatten_properties()
+        cypher_cmd, params = CypherBuilder.merge_node_by_keys(obj.label_, merge_keys, properties)
+        result = self._parse_and_execute(cypher_cmd, True, params=params or None)
+
+        if result is None:
+            return -1
+
+        updated_node = result[0][0]
+        obj.__dict__.update(updated_node.__dict__)
+
+        return obj
+
+    def _fetch_gid_by_merge_keys(self, obj, merge_keys: list[str]) -> str | None:
+        """Return the stored gid_ of an existing node matching the merge keys, or None.
+
+        For singleton nodes (empty merge_keys) the lookup matches on label
+        alone -- the first existing node of that label provides the gid.
+        """
+        criteria = MatchNodeCriteria(
+            prefix_="n",
+            label_=obj.label_,
+            properties_={k: getattr(obj, k, None) for k in merge_keys},
+            projection_=[config.PROP_GID],
+        )
+        result = self._fetch_node_by_criteria(criteria, True, True)
+        return result if isinstance(result, str) else None
 
     def _fetch_node_by_criteria(self, criteria: MatchCriteria, unnest_result: str, fetch_one: bool):
         cypher_cmd, params = CypherBuilder.fetch_node_by_criteria(criteria)

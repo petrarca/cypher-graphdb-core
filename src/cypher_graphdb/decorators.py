@@ -109,6 +109,7 @@ def node(
     display: DisplayConfig = None,
     provider: ModelProvider = None,
     inherit_relations: bool = True,
+    merge_keys: list[str] | None = None,
 ) -> Any:
     """Decorator to register a GraphNode subclass with optional label.
 
@@ -117,6 +118,11 @@ def node(
         display: Display configuration for UI rendering.
         provider: Model provider to register with (defaults to global).
         inherit_relations: Whether to inherit relations from parent classes (defaults to True).
+        merge_keys: Property names used as business keys for MERGE.
+            When set, ``create_or_merge`` uses these properties to
+            identify existing nodes instead of ``gid_`` lookup.
+            Empty list ``[]`` means MERGE on label alone (singleton).
+            ``None`` (default) means standard ``gid_`` resolution.
 
     Returns:
         Class decorator that registers the node class.
@@ -153,6 +159,7 @@ def node(
             node_info.label_ = label_
             node_info.display = display
             node_info.source = config.MODEL_SOURCE_MODEL
+            node_info.merge_keys = merge_keys
 
             # Add inherited relations to existing relations
             node_info.relations = inherited_relations + node_info.relations
@@ -163,6 +170,7 @@ def node(
                 display=display,
                 source=config.MODEL_SOURCE_MODEL,
                 relations=inherited_relations,  # Include inherited relations
+                merge_keys=merge_keys,
             )
             cls.graph_info_ = node_info
 
