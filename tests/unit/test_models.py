@@ -22,6 +22,15 @@ def test_label_to_object_type():
     assert GraphLabelMixin.label_to_obj_type("Product_Label") == GraphObjectType.NODE
     assert GraphLabelMixin.label_to_obj_type(":Product") == GraphObjectType.UNDEFINED
     assert GraphLabelMixin.label_to_obj_type("123") == GraphObjectType.UNDEFINED
+
+
+def test_is_internal():
+    assert GraphNode(label_="_GraphModel").is_internal is True
+    assert GraphNode(label_="_GraphDescription").is_internal is True
+    assert GraphNode(label_="Product").is_internal is False
+    assert GraphEdge(label_="_INTERNAL_EDGE").is_internal is True
+    assert GraphEdge(label_="CALLS").is_internal is False
+    assert GraphNode(label_=None).is_internal is False
     assert GraphLabelMixin.label_to_obj_type("'string'") == GraphObjectType.UNDEFINED
 
 

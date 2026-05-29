@@ -281,6 +281,11 @@ class GraphLabelMixin:
 
         return GraphObjectType.UNDEFINED
 
+    @property
+    def is_internal(self) -> bool:
+        """Return True if the label starts with ``_`` (infrastructure/metadata convention)."""
+        return self.label_ is not None and self.label_.startswith("_")
+
     def _resolve_label(self):
         """Set label from graph_info_ if not already assigned."""
         if self.label_ is None:
