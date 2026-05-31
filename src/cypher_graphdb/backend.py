@@ -462,12 +462,15 @@ class CypherBackend(abc.ABC):
             self.execute_cypher(parsed)
         return count
 
-    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+    def bulk_delete_orphans(
+        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+    ) -> int:
         """Delete nodes of ``label`` that have no ``edge_label`` edge attached.
 
         An orphan is a node with no edge of the given type in the given
         direction. Used to garbage-collect shared nodes (e.g. Dependency,
-        License) after their referencing nodes have been deleted.
+        License) after their referencing nodes have been deleted, or to remove
+        dangling source-scoped nodes after a re-index.
 
         The default implementation uses a Cypher ``OPTIONAL MATCH`` +
         ``WHERE x IS NULL`` pattern, which works on every Cypher backend
@@ -482,6 +485,10 @@ class CypherBackend(abc.ABC):
             incoming: If True (default), check for incoming edges
                 ``(n)<-[:edge_label]-()``. If False, check outgoing
                 ``(n)-[:edge_label]->()``.
+            filters: Optional property key=value filters (AND semantics) to
+                restrict the orphan scan to a subset of nodes (e.g.
+                ``{"source_key": "my-source"}``). When omitted, all nodes of
+                the label are considered.
 
         Returns:
             Number of orphan nodes deleted.
@@ -491,13 +498,24 @@ class CypherBackend(abc.ABC):
         if not _SAFE_FILTER_KEY_RE.match(edge_label):
             raise ValueError(f"edge_label must be alphanumeric/underscore, got: {edge_label!r}")
 
+        where_parts = ""
+        if filters:
+            for k, v in filters.items():
+                if not _SAFE_FILTER_KEY_RE.match(k):
+                    raise ValueError(f"filter key must be alphanumeric/underscore, got: {k!r}")
+                if not _SAFE_FILTER_VAL_RE.match(v):
+                    raise ValueError(f"filter value must be alphanumeric/underscore/hyphen/dot/colon, got: {v!r}")
+            where_parts = "WHERE " + " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
+
         arrow = f"<-[r:{edge_label}]-" if incoming else f"-[r:{edge_label}]->"
-        count_cypher = f"MATCH (n:{label}) OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL RETURN count(n)"
+        count_cypher = f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL RETURN count(n)"
         parsed = self.parse_cypher(count_cypher)
         result, _ = self.execute_cypher(parsed)
         count = result[0][0] if result else 0
         if count > 0:
-            delete_cypher = f"MATCH (n:{label}) OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL DETACH DELETE n"
+            delete_cypher = (
+                f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL DETACH DELETE n"
+            )
             parsed = self.parse_cypher(delete_cypher)
             self.execute_cypher(parsed)
         return count

@@ -730,3 +730,57 @@ class TestBulkDeleteOrphans:
         """Orphan delete on a never-created label returns 0 without error."""
         deleted = clean_db.bulk_delete_orphans("NeverCreatedLabel", "NEVER_REL", incoming=True)
         assert deleted == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_filters_scope_orphan_deletion(self, clean_db):
+        """filters should restrict orphan deletion to matching nodes only."""
+        # Two sources of orphaned decorators; only 'src_a' should be cleaned.
+        clean_db.bulk_create_nodes(
+            [{"id": f"a{i}", "source_key": "src_a"} for i in range(3)],
+            label="ScopedDec",
+        )
+        clean_db.bulk_create_nodes(
+            [{"id": f"b{i}", "source_key": "src_b"} for i in range(2)],
+            label="ScopedDec",
+        )
+        clean_db.commit()
+
+        # All are orphans (no DECORATES edge), but scope to src_a only.
+        deleted = clean_db.bulk_delete_orphans("ScopedDec", "DECORATES", incoming=False, filters={"source_key": "src_a"})
+        clean_db.commit()
+
+        assert deleted == 3
+        remaining = clean_db.execute("MATCH (n:ScopedDec) RETURN count(n)", unnest_result=True)
+        assert remaining == 2  # src_b untouched
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_filters_with_referenced_nodes(self, clean_db):
+        """filters + edge presence: only filtered orphans deleted, referenced kept."""
+        clean_db.bulk_create_nodes([{"id": "tgt1"}], label="DecTarget")
+        clean_db.bulk_create_nodes(
+            [
+                {"id": "d1", "source_key": "s1"},  # will have edge -> kept
+                {"id": "d2", "source_key": "s1"},  # orphan, in scope -> deleted
+                {"id": "d3", "source_key": "s2"},  # orphan, out of scope -> kept
+            ],
+            label="ScopedDec2",
+        )
+        clean_db.create_property_index("ScopedDec2", "id")
+        clean_db.create_property_index("DecTarget", "id")
+        clean_db.commit()
+
+        clean_db.bulk_create_edges(
+            [{"src": "d1", "dst": "tgt1"}],
+            label="DECORATES",
+            src_label="ScopedDec2",
+            dst_label="DecTarget",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_orphans("ScopedDec2", "DECORATES", incoming=False, filters={"source_key": "s1"})
+        clean_db.commit()
+
+        assert deleted == 1  # only d2
+        remaining = clean_db.execute("MATCH (n:ScopedDec2) RETURN n.id ORDER BY n.id")
+        ids = sorted(r[0] for r in remaining)
+        assert ids == ["d1", "d3"]

@@ -120,7 +120,9 @@ class ModelProvider(collections.abc.Collection):
         """Register a model class under its label."""
         with self._lock:
             self._models[modelinfo.label_] = modelinfo
-            logger.debug("Registered {} '{}' in provider {}", modelinfo.type_, modelinfo.label_, id(self))
+            # Per-model registration is fine-grained internal mechanics that
+            # fires for every @node/@edge class -- trace, not debug.
+            logger.trace("Registered {} '{}' in provider {}", modelinfo.type_, modelinfo.label_, id(self))
 
     def register_from_module(self, module: object) -> int:
         """Register all ``@node``/``@edge`` decorated classes from a module.
@@ -776,9 +778,12 @@ class ModelProvider(collections.abc.Collection):
                     # Extract x-graph metadata
                     label, graph_type, relations, display = self._extract_x_graph_metadata(schema)
 
-                    # Check if model already exists
+                    # Check if model already exists. This is an expected,
+                    # benign condition when re-loading schemas that overlap
+                    # with already-registered types (e.g. metadata types
+                    # pre-registered in every pool), so log at debug level.
                     if existing := self.get(label):
-                        logger.warning(f"Model '{label}' already registered, skipping. Source: {existing.source}")
+                        logger.debug(f"Model '{label}' already registered, skipping. Source: {existing.source}")
                         continue
 
                     # Create typed Pydantic model class

@@ -111,11 +111,14 @@ class IndexingMixin:
         assert self._backend
         return self._backend.bulk_delete_nodes(label, filters)
 
-    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+    def bulk_delete_orphans(
+        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+    ) -> int:
         """Delete nodes of a label that have no edge of ``edge_label`` attached.
 
         Garbage-collects shared nodes (e.g. Dependency, License) after the
-        nodes referencing them have been removed. Delegates to the backend's
+        nodes referencing them have been removed, or removes dangling
+        source-scoped nodes after a re-index. Delegates to the backend's
         ``bulk_delete_orphans``. Backends that declare ``BULK_DELETE_ORPHANS``
         provide an optimized implementation (direct SQL anti-join on AGE);
         others fall back to a Cypher ``OPTIONAL MATCH ... WHERE x IS NULL``
@@ -127,12 +130,14 @@ class IndexingMixin:
                 (e.g. "HAS_DEPENDENCY").
             incoming: If True (default), check for incoming edges
                 ``(n)<-[:edge_label]-()``. If False, outgoing.
+            filters: Optional property key=value filters (AND semantics) to
+                restrict the orphan scan (e.g. ``{"source_key": "my-source"}``).
 
         Returns:
             Number of orphan nodes deleted.
         """
         assert self._backend
-        return self._backend.bulk_delete_orphans(label, edge_label, incoming=incoming)
+        return self._backend.bulk_delete_orphans(label, edge_label, incoming=incoming, filters=filters)
 
     def bulk_create_nodes(
         self,

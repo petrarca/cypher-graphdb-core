@@ -265,7 +265,9 @@ class AGEBulkWriter:
         logger.debug("Direct SQL: {} {} nodes deleted (+ edges from {} edge tables)", deleted, label, len(edge_labels))
         return deleted
 
-    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+    def bulk_delete_orphans(
+        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+    ) -> int:
         """Delete orphan nodes via a direct SQL anti-join, cascading to edges.
 
         An orphan is a vertex of ``label`` with no edge of ``edge_label``
@@ -283,6 +285,8 @@ class AGEBulkWriter:
             incoming: If True, the edge points INTO the node -- match on
                 ``edge.end_id``. If False, the edge points OUT -- match on
                 ``edge.start_id``.
+            filters: Optional property key=value filters (AND semantics) that
+                restrict the orphan scan to matching nodes only.
 
         Returns:
             Number of orphan nodes deleted.
@@ -297,7 +301,7 @@ class AGEBulkWriter:
         # edge -- every node of the label is an orphan. Use an always-true
         # predicate instead of an anti-join against a missing table.
         if edge_label in edge_labels:
-            orphan_pred = SQL(
+            no_edge_pred = SQL(
                 "NOT EXISTS (SELECT 1 FROM {egraph}.{eref} ref WHERE ref.{refcol} OPERATOR(ag_catalog.=) n.id)"
             ).format(
                 egraph=Identifier(self._graph_name),
@@ -305,7 +309,16 @@ class AGEBulkWriter:
                 refcol=SQL(ref_col),
             )
         else:
-            orphan_pred = SQL("TRUE")
+            no_edge_pred = SQL("TRUE")
+
+        # Optionally restrict the scan to nodes matching property filters.
+        if filters:
+            orphan_pred = SQL("({no_edge}) AND ({props})").format(
+                no_edge=no_edge_pred,
+                props=SQL(_build_agtype_conditions(filters, alias="n")),
+            )
+        else:
+            orphan_pred = no_edge_pred
 
         try:
             with self._conn.cursor() as cursor:

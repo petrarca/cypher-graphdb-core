@@ -762,10 +762,12 @@ class AGEGraphDB(CypherBackend):
         self._require_connection()
         return self._get_bulk_writer().bulk_delete_nodes(label, filters)
 
-    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+    def bulk_delete_orphans(
+        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+    ) -> int:
         """Delete orphan nodes (no edge of edge_label) via direct SQL anti-join."""
         self._require_connection()
-        return self._get_bulk_writer().bulk_delete_orphans(label, edge_label, incoming=incoming)
+        return self._get_bulk_writer().bulk_delete_orphans(label, edge_label, incoming=incoming, filters=filters)
 
     # ── Bulk write operations ─────────────────────────────────────────────
 
