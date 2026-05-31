@@ -36,6 +36,7 @@ class BackendCapability(Enum):
     FULLTEXT_INDEX = auto()  # Supports create_fulltext_index
     VECTOR_INDEX = auto()  # Supports create_vector_index
     BULK_DELETE = auto()  # Supports bulk_delete_nodes (optimized batch deletion with edge cascade)
+    BULK_DELETE_ORPHANS = auto()  # Supports bulk_delete_orphans (optimized orphan-node deletion)
 
 
 class ExecStatistics(GraphStatistics):
@@ -457,6 +458,46 @@ class CypherBackend(abc.ABC):
         count = result[0][0] if result else 0
         if count > 0:
             delete_cypher = f"MATCH (n:{label}) WHERE {where_parts} DETACH DELETE n"
+            parsed = self.parse_cypher(delete_cypher)
+            self.execute_cypher(parsed)
+        return count
+
+    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+        """Delete nodes of ``label`` that have no ``edge_label`` edge attached.
+
+        An orphan is a node with no edge of the given type in the given
+        direction. Used to garbage-collect shared nodes (e.g. Dependency,
+        License) after their referencing nodes have been deleted.
+
+        The default implementation uses a Cypher ``OPTIONAL MATCH`` +
+        ``WHERE x IS NULL`` pattern, which works on every Cypher backend
+        (notably Memgraph). Backends that declare ``BULK_DELETE_ORPHANS``
+        override this with an optimized implementation (e.g. direct SQL
+        anti-join on AGE).
+
+        Args:
+            label: Node label to scan for orphans (e.g. "Dependency").
+            edge_label: Edge label that, when absent, marks the node as
+                orphaned (e.g. "HAS_DEPENDENCY").
+            incoming: If True (default), check for incoming edges
+                ``(n)<-[:edge_label]-()``. If False, check outgoing
+                ``(n)-[:edge_label]->()``.
+
+        Returns:
+            Number of orphan nodes deleted.
+        """
+        if not _SAFE_FILTER_KEY_RE.match(label):
+            raise ValueError(f"label must be alphanumeric/underscore, got: {label!r}")
+        if not _SAFE_FILTER_KEY_RE.match(edge_label):
+            raise ValueError(f"edge_label must be alphanumeric/underscore, got: {edge_label!r}")
+
+        arrow = f"<-[r:{edge_label}]-" if incoming else f"-[r:{edge_label}]->"
+        count_cypher = f"MATCH (n:{label}) OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL RETURN count(n)"
+        parsed = self.parse_cypher(count_cypher)
+        result, _ = self.execute_cypher(parsed)
+        count = result[0][0] if result else 0
+        if count > 0:
+            delete_cypher = f"MATCH (n:{label}) OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL DETACH DELETE n"
             parsed = self.parse_cypher(delete_cypher)
             self.execute_cypher(parsed)
         return count

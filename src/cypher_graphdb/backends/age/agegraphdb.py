@@ -604,6 +604,8 @@ class AGEGraphDB(CypherBackend):
                 return True
             case BackendCapability.BULK_DELETE:
                 return True
+            case BackendCapability.BULK_DELETE_ORPHANS:
+                return True
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)
@@ -759,6 +761,11 @@ class AGEGraphDB(CypherBackend):
         """Delete nodes matching property filters, cascading to edges."""
         self._require_connection()
         return self._get_bulk_writer().bulk_delete_nodes(label, filters)
+
+    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+        """Delete orphan nodes (no edge of edge_label) via direct SQL anti-join."""
+        self._require_connection()
+        return self._get_bulk_writer().bulk_delete_orphans(label, edge_label, incoming=incoming)
 
     # ── Bulk write operations ─────────────────────────────────────────────
 

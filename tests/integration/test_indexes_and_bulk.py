@@ -597,3 +597,136 @@ class TestBulkDeleteNodes:
         """bulk_delete_nodes with empty filters should raise ValueError."""
         with pytest.raises(ValueError, match="filters must not be empty"):
             clean_db.bulk_delete_nodes("SomeLabel", {})
+
+
+# ── Bulk delete orphans ─────────────────────────────────────────────────────
+
+
+class TestBulkDeleteOrphans:
+    """Test bulk_delete_orphans for both backends.
+
+    An orphan is a node with no edge of the given type in the given
+    direction. AGE uses a direct SQL anti-join; Memgraph uses the Cypher
+    OPTIONAL MATCH fallback. Both must produce identical results.
+    """
+
+    def test_age_declares_capability(self, age_db):
+        """AGE declares BULK_DELETE_ORPHANS (optimized direct-SQL path)."""
+        assert age_db.has_capability(BackendCapability.BULK_DELETE_ORPHANS) is True
+
+    def _seed_referenced_and_orphans(self, clean_db):
+        """Create Dependency nodes: some referenced by a Component, some orphaned."""
+        clean_db.bulk_create_nodes(
+            [{"id": "c1", "name": "comp1"}],
+            label="OrphComponent",
+        )
+        clean_db.bulk_create_nodes(
+            [{"id": f"dep{i}", "name": f"Dep {i}"} for i in range(5)],
+            label="OrphDependency",
+        )
+        clean_db.create_property_index("OrphComponent", "id")
+        clean_db.create_property_index("OrphDependency", "id")
+        clean_db.commit()
+
+        # Reference only dep0 and dep1 via HAS_DEP; dep2..dep4 are orphans.
+        clean_db.bulk_create_edges(
+            [{"src": "c1", "dst": "dep0"}, {"src": "c1", "dst": "dep1"}],
+            label="HAS_DEP",
+            src_label="OrphComponent",
+            dst_label="OrphDependency",
+        )
+        clean_db.commit()
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_deletes_only_orphans(self, clean_db):
+        """Only nodes with no incoming HAS_DEP edge should be deleted."""
+        self._seed_referenced_and_orphans(clean_db)
+
+        deleted = clean_db.bulk_delete_orphans("OrphDependency", "HAS_DEP", incoming=True)
+        clean_db.commit()
+
+        assert deleted == 3  # dep2, dep3, dep4
+        remaining = clean_db.execute("MATCH (n:OrphDependency) RETURN count(n)", unnest_result=True)
+        assert remaining == 2  # dep0, dep1 still referenced
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_preserves_referenced_nodes(self, clean_db):
+        """Referenced nodes must survive and keep their edges."""
+        self._seed_referenced_and_orphans(clean_db)
+
+        clean_db.bulk_delete_orphans("OrphDependency", "HAS_DEP", incoming=True)
+        clean_db.commit()
+
+        edge_count = clean_db.execute("MATCH ()-[r:HAS_DEP]->() RETURN count(r)", unnest_result=True)
+        assert edge_count == 2
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_all_orphans_deleted_when_no_edges(self, clean_db):
+        """When no edges exist, every node of the label is an orphan."""
+        clean_db.bulk_create_nodes(
+            [{"id": f"x{i}"} for i in range(4)],
+            label="AllOrphan",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_orphans("AllOrphan", "SOME_REL", incoming=True)
+        clean_db.commit()
+
+        assert deleted == 4
+        remaining = clean_db.execute("MATCH (n:AllOrphan) RETURN count(n)", unnest_result=True)
+        assert remaining == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_no_orphans_returns_zero(self, clean_db):
+        """When every node is referenced, nothing is deleted."""
+        clean_db.bulk_create_nodes([{"id": "c1"}], label="RefComp")
+        clean_db.bulk_create_nodes([{"id": "d1"}, {"id": "d2"}], label="RefDep")
+        clean_db.create_property_index("RefComp", "id")
+        clean_db.create_property_index("RefDep", "id")
+        clean_db.commit()
+
+        clean_db.bulk_create_edges(
+            [{"src": "c1", "dst": "d1"}, {"src": "c1", "dst": "d2"}],
+            label="REFS",
+            src_label="RefComp",
+            dst_label="RefDep",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_orphans("RefDep", "REFS", incoming=True)
+        clean_db.commit()
+
+        assert deleted == 0
+        remaining = clean_db.execute("MATCH (n:RefDep) RETURN count(n)", unnest_result=True)
+        assert remaining == 2
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_outgoing_direction(self, clean_db):
+        """incoming=False should check outgoing edges instead."""
+        clean_db.bulk_create_nodes([{"id": "s1"}, {"id": "s2"}], label="OutSrc")
+        clean_db.bulk_create_nodes([{"id": "t1"}], label="OutDst")
+        clean_db.create_property_index("OutSrc", "id")
+        clean_db.create_property_index("OutDst", "id")
+        clean_db.commit()
+
+        # s1 has an outgoing OUT_REL; s2 does not (orphan).
+        clean_db.bulk_create_edges(
+            [{"src": "s1", "dst": "t1"}],
+            label="OUT_REL",
+            src_label="OutSrc",
+            dst_label="OutDst",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_orphans("OutSrc", "OUT_REL", incoming=False)
+        clean_db.commit()
+
+        assert deleted == 1  # s2
+        remaining = clean_db.execute("MATCH (n:OutSrc) RETURN count(n)", unnest_result=True)
+        assert remaining == 1  # s1
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_missing_label_returns_zero(self, clean_db):
+        """Orphan delete on a never-created label returns 0 without error."""
+        deleted = clean_db.bulk_delete_orphans("NeverCreatedLabel", "NEVER_REL", incoming=True)
+        assert deleted == 0

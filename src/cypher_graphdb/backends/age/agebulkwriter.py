@@ -265,6 +265,87 @@ class AGEBulkWriter:
         logger.debug("Direct SQL: {} {} nodes deleted (+ edges from {} edge tables)", deleted, label, len(edge_labels))
         return deleted
 
+    def bulk_delete_orphans(self, label: str, edge_label: str, *, incoming: bool = True) -> int:
+        """Delete orphan nodes via a direct SQL anti-join, cascading to edges.
+
+        An orphan is a vertex of ``label`` with no edge of ``edge_label``
+        attached in the requested direction. PostgreSQL resolves this via the
+        ``start_id``/``end_id`` btree index on the edge table, so the scan is
+        index-backed instead of a full relationship traversal.
+
+        On a fresh graph where the vertex label table does not yet exist,
+        returns 0.
+
+        Args:
+            label: Vertex label to scan for orphans (e.g. "Dependency").
+            edge_label: Edge label whose absence marks an orphan
+                (e.g. "HAS_DEPENDENCY").
+            incoming: If True, the edge points INTO the node -- match on
+                ``edge.end_id``. If False, the edge points OUT -- match on
+                ``edge.start_id``.
+
+        Returns:
+            Number of orphan nodes deleted.
+        """
+        # The graphid equality operator lives in ag_catalog. Qualify it inline
+        # via OPERATOR(ag_catalog.=) so the anti-join works regardless of the
+        # connection's search_path (autocommit makes SET LOCAL unreliable).
+        ref_col = "end_id" if incoming else "start_id"
+        edge_labels = self._list_edge_labels()
+
+        # When the edge label table does not exist, no node can have such an
+        # edge -- every node of the label is an orphan. Use an always-true
+        # predicate instead of an anti-join against a missing table.
+        if edge_label in edge_labels:
+            orphan_pred = SQL(
+                "NOT EXISTS (SELECT 1 FROM {egraph}.{eref} ref WHERE ref.{refcol} OPERATOR(ag_catalog.=) n.id)"
+            ).format(
+                egraph=Identifier(self._graph_name),
+                eref=Identifier(edge_label),
+                refcol=SQL(ref_col),
+            )
+        else:
+            orphan_pred = SQL("TRUE")
+
+        try:
+            with self._conn.cursor() as cursor:
+                # Step 1: delete edges attached to the soon-to-be-orphan nodes.
+                # A node is an orphan w.r.t. edge_label; other edge types may
+                # still reference it, so detach across all edge tables first.
+                for elabel in edge_labels:
+                    cursor.execute(
+                        SQL(
+                            "DELETE FROM {egraph}.{etable} e "
+                            "USING {vgraph}.{vtable} n "
+                            "WHERE (e.start_id OPERATOR(ag_catalog.=) n.id "
+                            "OR e.end_id OPERATOR(ag_catalog.=) n.id) AND {pred}"
+                        ).format(
+                            egraph=Identifier(self._graph_name),
+                            etable=Identifier(elabel),
+                            vgraph=Identifier(self._graph_name),
+                            vtable=Identifier(label),
+                            pred=orphan_pred,
+                        )
+                    )
+
+                # Step 2: delete the orphan vertices themselves.
+                cursor.execute(
+                    SQL("DELETE FROM {vgraph}.{vtable} n WHERE {pred} RETURNING n.id").format(
+                        vgraph=Identifier(self._graph_name),
+                        vtable=Identifier(label),
+                        pred=orphan_pred,
+                    )
+                )
+                deleted = len(cursor.fetchall())
+        except psycopg.errors.UndefinedTable:
+            # Vertex label table does not exist yet -- nothing to delete.
+            self._conn.rollback()
+            return 0
+
+        self.invalidate_graphid_cache(label)
+        logger.debug("Direct SQL: {} orphaned {} nodes deleted (no {} edge)", deleted, label, edge_label)
+        return deleted
+
     def _list_edge_labels(self) -> list[str]:
         """Return all edge label names in the graph, cached for the connection lifetime.
 
@@ -323,6 +404,9 @@ class AGEBulkWriter:
                     cursor.execute(SQLBuilder.create_vlabel(self._graph_name, label))
                 else:
                     cursor.execute(SQLBuilder.create_elabel(self._graph_name, label))
+                    # A new edge label invalidates the cached edge-label list so
+                    # subsequent bulk_delete_orphans/bulk_delete_nodes see it.
+                    self._edge_labels_cache = None
                 cursor.execute("RELEASE SAVEPOINT _age_ensure_label")
                 self._conn.commit()
             except Exception:
