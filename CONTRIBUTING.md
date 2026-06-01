@@ -87,6 +87,89 @@ Types include: feat, fix, docs, style, refactor, test, chore
 
 Example: `feat(cli): add support for interactive mode`
 
+## Releasing
+
+The package version is derived from Git tags via `setuptools-scm`. There is no
+version field to edit in `pyproject.toml`. Creating a tag on `main` is the release.
+
+Pushing the tag triggers two GitHub Actions workflows automatically:
+- `publish.yml` -- lints, runs unit tests, builds, and publishes to PyPI (OIDC trusted publishing)
+- `release.yml` -- creates a GitHub Release with auto-generated notes
+
+### Version numbering
+
+Follow [Semantic Versioning](https://semver.org/):
+
+| Change | Bump | Example |
+|--------|------|---------|
+| Bug fixes, minor improvements, docs, tests | Patch | `v0.2.9` -> `v0.2.10` |
+| New features, backward-compatible additions | Minor | `v0.2.10` -> `v0.3.0` |
+| Breaking changes to API or schema | Major | `v0.3.0` -> `v1.0.0` |
+
+### Step-by-step release process
+
+**1. Ensure `main` is clean and all checks pass.**
+
+```bash
+git checkout main && git pull
+task fct
+```
+
+**2. Check what has changed since the last release.**
+
+```bash
+git log --oneline $(git describe --tags --abbrev=0)..HEAD
+git tag --sort=-v:refname | head -3
+```
+
+**3. Create and push the tag.**
+
+```bash
+git tag v0.x.y
+git push origin v0.x.y
+```
+
+This triggers both CI workflows. The package is published to PyPI automatically
+once lint and unit tests pass.
+
+**4. Update the GitHub release notes.**
+
+The release workflow auto-generates notes from commit messages. Edit them to be
+user-facing -- focus on what changed and why, not implementation details:
+
+```bash
+gh release edit v0.x.y --notes "
+- feat: add merge_keys to @node decorator for business-key MERGE
+- feat: bulk_delete_orphans for fast orphan-node GC
+- fix: preserve gid_ on business-key MERGE
+"
+```
+
+**5. Wait for the publish workflow to complete.**
+
+```bash
+gh run list --limit 3
+gh run view <run-id> --log   # on failure
+```
+
+**6. Verify the package is on PyPI.**
+
+```bash
+pip index versions cypher-graphdb
+```
+
+### Deleting a bad tag
+
+```bash
+git tag -d v0.x.y
+git push origin :refs/tags/v0.x.y
+# fix, then re-tag
+git tag v0.x.y
+git push origin v0.x.y
+```
+
+---
+
 ## Reporting Bugs
 
 When reporting bugs, include:
