@@ -37,6 +37,7 @@ class BackendCapability(Enum):
     VECTOR_INDEX = auto()  # Supports create_vector_index
     BULK_DELETE = auto()  # Supports bulk_delete_nodes (optimized batch deletion with edge cascade)
     BULK_DELETE_ORPHANS = auto()  # Supports bulk_delete_orphans (optimized orphan-node deletion)
+    REQUIRES_GRAPH_NAME = auto()  # Explicit graph name required (e.g. AGE); False for backends that default it (e.g. Memgraph)
 
 
 class ExecStatistics(GraphStatistics):
@@ -137,6 +138,11 @@ class CypherBackend(abc.ABC):
         Raises:
             NotImplementedError: If the capability is not supported.
         """
+        # Default: backends address a single graph per connection and default
+        # the graph name internally, so an explicit graph name is not required.
+        # Backends that address a named graph (e.g. AGE) override this to True.
+        if capability is BackendCapability.REQUIRES_GRAPH_NAME:
+            return False
         raise NotImplementedError(f"Backend does not support capability: {capability.value}")
 
     def has_capability(self, capability: BackendCapability) -> bool:

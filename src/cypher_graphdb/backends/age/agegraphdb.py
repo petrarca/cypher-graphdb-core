@@ -606,6 +606,9 @@ class AGEGraphDB(CypherBackend):
                 return True
             case BackendCapability.BULK_DELETE_ORPHANS:
                 return True
+            case BackendCapability.REQUIRES_GRAPH_NAME:
+                # AGE addresses a named graph (PostgreSQL schema) -- required.
+                return True
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)

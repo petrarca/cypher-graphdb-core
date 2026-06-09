@@ -684,6 +684,11 @@ class MemgraphDB(CypherBackend):
             case BackendCapability.PROPERTY_INDEX:
                 # Memgraph supports CREATE/DROP INDEX ON :Label(prop)
                 return True
+            case BackendCapability.REQUIRES_GRAPH_NAME:
+                # Memgraph defaults to the single "memgraph" database (Community);
+                # named databases are an Enterprise feature, so a graph name is
+                # not required to connect.
+                return False
             case _:
                 # Delegate unknown capabilities to superclass
                 return super().get_capability(capability)
