@@ -23,7 +23,7 @@ from .dbpool import CypherGraphDBPool
 from .decorators import edge, extend_relation, extend_relations, node, relation
 from .exceptions import LabelNotFoundError, ReadOnlyModeError
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo
-from .modelprovider import ModelProvider, model_provider
+from .modelprovider import ModelProvider, model_provider, validate_node_properties
 from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
 from .settings import Settings, get_settings
 from .statistics import GraphStatistics, IndexInfo, IndexType
@@ -38,6 +38,7 @@ __all__ = [
     "GraphJSONEncoder",
     "ModelProvider",
     "model_provider",
+    "validate_node_properties",
     "GraphNodeInfo",
     "GraphEdgeInfo",
     "GraphStatistics",

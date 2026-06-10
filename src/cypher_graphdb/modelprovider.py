@@ -844,6 +844,36 @@ class ModelProvider(collections.abc.Collection):
         return self.model_dump()
 
 
+def validate_node_properties(provider: ModelProvider, label: str, properties: dict) -> None:
+    """Validate node properties against the registered ``@node`` model for ``label``.
+
+    Instantiates the Pydantic model class registered for ``label`` in
+    ``provider`` with the given ``properties``, so missing required fields and
+    type errors are caught before the node is written to the graph.
+
+    No-op when:
+    - ``provider`` has no model registered for ``label`` (untyped nodes pass
+      through unchecked).
+    - The registered model class cannot be resolved (defensive).
+
+    Args:
+        provider: The ``ModelProvider`` to look up the model class from.
+        label: Node label to validate against.
+        properties: Raw property dict to validate.
+
+    Raises:
+        pydantic.ValidationError: If the properties are invalid for the
+            registered model. The caller decides how to surface this error
+            (e.g. HTTP 400, CLI message, or re-raise).
+    """
+    if provider.get(label) is None:
+        return
+    model_class = provider.get_model_class(label)
+    if model_class is None:
+        return
+    model_class(**properties)
+
+
 # Global default provider. Decorators use ``get_active_provider()`` to
 # resolve the registration target: the active provider if one is set
 # via ``provider.activate()``, or this global instance otherwise.

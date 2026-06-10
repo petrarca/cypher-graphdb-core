@@ -566,6 +566,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         self,
         obj: GraphNode | GraphEdge | Graph,
         strategy: Literal["merge", "force_create"] = config.CREATE_OR_MERGE_STRATEGY[0],
+        *,
+        validate: bool = False,
     ) -> GraphNode | GraphEdge | Graph:
         """Create or merge graph objects (nodes, edges, or entire graphs) into the database.
 
@@ -577,6 +579,13 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             strategy: Creation strategy - "merge" (default) or "force_create"
                 - "merge": Update existing objects or create if not found
                 - "force_create": Always create new objects, ignore existing ones
+            validate: If True and ``obj`` is a generic ``GraphNode`` (not already a
+                typed ``@node`` subclass), validate its ``properties_`` against the
+                registered model for ``obj.label_`` using the connection's
+                ``model_provider``. Raises ``pydantic.ValidationError`` when the
+                label has a registered model and the properties are invalid.
+                No-op for typed node instances (already validated at construction)
+                and for labels with no registered model (untyped nodes pass through).
 
         Returns:
             The same object with updated database ID and properties
@@ -629,6 +638,15 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             raise ReadOnlyModeError("Cannot execute CREATE or MERGE in read-only mode")
 
         assert strategy in config.CREATE_OR_MERGE_STRATEGY, f"Invalid strategy {strategy}!"
+
+        # Optional write-time validation: validate generic GraphNode properties
+        # against the registered @node model (if any) before writing to the graph.
+        # Typed subclasses are already validated by Pydantic at construction;
+        # only generic GraphNode instances carry unvalidated raw properties.
+        if validate and isinstance(obj, GraphNode) and type(obj) is GraphNode:
+            provider = getattr(self, "model_provider", None)
+            if provider is not None:
+                modelprovider.validate_node_properties(provider, obj.label_, obj.properties_)
 
         if isinstance(obj, GraphNode):
             return self._create_or_merge_node(obj, strategy)
