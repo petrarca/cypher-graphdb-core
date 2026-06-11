@@ -158,6 +158,23 @@ class CypherGraphDBPool:
             return len(self._in_use) + len(self._idle)
 
     @property
+    def pool_size(self) -> int:
+        """Maximum number of pooled connections."""
+        return self._pool_size
+
+    @property
+    def num_in_use(self) -> int:
+        """Number of connections currently checked out (in use)."""
+        with self._lock:
+            return len(self._in_use)
+
+    @property
+    def num_idle(self) -> int:
+        """Number of idle (available) pooled connections."""
+        with self._lock:
+            return len(self._idle)
+
+    @property
     def stats(self) -> PoolStats:
         """Snapshot of pool statistics (counters since creation)."""
         return self._stats.snapshot()
