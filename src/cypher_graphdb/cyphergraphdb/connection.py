@@ -3,6 +3,8 @@
 import contextlib
 from typing import Any
 
+from cypher_graphdb.connection_guard import assert_connection_allowed
+
 
 class ConnectionMixin:
     """Mixin providing connection management methods for CypherGraphDB."""
@@ -95,6 +97,7 @@ class ConnectionMixin:
         assert self._backend
 
         if connect_url is not None:
+            assert_connection_allowed(connect_url)
             self._backend.connect(cinfo=connect_url, **kwargs)
         else:
             # Pass settings as fallbacks - explicit params take precedence
@@ -119,6 +122,7 @@ class ConnectionMixin:
             # Explicit kwargs override settings
             merged_kwargs.update(kwargs)
 
+            assert_connection_allowed(merged_kwargs.get("cinfo"))
             self._backend.connect(*args, **merged_kwargs)
 
         return self

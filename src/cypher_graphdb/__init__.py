@@ -8,6 +8,11 @@ Apache AGE (Age Graph Extension) for PostgreSQL.
 from .backend import BackendCapability
 from .backendprovider import backend_provider
 from .cardinality import Cardinality
+from .connection_guard import (
+    ConnectionGuardError,
+    clear_connection_guard,
+    install_connection_guard,
+)
 from .cyphergraphdb import (
     CypherGraphDB,
     MatchCriteria,
@@ -56,6 +61,9 @@ __all__ = [
     "get_settings",
     "ReadOnlyModeError",
     "LabelNotFoundError",
+    "ConnectionGuardError",
+    "install_connection_guard",
+    "clear_connection_guard",
     "backend",
     "BackendCapability",
     "backend_provider",
