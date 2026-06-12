@@ -193,12 +193,20 @@ def sanitize_connection_params_for_logging(params: dict[str, Any]) -> dict[str, 
 
     sanitized = params.copy()
 
-    # Mask sensitive fields
+    # Mask sensitive scalar fields outright.
     sensitive_fields = {"password", "pass", "pwd", "secret", "token", "key"}
-
     for field in sensitive_fields:
         if field in sanitized and sanitized[field]:
             sanitized[field] = "***MASKED***"
+
+    # Mask credentials embedded in connection-string fields (a DSN / URL can carry
+    # user:password@host). These hold a full connection string, not a scalar
+    # secret, so sanitize the string rather than blanking it.
+    connection_string_fields = {"cinfo", "connect_url", "dsn", "url", "connection_string"}
+    for field in connection_string_fields:
+        value = sanitized.get(field)
+        if isinstance(value, str) and value:
+            sanitized[field] = sanitize_connection_string_for_logging(value)
 
     return sanitized
 

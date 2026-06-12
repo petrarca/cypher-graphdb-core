@@ -149,6 +149,28 @@ def test_sanitize_connection_params_for_logging():
         assert value == "***MASKED***", f"Field {key} should be masked"
 
 
+def test_sanitize_connection_params_masks_dsn_fields():
+    """cinfo / connect_url / dsn values carry credentials in a DSN -- mask them."""
+    # DSN with credentials in a 'cinfo' field must be masked (not blanked).
+    result = utils.sanitize_connection_params_for_logging(
+        {"cinfo": "postgresql://postgres:secret123@localhost:8432/graphdb", "graph_name": "g"}
+    )
+    assert "secret123" not in result["cinfo"]
+    assert "***MASKED***" in result["cinfo"]
+    assert result["graph_name"] == "g"  # non-sensitive field preserved
+
+    # A credential-free cinfo (e.g. Memgraph bolt URL) is left intact.
+    result = utils.sanitize_connection_params_for_logging({"cinfo": "bolt://localhost:7687"})
+    assert result["cinfo"] == "bolt://localhost:7687"
+
+    # key=value DSN form: only the password value is masked.
+    result = utils.sanitize_connection_params_for_logging(
+        {"connect_url": "host=localhost user=postgres password=secret dbname=db"}
+    )
+    assert "secret" not in result["connect_url"]
+    assert "***MASKED***" in result["connect_url"]
+
+
 def test_sanitize_connection_string_for_logging():
     """Test connection string sanitization for logging."""
     # Test empty strings

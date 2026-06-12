@@ -926,12 +926,20 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         )
 
     def _auto_connect_if_params(self, connect_url: str | None, connect_params: dict | None):
-        """Auto-connect if connection parameters are provided."""
+        """Auto-connect if connection parameters are provided.
+
+        Connection details are sanitized before logging -- a DSN / URL can carry
+        ``user:password@host`` credentials, which must never be logged.
+        """
         if connect_url is not None:
-            logger.debug(f"Auto-connecting with URL={connect_url}, params={connect_params}")
+            logger.debug(
+                "Auto-connecting with URL={}, params={}",
+                utils.sanitize_connection_string_for_logging(connect_url),
+                utils.sanitize_connection_params_for_logging(connect_params or {}),
+            )
             self.connect(connect_url=connect_url, **(connect_params or {}))
         elif connect_params is not None:
-            logger.debug(f"Auto-connecting with params={connect_params}")
+            logger.debug("Auto-connecting with params={}", utils.sanitize_connection_params_for_logging(connect_params))
             self.connect(**connect_params)
 
     def _create_or_merge_node(self, obj, strategy) -> GraphNode:
