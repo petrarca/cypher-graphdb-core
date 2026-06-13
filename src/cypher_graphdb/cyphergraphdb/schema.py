@@ -1,12 +1,19 @@
 """Schema and introspection mixin for CypherGraphDB."""
 
+import re
 from typing import Any
+
+from loguru import logger
 
 from .. import graphops as gops
 from .. import utils
 from ..cypherbuilder import CypherBuilder
 from ..models import Graph
-from ..statistics import LabelStatistics
+from ..statistics import GraphObjectType, LabelStatistics
+
+# Safe label name pattern: Cypher node labels must be valid identifiers.
+# This guards against injection when label names are interpolated into Cypher.
+_SAFE_LABEL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class SchemaMixin:
@@ -131,8 +138,6 @@ class SchemaMixin:
         Resolved from the backend label catalog (no per-node scan), so it is
         cheap even on large graphs. Sorted, de-duplicated.
         """
-        from ..statistics import GraphObjectType
-
         return sorted({s.label_ for s in self.labels() if s.type_ == GraphObjectType.NODE})
 
     def edge_types(self) -> list[str]:
@@ -141,8 +146,6 @@ class SchemaMixin:
         Resolved from the backend label catalog (no per-edge scan). Sorted,
         de-duplicated.
         """
-        from ..statistics import GraphObjectType
-
         return sorted({s.label_ for s in self.labels() if s.type_ == GraphObjectType.EDGE})
 
     def mass_delete(
@@ -183,13 +186,19 @@ class SchemaMixin:
         targets = set(self.node_labels())
         if include is not None:
             targets &= set(include)
-        if exclude:
+        if exclude is not None:
             targets -= set(exclude)
 
         deleted = 0
         for label in sorted(targets):
+            if not _SAFE_LABEL_RE.match(label):
+                logger.warning("mass_delete: skipping label with unsafe name {!r}", label)
+                continue
             result = self.execute(f"MATCH (n:{label}) DETACH DELETE n RETURN count(n)", unnest_result=True)
-            deleted += result if isinstance(result, int) else 0
+            if isinstance(result, int):
+                deleted += result
+            else:
+                logger.warning("mass_delete: unexpected non-int result for label {!r}: {!r}", label, result)
         return deleted
 
     def nest_result(self, result: Any) -> Any:

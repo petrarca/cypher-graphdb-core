@@ -120,3 +120,40 @@ class TestMassDelete:
         clean_db.commit()
         assert deleted == 0
         assert clean_db.execute("MATCH (n) RETURN count(n)", unnest_result=True) == 5
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_empty_graph_noop(self, clean_db):
+        """mass_delete on an empty graph returns 0 and does not error."""
+        deleted = clean_db.mass_delete()
+        clean_db.commit()
+        assert deleted == 0
+        assert clean_db.execute("MATCH (n) RETURN count(n)", unnest_result=True) == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_exclude_empty_list_means_no_exclusions(self, clean_db):
+        """exclude=[] is treated as 'exclude nothing' -- all included labels are deleted."""
+        _seed(clean_db)
+        deleted = clean_db.mass_delete(include=["Product"], exclude=[])
+        clean_db.commit()
+        assert deleted == 1
+        assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_exclude_absent_label_is_silent_noop(self, clean_db):
+        """Excluding a label not in the graph is silently ignored."""
+        _seed(clean_db)
+        deleted = clean_db.mass_delete(include=["Product"], exclude=["DoesNotExist"])
+        clean_db.commit()
+        assert deleted == 1
+        assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_include_mixed_known_and_unknown(self, clean_db):
+        """include with a mix of present and absent labels deletes only the present ones."""
+        _seed(clean_db)
+        deleted = clean_db.mass_delete(include=["Product", "Ghost", "Component"])
+        clean_db.commit()
+        assert deleted == 3  # Product(1) + Component(2); Ghost silently skipped
+        assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
+        assert clean_db.execute("MATCH (n:Component) RETURN count(n)", unnest_result=True) == 0
+        assert clean_db.execute("MATCH (n:Technology) RETURN count(n)", unnest_result=True) == 1
