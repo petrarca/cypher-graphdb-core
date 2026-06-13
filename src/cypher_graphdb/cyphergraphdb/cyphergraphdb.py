@@ -64,7 +64,7 @@ from ..backend import CypherBackend
 from ..backendprovider import backend_provider
 from ..cypherbuilder import CypherBuilder
 from ..cypherparser import ParsedCypherQuery
-from ..exceptions import ReadOnlyModeError
+from ..exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .batch import BatchMixin
 from .connection import ConnectionMixin
@@ -915,7 +915,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             parsed_query = self._parse_cypher(cypher_cmd)
 
         # Execute the query and get statistics
-        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+        result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         # Create immutable QueryResult
         return QueryResult(
@@ -1135,6 +1135,28 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def _parse_cypher(self, cmd: str) -> ParsedCypherQuery:
         return self._backend.parse_cypher(cmd)
 
+    def _execute_on_backend(
+        self, parsed_query: ParsedCypherQuery, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
+    ):
+        """Run a parsed query on the backend, normalizing execution failures.
+
+        This is the single chokepoint for ``backend.execute_cypher``. Backend
+        drivers raise backend-specific exceptions (e.g. Memgraph's
+        ``mgclient.DatabaseError`` or AGE's ``AGEExecutionError``); those must
+        never escape the library. Any such failure is re-raised as the
+        backend-agnostic ``QueryExecutionError`` so callers can catch one type.
+
+        Already-agnostic exceptions raised intentionally by the backend
+        (``ReadOnlyModeError``, ``LabelNotFoundError``) are passed through
+        unchanged, as they carry meaningful semantics for callers.
+        """
+        try:
+            return self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+        except ReadOnlyModeError, LabelNotFoundError:
+            raise
+        except Exception as e:
+            raise QueryExecutionError(str(e)) from e
+
     def _parse_and_execute(
         self,
         cypher_cmd: str | ParsedCypherQuery,
@@ -1153,7 +1175,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             logger.debug("Cancelled execution due failure of before_execute hook!")
             return None
 
-        result, exec_stats = self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+        result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         self._after_execute(result, parsed_query)
 

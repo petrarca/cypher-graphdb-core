@@ -105,7 +105,7 @@ class StreamMixin:
         )
 
         # Execute query normally
-        result, _ = self._backend.execute_cypher(cypher_query, raw_data=raw_data)
+        result, _ = self._execute_on_backend(cypher_query, raw_data=raw_data)
 
         # Yield results in chunks
         for i in range(0, len(result), chunk_size):

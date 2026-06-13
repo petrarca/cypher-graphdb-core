@@ -35,3 +35,24 @@ class LabelNotFoundError(Exception):
     no nodes of a given type have ever been created. The correct response
     is usually to skip the operation (nothing to delete).
     """
+
+
+class QueryExecutionError(Exception):
+    """Raised when a query fails to execute against the backend.
+
+    This is the backend-agnostic wrapper for execution-time failures such as
+    Cypher syntax errors or other database errors raised by the underlying
+    driver (e.g. Memgraph's ``mgclient.DatabaseError`` or AGE's
+    ``AGEExecutionError``). The facade wraps those backend-specific exceptions
+    so consumers can catch a single type without importing any backend driver.
+
+    The original backend exception is preserved as the ``__cause__`` (via
+    ``raise ... from``). The message contains the backend's error text, which
+    is suitable for surfacing to a user (e.g. as an HTTP 400 detail).
+
+    Examples:
+        >>> try:
+        ...     cdb.execute_with_stats("MATCH (n RETURN n")
+        ... except QueryExecutionError as e:
+        ...     print(e)  # "Error on line 1 position 10. ..."
+    """
