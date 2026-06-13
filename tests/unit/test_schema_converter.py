@@ -81,6 +81,45 @@ def test_edge_schemas_have_graphedge_label():
     assert node.properties_["name"] == "KNOWS"
 
 
+def test_node_name_uses_graph_label_not_title():
+    """Node name comes from x-graph.label, not the (class-name) title.
+
+    System models like GraphModelNode declare ``@node(label="_GraphModel")``,
+    so the JSON Schema title is the class name ("GraphModelNode") while the
+    real graph label is "_GraphModel". The schema graph must show the label.
+    """
+    schemas = [
+        {
+            "title": "GraphModelNode",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "label": "_GraphModel", "relations": []},
+        }
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    node = list(graph.nodes.values())[0]
+    assert node.properties_["name"] == "_GraphModel"
+
+
+def test_node_name_falls_back_to_title_without_label():
+    """When a NODE schema has no x-graph.label, fall back to the title."""
+    schemas = [
+        {
+            "title": "Person",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "x-graph": {"type": "NODE", "relations": []},
+        }
+    ]
+
+    graph = json_schemas_to_graph(schemas)
+
+    node = list(graph.nodes.values())[0]
+    assert node.properties_["name"] == "Person"
+
+
 def test_mixed_node_and_edge_schemas():
     """Test that NODE and EDGE schemas get appropriate labels."""
     schemas = [

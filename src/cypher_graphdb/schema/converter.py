@@ -90,12 +90,13 @@ def _create_schema_node(schema: dict[str, Any]) -> tuple[str, int, GraphNode]:
     xgraph_type = xgraph.get("type", "NODE")
     label = "GraphEdge" if xgraph_type == "EDGE" else "GraphNode"
 
-    # For EDGE schemas, prefer x-graph.label (e.g., "BELONGS_TO") over title (e.g., "BelongsTo")
-    # For NODE schemas, use title as the name
-    if xgraph_type == "EDGE" and xgraph.get("label"):
-        schema_name = xgraph.get("label")
-    else:
-        schema_name = schema.get("title", "Unknown")
+    # Prefer the authoritative x-graph.label (the real graph label, e.g.
+    # "_GraphModel" or "BELONGS_TO") over the JSON Schema title (the Python
+    # class name, e.g. "GraphModelNode" or "BelongsTo"). The label is what
+    # actual queries return; the title only differs when the model class was
+    # named differently from its graph label. Fall back to title when no
+    # label is present.
+    schema_name = xgraph.get("label") or schema.get("title", "Unknown")
 
     # Generate stable IDs
     node_id = _generate_node_id(schema_name)
