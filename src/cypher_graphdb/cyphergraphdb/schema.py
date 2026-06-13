@@ -125,6 +125,73 @@ class SchemaMixin:
         # sort by type and then by label name
         return sorted(result, key=lambda x: (x.type_.value, x.label_))
 
+    def node_labels(self) -> list[str]:
+        """Return all node labels present in the current graph.
+
+        Resolved from the backend label catalog (no per-node scan), so it is
+        cheap even on large graphs. Sorted, de-duplicated.
+        """
+        from ..statistics import GraphObjectType
+
+        return sorted({s.label_ for s in self.labels() if s.type_ == GraphObjectType.NODE})
+
+    def edge_types(self) -> list[str]:
+        """Return all edge (relationship) types present in the current graph.
+
+        Resolved from the backend label catalog (no per-edge scan). Sorted,
+        de-duplicated.
+        """
+        from ..statistics import GraphObjectType
+
+        return sorted({s.label_ for s in self.labels() if s.type_ == GraphObjectType.EDGE})
+
+    def mass_delete(
+        self,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> int:
+        """Bulk-delete nodes (and their relationships) by label filter.
+
+        A backend-portable mass delete keyed on node labels resolved from the
+        catalog (``node_labels()``), deleting each selected label with
+        ``MATCH (n:Label) DETACH DELETE n``. Per-label deletion is used because
+        not all backends (e.g. Apache AGE) support label predicates or list
+        functions in a single ``WHERE`` clause.
+
+        Args:
+            include: If given, only these node labels are deleted. When ``None``,
+                all node labels are considered.
+            exclude: Labels to preserve (e.g. infrastructure nodes like
+                ``_GraphModel`` / ``_NamedQuery``). Applied after ``include``.
+
+        Returns:
+            Total number of nodes deleted across all matched labels.
+
+        Examples:
+            ```python
+            # Wipe all domain nodes but keep graph metadata nodes
+            cdb.mass_delete(exclude=["_GraphModel", "_NamedQuery"])
+
+            # Delete only specific labels
+            cdb.mass_delete(include=["Product", "Component"])
+            ```
+
+        Raises:
+            ReadOnlyModeError: If the connection is in read-only mode.
+        """
+        targets = set(self.node_labels())
+        if include is not None:
+            targets &= set(include)
+        if exclude:
+            targets -= set(exclude)
+
+        deleted = 0
+        for label in sorted(targets):
+            result = self.execute(f"MATCH (n:{label}) DETACH DELETE n RETURN count(n)", unnest_result=True)
+            deleted += result if isinstance(result, int) else 0
+        return deleted
+
     def nest_result(self, result: Any) -> Any:
         """Convert query results to consistent nested tuple format for
         internal processing.
