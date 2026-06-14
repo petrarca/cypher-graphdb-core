@@ -95,6 +95,12 @@ tasks:
     cmds:
       - .venv/bin/ruff check --fix src tests
 
+  verify:
+    desc: "Read-only lint+format verification (no mutation). Used by release:check."
+    cmds:
+      - .venv/bin/ruff format --check src tests
+      - .venv/bin/ruff check src tests
+
   test:
     desc: "Run the unit tests using pytest (alias for test)"
     cmds:
@@ -219,13 +225,14 @@ tasks:
   #
   # Notes:
   # - The git tag IS the version (setuptools-scm); nothing to edit in pyproject.toml.
-  # - release:check does NOT re-run `task fct` (the pre-commit hook already guarantees
-  #   format+lint+unit on every commit) and does NOT run integration tests (run
-  #   `task test:integration` explicitly first -- it needs live Memgraph + AGE).
+  # - release:check runs `task verify` (read-only lint+format-check -- it NEVER mutates
+  #   files, so it cannot dirty the tree mid-release, unlike `task fct`/`task format`).
+  #   It does NOT run integration tests (run `task test:integration` explicitly first --
+  #   it needs live Memgraph + AGE).
   # - HEAD must already be pushed to origin/main before tagging (release:check enforces it).
   # ---------------------------------------------------------------------------
   release:check:
-    desc: "Preflight release checks (on main, clean, in sync with origin). No side effects."
+    desc: "Preflight release checks (on main, clean, synced, lint+format verified). No side effects."
     silent: true
     cmds:
       - |
@@ -246,8 +253,12 @@ tasks:
         if [ "$ahead" != "0" ]; then
           echo "ERROR: local main is $ahead commit(s) ahead of origin/main. Run 'git push' first (tag must point at pushed HEAD)."; exit 1
         fi
+      # Read-only lint + format verification (never mutates the tree).
+      - task: verify
+      - |
+        set -e
         last=$(git describe --tags --abbrev=0 2>/dev/null || echo "<none>")
-        echo "OK: on main, clean, in sync with origin/main."
+        echo "OK: on main, clean, in sync with origin/main, lint+format verified."
         echo "Last release tag: $last"
         echo "Commits since $last:"
         git log --oneline "$last"..HEAD 2>/dev/null || git log --oneline -10

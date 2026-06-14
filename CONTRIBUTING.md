@@ -114,9 +114,11 @@ release tasks share the same names across all petrarca repos
 
 **1. Push your work and run integration tests.**
 
-The pre-commit hook already runs format + lint + unit tests on every commit, so
-those are not repeated here. The release adds the one gate the hooks and CI do
-**not** cover -- integration tests against live backends:
+The pre-commit hook formats + lints + runs unit tests on every commit.
+`task release:check` (next step) re-verifies lint and format **read-only**
+(`task verify` -- it never reformats, so it cannot dirty the tree mid-release).
+The one gate neither the hooks nor CI cover is integration tests against live
+backends, so run them now:
 
 ```bash
 git push                    # tag must point at pushed HEAD (release:check enforces this)
