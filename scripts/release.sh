@@ -33,7 +33,9 @@ cmd_check() {
   if [ -n "$(git status --porcelain)" ]; then
     git status --short; err "working tree is dirty. Commit or stash first."
   fi
-  git fetch --quiet origin main --tags
+  # Update origin/main only. Do NOT fetch --tags here: a diverged local tag would
+  # make fetch exit non-zero ("would clobber existing tag") and abort under set -e.
+  git fetch --quiet origin main
   ahead=$(git rev-list --count origin/main..HEAD)
   behind=$(git rev-list --count HEAD..origin/main)
   [ "$behind" = "0" ] || err "local main is $behind commit(s) behind origin/main. Run 'git pull' first."
