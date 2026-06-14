@@ -98,8 +98,7 @@ tasks:
   verify:
     desc: "Read-only lint+format verification (no mutation). Used by release:check."
     cmds:
-      - .venv/bin/ruff format --check src tests
-      - .venv/bin/ruff check src tests
+      - bash scripts/verify.sh
 
   test:
     desc: "Run the unit tests using pytest (alias for test)"
@@ -237,7 +236,7 @@ tasks:
     desc: "Preflight release checks (on main, clean, synced, lint+format verified). No side effects."
     cmds:
       - bash scripts/release.sh check
-      - task: verify   # read-only lint + format verification (never mutates the tree)
+      - bash scripts/verify.sh   # read-only lint + format verification (never mutates the tree)
 
   release:
     desc: "Create and push a release tag (vX.Y.Z) -> CI publishes to PyPI. Usage: task release -- v0.3.0"
