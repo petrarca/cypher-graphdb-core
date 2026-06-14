@@ -108,65 +108,72 @@ Follow [Semantic Versioning](https://semver.org/):
 
 ### Step-by-step release process
 
-**1. Ensure `main` is clean and all checks pass.**
+Every step is a `task` command -- no manual git/gh incantations to remember. The
+release tasks share the same names across all petrarca repos
+(`release:check`, `release`, `release:verify`, `release:abort`).
+
+**1. Push your work and run integration tests.**
+
+The pre-commit hook already runs format + lint + unit tests on every commit, so
+those are not repeated here. The release adds the one gate the hooks and CI do
+**not** cover -- integration tests against live backends:
 
 ```bash
-git checkout main && git pull
-task fct
+git push                    # tag must point at pushed HEAD (release:check enforces this)
+task test:integration       # needs docker: Memgraph + AGE (via testcontainers)
 ```
 
-**2. Check what has changed since the last release.**
+**2. Preflight check (no side effects).**
 
 ```bash
-git log --oneline $(git describe --tags --abbrev=0)..HEAD
-git tag --sort=-v:refname | head -3
+task release:check
 ```
 
-**3. Create and push the tag.**
+This verifies you are on `main`, the tree is clean, and local `main` is in sync
+with `origin/main`, then prints the last tag and every commit since it -- use
+that to pick the next version (see the SemVer table above).
+
+**3. Cut the release.**
 
 ```bash
-git tag v0.x.y
-git push origin v0.x.y
+task release -- v0.3.0
 ```
 
-This triggers both CI workflows. The package is published to PyPI automatically
-once lint and unit tests pass.
+This re-runs `release:check`, validates the version (`vX.Y.Z`, not already a
+tag), then creates and pushes an annotated tag. Pushing the tag triggers both CI
+workflows: `publish.yml` (lint + unit + build + publish to PyPI via OIDC) and
+`release.yml` (GitHub Release with auto-generated notes).
 
-**4. Update the GitHub release notes.**
+**4. Verify it published.**
+
+```bash
+task release:verify -- v0.3.0
+```
+
+Watches the publish workflow and shows the versions available on PyPI.
+
+**5. (Optional) Polish the GitHub release notes.**
 
 The release workflow auto-generates notes from commit messages. Edit them to be
 user-facing -- focus on what changed and why, not implementation details:
 
 ```bash
-gh release edit v0.x.y --notes "
+gh release edit v0.3.0 --notes "
 - feat: add merge_keys to @node decorator for business-key MERGE
 - feat: bulk_delete_orphans for fast orphan-node GC
 - fix: preserve gid_ on business-key MERGE
 "
 ```
 
-**5. Wait for the publish workflow to complete.**
-
-```bash
-gh run list --limit 3
-gh run view <run-id> --log   # on failure
-```
-
-**6. Verify the package is on PyPI.**
-
-```bash
-pip index versions cypher-graphdb
-```
-
 ### Deleting a bad tag
 
 ```bash
-git tag -d v0.x.y
-git push origin :refs/tags/v0.x.y
-# fix, then re-tag
-git tag v0.x.y
-git push origin v0.x.y
+task release:abort -- v0.3.0
+# fix the issue, commit, push, then re-run: task release -- v0.3.0
 ```
+
+> A PyPI release that has **already published** cannot be overwritten -- if the
+> package made it to PyPI, bump to the next patch version instead of re-tagging.
 
 ---
 

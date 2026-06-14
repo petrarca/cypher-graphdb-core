@@ -206,3 +206,104 @@ tasks:
     desc: "Run the cgdb-cli (via entry point)"
     cmds:
       - .venv/bin/cgdb-cli {{.CLI_ARGS}}
+
+  # ---------------------------------------------------------------------------
+  # Release (PyPI, tag-driven via setuptools-scm)
+  #
+  # Standard release interface shared across petrarca repos:
+  #   task release:check                 -- fast preflight (git state), no side effects
+  #   task test:integration              -- run separately before releasing (needs docker backends)
+  #   task release -- vX.Y.Z             -- tag + push -> CI publishes to PyPI
+  #   task release:verify -- vX.Y.Z      -- watch publish workflow + confirm on PyPI
+  #   task release:abort -- vX.Y.Z       -- delete a bad tag (local + remote)
+  #
+  # Notes:
+  # - The git tag IS the version (setuptools-scm); nothing to edit in pyproject.toml.
+  # - release:check does NOT re-run `task fct` (the pre-commit hook already guarantees
+  #   format+lint+unit on every commit) and does NOT run integration tests (run
+  #   `task test:integration` explicitly first -- it needs live Memgraph + AGE).
+  # - HEAD must already be pushed to origin/main before tagging (release:check enforces it).
+  # ---------------------------------------------------------------------------
+  release:check:
+    desc: "Preflight release checks (on main, clean, in sync with origin). No side effects."
+    silent: true
+    cmds:
+      - |
+        set -e
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" != "main" ]; then
+          echo "ERROR: releases must be cut from 'main' (on '$branch')."; exit 1
+        fi
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "ERROR: working tree is dirty. Commit or stash first."; git status --short; exit 1
+        fi
+        git fetch --quiet origin main --tags
+        ahead=$(git rev-list --count origin/main..HEAD)
+        behind=$(git rev-list --count HEAD..origin/main)
+        if [ "$behind" != "0" ]; then
+          echo "ERROR: local main is $behind commit(s) behind origin/main. Run 'git pull' first."; exit 1
+        fi
+        if [ "$ahead" != "0" ]; then
+          echo "ERROR: local main is $ahead commit(s) ahead of origin/main. Run 'git push' first (tag must point at pushed HEAD)."; exit 1
+        fi
+        last=$(git describe --tags --abbrev=0 2>/dev/null || echo "<none>")
+        echo "OK: on main, clean, in sync with origin/main."
+        echo "Last release tag: $last"
+        echo "Commits since $last:"
+        git log --oneline "$last"..HEAD 2>/dev/null || git log --oneline -10
+        echo ""
+        echo "Reminder: run 'task test:integration' before releasing (needs docker backends)."
+        echo "Then: task release -- vX.Y.Z"
+
+  release:
+    desc: "Create and push a release tag (vX.Y.Z) -> CI publishes to PyPI. Usage: task release -- v0.3.0"
+    silent: true
+    cmds:
+      - task: release:check
+      - |
+        set -e
+        ver="{{.CLI_ARGS}}"
+        if [ -z "$ver" ]; then
+          echo "ERROR: version required. Usage: task release -- v0.3.0"; exit 1
+        fi
+        if ! echo "$ver" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "ERROR: version must look like vX.Y.Z (got '$ver')."; exit 1
+        fi
+        if git rev-parse "$ver" >/dev/null 2>&1; then
+          echo "ERROR: tag '$ver' already exists. Use 'task release:abort -- $ver' to remove it first."; exit 1
+        fi
+        echo "Tagging $ver at $(git rev-parse --short HEAD) and pushing..."
+        git tag -a "$ver" -m "Release $ver"
+        git push origin "$ver"
+        echo "Pushed $ver. CI (publish.yml + release.yml) will publish to PyPI and create the GitHub release."
+        echo "Track with: task release:verify -- $ver"
+
+  release:verify:
+    desc: "Verify a release: watch publish workflow and confirm the version on PyPI. Usage: task release:verify -- v0.3.0"
+    silent: true
+    cmds:
+      - |
+        set -e
+        ver="{{.CLI_ARGS}}"
+        if [ -z "$ver" ]; then echo "ERROR: version required. Usage: task release:verify -- v0.3.0"; exit 1; fi
+        echo "Recent workflow runs:"
+        gh run list --limit 5 || true
+        echo ""
+        echo "Watching the latest publish run (Ctrl-C to stop watching)..."
+        gh run watch "$(gh run list --workflow=publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')" || true
+        echo ""
+        echo "PyPI versions for cypher-graphdb:"
+        pip index versions cypher-graphdb 2>/dev/null || echo "(install pip>=21.2 for 'pip index versions', or check https://pypi.org/project/cypher-graphdb/)"
+
+  release:abort:
+    desc: "Delete a bad release tag locally and on origin. Usage: task release:abort -- v0.3.0"
+    silent: true
+    cmds:
+      - |
+        set -e
+        ver="{{.CLI_ARGS}}"
+        if [ -z "$ver" ]; then echo "ERROR: version required. Usage: task release:abort -- v0.3.0"; exit 1; fi
+        echo "Deleting tag $ver locally and on origin..."
+        git tag -d "$ver" 2>/dev/null || echo "(no local tag $ver)"
+        git push origin ":refs/tags/$ver" 2>/dev/null || echo "(no remote tag $ver)"
+        echo "Done. Note: a PyPI release that already published CANNOT be overwritten -- bump to the next patch instead."
