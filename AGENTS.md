@@ -1,5 +1,11 @@
 # Agent Instructions
 
+> **Org-wide standards:** this repo follows the Petrarca Labs engineering
+> handbook. Before changing releases, tests, dependencies, Taskfile tasks,
+> commits, or tsconfig/`SONNET_UI_LOCAL`, read
+> [`../engineering-handbook/INDEX.md`](../engineering-handbook/INDEX.md) and
+> prefer those standards over local defaults. See `ENGINEERING-STANDARDS.md`.
+
 This file contains project-specific rules and conventions for AI coding assistants working on cypher-graphdb-core.
 
 ## Project Overview
