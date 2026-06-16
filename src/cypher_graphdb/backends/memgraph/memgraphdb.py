@@ -17,6 +17,8 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics
+from cypher_graphdb.cyphergraphdb.pagination import Page
+from cypher_graphdb.cyphergraphdb.pagination_mixin import _resolve_col_names
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
@@ -234,29 +236,35 @@ class MemgraphDB(CypherBackend):
         cypher_query: ParsedCypherQuery,
         offset: int = 0,
         limit: int = 100,
-        want_total: bool = True,  # noqa: ARG002 -- Memgraph never produces an exact total
+        want_total: bool = True,  # noqa: ARG002 -- Memgraph never produces an exact total natively
         raw_data: bool = False,
         params: dict | None = None,
-    ):
+    ) -> Page:
         """Execute a windowed Cypher query natively via Cypher SKIP/LIMIT.
 
-        Appends ``SKIP $__skip LIMIT $__limit`` to the query and fetches one
-        extra row (``limit + 1``) to determine ``has_more`` without a separate
-        count query. Memgraph does not declare ``EXACT_COUNT``: ``total`` is
-        always ``None`` here (callers wanting an exact count use the mixin's
-        cache-and-slice fallback). The caller (``PaginationMixin``) only routes
-        here for queries safe to window (no existing SKIP/LIMIT/UNION).
-        """
-        from cypher_graphdb.cyphergraphdb.pagination import Page
-        from cypher_graphdb.utils.column_utils import resolve_column_names
+        Appends ``SKIP $__cypher_page_skip__ LIMIT $__cypher_page_limit__``
+        to the query text and fetches ``limit + 1`` rows to determine
+        ``has_more`` without a separate count query.
 
+        ``total`` is always ``None``: Memgraph does not declare ``EXACT_COUNT``
+        because an arbitrary RETURN query cannot be cheaply counted (CALL{}
+        subquery wrapping requires inner-RETURN aliases we cannot inject).
+        Callers that need an exact total receive it from the cache-and-slice
+        fallback (which ``PaginationMixin`` uses for unsafe queries anyway).
+
+        Called only by ``PaginationMixin`` for queries that pass
+        ``is_safe_to_window()`` (no existing SKIP/LIMIT/UNION).
+        """
         self._validate_read_only(cypher_query)
 
-        # Fetch one extra row to detect "has_more" cheaply.
+        # Strip trailing semicolons/whitespace that would corrupt the append.
+        query_text = cypher_query.parsed_query.rstrip("; \t\n")
+        query = f"{query_text} SKIP $__cypher_page_skip__ LIMIT $__cypher_page_limit__"
+
+        # Inject pagination params without mutating the caller's dict.
         page_params = dict(params or {})
-        page_params["__skip"] = offset
-        page_params["__limit"] = limit + 1
-        query = f"{cypher_query.parsed_query} SKIP $__skip LIMIT $__limit"
+        page_params["__cypher_page_skip__"] = offset
+        page_params["__cypher_page_limit__"] = limit + 1  # +1 to detect has_more
 
         rows, exec_stats = self._execute_query(query, fetch_one=False, raw_data=raw_data, params=page_params)
         rows = list(rows) if rows else []
@@ -264,15 +272,11 @@ class MemgraphDB(CypherBackend):
         has_more = len(rows) > limit
         rows = rows[:limit]
 
-        col_names = None
-        if cypher_query.return_arguments:
-            col_names = resolve_column_names(cypher_query.return_arguments, rows, getattr(exec_stats, "col_count", 0) or 0)
-
+        col_names = _resolve_col_names(cypher_query, rows, exec_stats)
         return Page(
             rows=rows,
             offset=offset,
             limit=limit,
-            returned=len(rows),
             total=None,
             has_more=has_more,
             col_names=col_names,

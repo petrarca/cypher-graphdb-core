@@ -18,8 +18,9 @@ from cypher_graphdb.cyphergraphdb import CypherGraphDB
 class _RowsBackend(CypherBackend):
     """Mock backend that returns a fixed list of rows from execute_cypher.
 
-    Used to drive the cache-and-slice fallback deterministically. Declares no
-    pagination capability, so the fallback path is always taken.
+    Declares no PAGINATION_SUPPORT so the fallback path is always taken.
+    Counts how many times ``execute_cypher`` is called so tests can assert
+    the number of materialization round-trips.
     """
 
     name = "rows-mock"
@@ -28,6 +29,7 @@ class _RowsBackend(CypherBackend):
         super().__init__(None, autocommit=True)
         self._rows = rows
         self.graph_name = "test"
+        self.execute_count = 0  # materialization round-trip counter
 
     @property
     def connected(self) -> bool:
@@ -49,6 +51,7 @@ class _RowsBackend(CypherBackend):
         return True
 
     def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False, params=None):
+        self.execute_count += 1
         rows = self._rows
         if params and "minval" in params:
             rows = [r for r in rows if r[0] >= params["minval"]]
@@ -79,17 +82,22 @@ def _db(rows):
     return CypherGraphDB(_RowsBackend(rows))
 
 
-def _ignore_fallback_warning():
+def _ignore():
     warnings.simplefilter("ignore")
 
 
 # ── Page model ─────────────────────────────────────────────────────────────
 
 
-def test_page_backfills_returned_from_rows():
+def test_page_returned_is_computed_from_rows():
     page = Page(rows=[(1,), (2,), (3,)], offset=0, limit=10)
     assert page.returned == 3
-    assert not page.is_empty()
+
+
+def test_page_returned_is_always_len_rows():
+    """returned is a computed_field, always len(rows) regardless of what is passed."""
+    page = Page(rows=[(1,), (2,)], offset=0, limit=10)
+    assert page.returned == len(page.rows) == 2
 
 
 def test_page_empty():
@@ -102,6 +110,18 @@ def test_page_is_frozen():
     page = Page(rows=[(1,)], offset=0, limit=10)
     with pytest.raises(ValidationError):
         page.offset = 5
+
+
+def test_page_truncated_requires_total():
+    """truncated=True with total=None must be rejected by the model validator."""
+    with pytest.raises(ValidationError, match="truncated"):
+        Page(rows=[], offset=0, limit=10, truncated=True, total=None)
+
+
+def test_page_truncated_with_total_is_valid():
+    page = Page(rows=[], offset=0, limit=10, truncated=True, total=50_000)
+    assert page.truncated is True
+    assert page.total == 50_000
 
 
 # ── Capability ─────────────────────────────────────────────────────────────
@@ -117,13 +137,19 @@ def test_mock_backend_has_no_pagination_capability():
     assert db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is False
 
 
+def test_reserved_params_are_rejected():
+    db = _db([(1,)])
+    with pytest.raises(ValueError, match="reserved"):
+        db.execute_cypher_page("MATCH (n) RETURN n", offset=0, limit=5, params={"__cypher_page_skip__": 0})
+
+
 # ── Fallback windowing ─────────────────────────────────────────────────────
 
 
 def test_fallback_first_page():
     db = _db([(i,) for i in range(25)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         page = db.execute_cypher_page("MATCH (n) RETURN n", offset=0, limit=10)
     assert page.returned == 10
     assert page.total == 25
@@ -135,7 +161,7 @@ def test_fallback_first_page():
 def test_fallback_last_partial_page():
     db = _db([(i,) for i in range(25)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         page = db.execute_cypher_page("MATCH (n) RETURN n", offset=20, limit=10)
     assert page.returned == 5
     assert page.total == 25
@@ -146,7 +172,7 @@ def test_fallback_last_partial_page():
 def test_fallback_offset_past_end():
     db = _db([(i,) for i in range(5)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         page = db.execute_cypher_page("MATCH (n) RETURN n", offset=100, limit=10)
     assert page.returned == 0
     assert page.is_empty()
@@ -154,22 +180,31 @@ def test_fallback_offset_past_end():
     assert page.total == 5
 
 
-def test_fallback_stable_order_no_duplicates_across_pages():
+def test_fallback_stable_order_and_no_dupes_across_pages():
+    """Pages from the fallback must be stable-ordered and duplicate-free.
+
+    The fallback materializes once per call (no server-side cache), so three
+    page requests mean three execute_cypher calls. This is documented behaviour
+    of the fallback; the test explicitly asserts this so future caching changes
+    are visible here.
+    """
     db = _db([(i,) for i in range(25)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         p0 = db.execute_cypher_page("MATCH (n) RETURN n", offset=0, limit=10)
         p1 = db.execute_cypher_page("MATCH (n) RETURN n", offset=10, limit=10)
         p2 = db.execute_cypher_page("MATCH (n) RETURN n", offset=20, limit=10)
     combined = [r[0] for r in (p0.rows + p1.rows + p2.rows)]
-    assert combined == list(range(25))  # in order, no gaps/dupes
-    assert len(set(combined)) == 25
+    assert combined == list(range(25)), "rows not in stable order across pages"
+    assert len(set(combined)) == 25, "duplicates across pages"
+    # The fallback re-materializes on every call — 3 pages = 3 backend calls.
+    assert db._backend.execute_count == 3
 
 
 def test_fallback_params_are_applied():
     db = _db([(i,) for i in range(25)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         page = db.execute_cypher_page("MATCH (n) WHERE n >= $minval RETURN n", offset=0, limit=5, params={"minval": 20})
     assert page.total == 5  # 20..24
     assert [r[0] for r in page.rows] == [20, 21, 22, 23, 24]
@@ -178,10 +213,10 @@ def test_fallback_params_are_applied():
 def test_fallback_truncates_at_max_rows():
     db = _db([(i,) for i in range(100)])
     with warnings.catch_warnings():
-        _ignore_fallback_warning()
+        _ignore()
         page = db.execute_cypher_page("MATCH (n) RETURN n", offset=0, limit=10, max_rows=30)
     assert page.truncated is True
-    assert page.total == 30  # capped
+    assert page.total == 30
     assert page.has_more is True
 
 
@@ -195,11 +230,11 @@ def test_fallback_emits_warning():
 
 def test_negative_offset_rejected():
     db = _db([(1,)])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="offset"):
         db.execute_cypher_page("MATCH (n) RETURN n", offset=-1, limit=10)
 
 
 def test_negative_limit_rejected():
     db = _db([(1,)])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="limit"):
         db.execute_cypher_page("MATCH (n) RETURN n", offset=0, limit=-5)

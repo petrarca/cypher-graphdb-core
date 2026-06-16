@@ -177,6 +177,9 @@ class ParsedCypherQuery(BaseModel):
         returns ``False`` so callers fall back to cache-and-slice, which is
         always correct.
 
+        Result is computed once and cached on the instance (the parsed query is
+        immutable so this is always safe).
+
         Unsafe shapes (return ``False``):
             - No RETURN clause (e.g. CREATE/DELETE/MERGE -- nothing to page).
             - ``RETURN *`` (column projection is ambiguous for SQL wrapping).
@@ -184,21 +187,28 @@ class ParsedCypherQuery(BaseModel):
             - Query contains ``UNION`` (windowing semantics are ambiguous).
             - Updating clauses (must not run twice / windowed).
         """
-        # Must return something to page over.
+        # Cache on the instance -- Pydantic models use __dict__ for non-field
+        # attributes even when frozen (frozen only prevents field mutation).
+        cached = self.__dict__.get("_safe_to_window")
+        if cached is not None:
+            return cached
+
+        result = self._compute_safe_to_window()
+        self.__dict__["_safe_to_window"] = result
+        return result
+
+    def _compute_safe_to_window(self) -> bool:
+        """Evaluate windowing safety without caching."""
         if not self.return_arguments:
             return False
-        # RETURN * -> ambiguous columns for the SQL column-type spec.
         if "*" in self.return_arguments:
             return False
-        # Never window a query that writes.
         if self.has_updating_clause():
             return False
-        # Reject queries that already paginate or use UNION. Word-boundary,
-        # case-insensitive scan over the reconstructed query text. A false
-        # positive only triggers the (correct) fallback, so erring toward
-        # caution here is safe.
-        text = self.parsed_query
-        return not re.search(r"(?i)\b(SKIP|LIMIT|UNION)\b", text)
+        # Word-boundary, case-insensitive scan over the reconstructed query
+        # text. A false positive only triggers the (correct) fallback, so
+        # erring toward caution is safe.
+        return not re.search(r"(?i)\b(SKIP|LIMIT|UNION)\b", self.parsed_query)
 
 
 class CypherQueryListener(CypherListener):

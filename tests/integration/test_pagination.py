@@ -1,18 +1,18 @@
 """Integration tests for windowed pagination (execute_cypher_page).
 
-Tests the cache-and-slice fallback against live Memgraph and AGE backends.
-Both backends currently use the fallback (no native PAGINATION_SUPPORT yet);
-these tests assert the contract the server/web layers depend on:
+Covers both backends with their native pagination paths:
+- AGE: outer-SQL OFFSET/LIMIT wrap + count(*) for exact total.
+- Memgraph: Cypher SKIP/LIMIT + limit+1 has_more probe (total is always None).
 
+Contract assertions (both backends):
 - Correct windowing (offset/limit) and ``returned`` count.
-- Exact ``total`` and correct ``has_more`` transitions across pages.
-- **Stable order across pages** (no gaps, no duplicates) when the query has a
-  deterministic ORDER BY.
+- Correct ``has_more`` transitions across pages.
+- Exact ``total`` where the backend declares EXACT_COUNT (AGE), else ``None``.
+- **Stable order across pages** when the query has a deterministic ORDER BY.
 - ``params`` binding flows through.
 - ``col_names`` resolution.
-
-When a backend later declares ``PAGINATION_SUPPORT``, these same assertions
-must continue to hold for the native path.
+- Safe queries use the native path (no fallback warning).
+- Unsafe queries (RETURN *, existing LIMIT, etc.) fall back transparently.
 """
 
 import warnings
@@ -27,29 +27,30 @@ ORDERED_QUERY = "MATCH (p:Person) RETURN p.name ORDER BY p.name"
 
 
 def _seed_people(db, count: int):
+    """Seed test data using UNWIND to minimise round-trips."""
     db.execute("MATCH (n) DETACH DELETE n")
-    for i in range(count):
-        db.execute(f"CREATE (p:Person {{name: 'P{i:03d}', age: {20 + i}}})")
+    rows = [{"name": f"P{i:03d}", "age": 20 + i} for i in range(count)]
+    db.execute("UNWIND $rows AS r CREATE (p:Person {name: r.name, age: r.age})", params={"rows": rows})
 
 
 def _page(db, query, **kwargs):
+    """Call execute_cypher_page suppressing the fallback UserWarning."""
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # ignore fallback warning
+        warnings.simplefilter("ignore")
         return db.execute_cypher_page(query, **kwargs)
 
 
 class _PaginationContract:
-    """Shared assertions run against each backend fixture.
+    """Shared contract assertions for both backends.
 
-    ``exact_count`` is set per backend: AGE produces an exact total, Memgraph
-    reports ``has_more`` only (total is None). Ordering and ``has_more``
-    behaviour is identical and asserted for both.
+    Subclasses MUST set ``exact_count`` — there is no default. AGE sets it
+    ``True`` (exact total available); Memgraph sets it ``False`` (total is
+    always ``None`` on the native path).
     """
 
-    exact_count: bool = True
-
-    def _db(self, request):
-        raise NotImplementedError
+    # No default: each subclass must declare this explicitly to avoid silently
+    # running wrong assertions in a new backend's test class.
+    exact_count: bool
 
     def test_returns_page_instance(self, db):
         _seed_people(db, 5)
@@ -82,15 +83,14 @@ class _PaginationContract:
         p1 = _page(db, ORDERED_QUERY, offset=10, limit=10)
         p2 = _page(db, ORDERED_QUERY, offset=20, limit=10)
         names = [r[0] for r in (p0.rows + p1.rows + p2.rows)]
-        assert names == sorted(names)  # fully ordered
-        assert len(set(names)) == 25  # no duplicates across pages
+        assert names == sorted(names), "rows not in stable order across pages"
+        assert len(set(names)) == 25, "duplicate rows across pages"
         db.execute("MATCH (n) DETACH DELETE n")
 
     def test_offset_past_end_is_empty(self, db):
         _seed_people(db, 5)
         page = _page(db, ORDERED_QUERY, offset=100, limit=10)
         assert page.returned == 0
-        assert page.is_empty()
         assert page.has_more is False
         assert page.total == (5 if self.exact_count else None)
         db.execute("MATCH (n) DETACH DELETE n")
@@ -127,7 +127,8 @@ class _PaginationContract:
 class TestMemgraphPagination(_PaginationContract):
     """Pagination contract against live Memgraph (native SKIP/LIMIT path).
 
-    Memgraph reports ``has_more`` (limit+1 probe) but no exact total.
+    Memgraph reports exact ``has_more`` via a limit+1 probe but ``total`` is
+    always ``None`` (Memgraph does not declare EXACT_COUNT).
     """
 
     exact_count = False
@@ -140,7 +141,7 @@ class TestMemgraphPagination(_PaginationContract):
         memgraph_db.execute("MATCH (n) DETACH DELETE n")
 
     def test_safe_query_uses_native_path(self, db):
-        """A safe query must NOT emit the cache-and-slice fallback warning, and total is None."""
+        """Safe query must NOT emit the fallback warning; total is None."""
         _seed_people(db, 12)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -151,7 +152,7 @@ class TestMemgraphPagination(_PaginationContract):
         db.execute("MATCH (n) DETACH DELETE n")
 
     def test_unsafe_query_falls_back_with_exact_total(self, db):
-        """RETURN * falls back to cache-and-slice, which DOES give an exact total."""
+        """RETURN * falls back to cache-and-slice, which gives an exact total."""
         _seed_people(db, 12)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -161,19 +162,26 @@ class TestMemgraphPagination(_PaginationContract):
         assert page.total == 12
         db.execute("MATCH (n) DETACH DELETE n")
 
+    def test_reserved_param_names_rejected(self, db):
+        """Reserved param names must raise ValueError before any DB call."""
+        with pytest.raises(ValueError, match="reserved"):
+            db.execute_cypher_page(ORDERED_QUERY, offset=0, limit=5, params={"__cypher_page_skip__": 99})
+
 
 class TestAGEPagination(_PaginationContract):
-    """Pagination contract against live Apache AGE (native windowing path)."""
+    """Pagination contract against live Apache AGE (native outer-SQL path)."""
+
+    exact_count = True
 
     @pytest.fixture
     def db(self, age_db):
-        # AGE supports native outer-SQL OFFSET/LIMIT windowing.
-        assert age_db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is True
+        assert age_db._backend.get_capability(BackendCapability.PAGINATION_SUPPORT) is True
+        assert age_db._backend.get_capability(BackendCapability.EXACT_COUNT) is True
         yield age_db
         age_db.execute("MATCH (n) DETACH DELETE n")
 
     def test_safe_query_uses_native_path(self, db):
-        """A safe query must NOT emit the cache-and-slice fallback warning."""
+        """Safe query must NOT emit the fallback warning."""
         _seed_people(db, 12)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -182,7 +190,7 @@ class TestAGEPagination(_PaginationContract):
         db.execute("MATCH (n) DETACH DELETE n")
 
     def test_unsafe_query_falls_back(self, db):
-        """RETURN * (unsafe to wrap) must fall back to cache-and-slice."""
+        """RETURN * (unsafe) must fall back to cache-and-slice."""
         _seed_people(db, 12)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
