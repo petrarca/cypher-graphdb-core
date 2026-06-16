@@ -73,6 +73,8 @@ class ParsedCypherQuery(BaseModel):
     return_arguments: dict = {}
     var_to_labels: dict = {}
     parameters: list[str] = []
+    has_limit: bool = False
+    has_skip: bool = False
     parse_tree: object = Field(exclude=True)
 
     @property
@@ -205,10 +207,22 @@ class ParsedCypherQuery(BaseModel):
             return False
         if self.has_updating_clause():
             return False
-        # Word-boundary, case-insensitive scan over the reconstructed query
-        # text. A false positive only triggers the (correct) fallback, so
-        # erring toward caution is safe.
-        return not re.search(r"(?i)\b(SKIP|LIMIT|UNION)\b", self.parsed_query)
+        # Existing pagination (captured structurally from the parse tree).
+        if self.has_pagination_clause():
+            return False
+        # UNION has no captured flag; detect it from the reconstructed text.
+        # A false positive only triggers the (correct) fallback, so caution is safe.
+        return not re.search(r"(?i)\bUNION\b", self.parsed_query)
+
+    def has_pagination_clause(self) -> bool:
+        """Return True if the query contains an explicit SKIP or LIMIT clause.
+
+        Captured structurally during parsing (visitor pattern), not by scanning
+        text. Used by callers (e.g. a server) to decide whether the user has
+        bounded the result themselves; when True, respect the user's bound
+        rather than imposing a cap.
+        """
+        return self.has_limit or self.has_skip
 
 
 class CypherQueryListener(CypherListener):
@@ -226,6 +240,11 @@ class CypherQueryListener(CypherListener):
         self.clauses = []
         self.return_arguments = {}
 
+        # Explicit pagination clauses, captured structurally from the parse tree
+        # (visitor pattern) rather than by scanning text.
+        self.has_limit = False
+        self.has_skip = False
+
         self._inside_return = False
         self._expression = ""
         self._var_counter = 0
@@ -233,6 +252,14 @@ class CypherQueryListener(CypherListener):
         self._current_clause = None
         self._current_clause_part = None
         self._regex_clause = re.compile(r"^.*?(?= | \(|$)")
+
+    def enterOC_Limit(self, ctx: CypherParser.OC_LimitContext):  # noqa: N802 (ANTLR-generated name)
+        """Record that the query contains an explicit LIMIT clause."""
+        self.has_limit = True
+
+    def enterOC_Skip(self, ctx: CypherParser.OC_SkipContext):  # noqa: N802 (ANTLR-generated name)
+        """Record that the query contains an explicit SKIP clause."""
+        self.has_skip = True
 
     @property
     def inside_return(self):
@@ -379,7 +406,12 @@ def parse_cypher_query(cypher_str: str, listener: CypherQueryListener | None = N
     ParseTreeWalker().walk(listener, tree)
 
     result = ParsedCypherQuery(
-        submitted_query=cypher_str, clauses=listener.clauses, return_arguments=listener.return_arguments, parse_tree=tree
+        submitted_query=cypher_str,
+        clauses=listener.clauses,
+        return_arguments=listener.return_arguments,
+        has_limit=listener.has_limit,
+        has_skip=listener.has_skip,
+        parse_tree=tree,
     )
     result.resolve()
 

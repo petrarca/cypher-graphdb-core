@@ -423,3 +423,32 @@ def test_is_safe_to_window_rejects_union():
 def test_is_safe_to_window_rejects_updating_query():
     parsed = parse_cypher_query("MATCH (p:Person) SET p.seen = true RETURN p.name")
     assert parsed.is_safe_to_window() is False
+
+
+# ── has_limit / has_skip / has_pagination_clause (structured, visitor-based) ──
+
+
+def test_has_limit_flag():
+    parsed = parse_cypher_query("MATCH (n) RETURN n LIMIT 10")
+    assert parsed.has_limit is True
+    assert parsed.has_skip is False
+    assert parsed.has_pagination_clause() is True
+
+
+def test_has_skip_flag():
+    parsed = parse_cypher_query("MATCH (n) RETURN n SKIP 5")
+    assert parsed.has_skip is True
+    assert parsed.has_pagination_clause() is True
+
+
+def test_no_pagination_clause():
+    parsed = parse_cypher_query("MATCH (n) RETURN n ORDER BY n.name")
+    assert parsed.has_limit is False
+    assert parsed.has_skip is False
+    assert parsed.has_pagination_clause() is False
+
+
+def test_order_by_with_limit_detected():
+    parsed = parse_cypher_query("MATCH (n) RETURN n.x ORDER BY n.x LIMIT 5")
+    assert parsed.has_limit is True
+    assert parsed.has_pagination_clause() is True
