@@ -212,6 +212,84 @@ class AGEGraphDB(CypherBackend):
 
         return (result, execute_stats)
 
+    def execute_cypher_page(
+        self,
+        cypher_query: ParsedCypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,
+        raw_data: bool = False,
+        params: dict | None = None,
+    ):
+        """Execute a windowed Cypher query natively via outer-SQL OFFSET/LIMIT.
+
+        Wraps the inner ``cypher()`` SELECT in an outer SQL ``SELECT`` to apply
+        ``OFFSET/LIMIT`` (page) and ``count(*)`` (total) without rewriting the
+        user's Cypher text. The agtype row factory is preserved for page rows.
+
+        The caller (``PaginationMixin``) only routes here for queries that are
+        safe to window (explicit RETURN projection, no existing SKIP/LIMIT/UNION).
+        """
+        from cypher_graphdb.cyphergraphdb.pagination import Page
+        from cypher_graphdb.utils.column_utils import resolve_column_names
+
+        self._validate_read_only(cypher_query)
+
+        page_sql, count_sql = SQLBuilder.create_cypher_page_sql(self._graph_name, cypher_query, offset, limit, params)
+
+        if params:
+            rows, exec_stats = self._run_page_prepared(page_sql, params, raw_data)
+            total = self._run_count_prepared(count_sql, params) if want_total else None
+        else:
+            rows, exec_stats, _ = self._execute_sql(page_sql, False, raw_data, None)
+            total = None
+            if want_total:
+                with self._fetch_cursor(row_factory=None) as cursor:
+                    total = cursor.execute(count_sql).fetchone()[0]
+                if self.autocommit:
+                    self._connection.commit()
+
+        rows = list(rows) if rows else []
+        col_names = None
+        if cypher_query.return_arguments:
+            col_names = resolve_column_names(cypher_query.return_arguments, rows, getattr(exec_stats, "col_count", 0) or 0)
+
+        has_more = total is not None and (offset + len(rows)) < total
+        return Page(
+            rows=rows,
+            offset=offset,
+            limit=limit,
+            returned=len(rows),
+            total=total,
+            has_more=has_more,
+            col_names=col_names,
+        )
+
+    def _run_page_prepared(self, page_sql, params: dict, raw_data: bool):
+        """Run the wrapped page SQL via PREPARE/EXECUTE (parameterized path)."""
+        exec_stats = ExecStatistics()
+        params_json = json.dumps(params)
+        stmt_name = self._get_or_prepare_statement(page_sql, page_sql.as_string())
+        execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+        with self._fetch_cursor(
+            row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
+        ) as cursor:
+            rows = cursor.execute(execute_sql, (params_json,)).fetchall()
+        if self.autocommit:
+            self._connection.commit()
+        return rows, exec_stats
+
+    def _run_count_prepared(self, count_sql, params: dict) -> int:
+        """Run the wrapped count SQL via PREPARE/EXECUTE (parameterized path)."""
+        params_json = json.dumps(params)
+        stmt_name = self._get_or_prepare_statement(count_sql, count_sql.as_string())
+        execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+        with self._fetch_cursor(row_factory=None) as cursor:
+            total = cursor.execute(execute_sql, (params_json,)).fetchone()[0]
+        if self.autocommit:
+            self._connection.commit()
+        return total
+
     def _get_query_hash(self, query: str) -> str:
         """Generate consistent hash for query string."""
         return hashlib.md5(query.encode()).hexdigest()[:8]
@@ -599,6 +677,12 @@ class AGEGraphDB(CypherBackend):
             case BackendCapability.STREAMING_SUPPORT:
                 # AGE does not support native streaming
                 return False
+            case BackendCapability.PAGINATION_SUPPORT:
+                # AGE supports native windowing via outer-SQL OFFSET/LIMIT
+                return True
+            case BackendCapability.EXACT_COUNT:
+                # AGE can compute an exact total via a count(*) wrap
+                return True
             case BackendCapability.PROPERTY_INDEX:
                 # AGE supports GIN property indexes via PostgreSQL SQL
                 return True

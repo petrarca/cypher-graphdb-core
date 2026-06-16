@@ -122,16 +122,37 @@ class TestMemgraphPagination(_PaginationContract):
 
     @pytest.fixture
     def db(self, memgraph_db):
+        # Memgraph still uses the cache-and-slice fallback (no native pagination yet).
         assert memgraph_db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is False
         yield memgraph_db
         memgraph_db.execute("MATCH (n) DETACH DELETE n")
 
 
 class TestAGEPagination(_PaginationContract):
-    """Pagination contract against live Apache AGE (fallback path)."""
+    """Pagination contract against live Apache AGE (native windowing path)."""
 
     @pytest.fixture
     def db(self, age_db):
-        assert age_db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is False
+        # AGE supports native outer-SQL OFFSET/LIMIT windowing.
+        assert age_db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is True
         yield age_db
         age_db.execute("MATCH (n) DETACH DELETE n")
+
+    def test_safe_query_uses_native_path(self, db):
+        """A safe query must NOT emit the cache-and-slice fallback warning."""
+        _seed_people(db, 12)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            db.execute_cypher_page(ORDERED_QUERY, offset=0, limit=5)
+        assert not any("native pagination" in str(w.message) for w in caught)
+        db.execute("MATCH (n) DETACH DELETE n")
+
+    def test_unsafe_query_falls_back(self, db):
+        """RETURN * (unsafe to wrap) must fall back to cache-and-slice."""
+        _seed_people(db, 12)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            page = db.execute_cypher_page("MATCH (p:Person) RETURN *", offset=0, limit=5)
+        assert any("native pagination" in str(w.message) for w in caught)
+        assert page.returned == 5
+        db.execute("MATCH (n) DETACH DELETE n")

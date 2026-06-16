@@ -111,6 +111,50 @@ class SQLBuilder:
         return (sql.SQL(f"SELECT {column_list} FROM {cypher_call} as ({result_types})"), None)
 
     @classmethod
+    def create_cypher_page_sql(
+        cls,
+        graph_name: str,
+        cypher_query: ParsedCypherQuery,
+        offset: int,
+        limit: int,
+        params: dict | None = None,
+    ) -> tuple[sql.SQL, sql.SQL]:
+        """Build (page_sql, count_sql) for windowed execution of a Cypher query.
+
+        Wraps the inner ``SELECT ... FROM cypher(...)`` produced by
+        :meth:`create_cypher_sql` in an outer SQL ``SELECT`` so we never edit
+        the user's Cypher text:
+
+        - ``page_sql`` applies ``OFFSET/LIMIT`` and returns the same columns as
+          the inner select (so the AGE agtype row factory is unaffected).
+        - ``count_sql`` is ``SELECT count(*) FROM (<inner>) sub`` and returns a
+          single integer (no agtype factory needed).
+
+        The caller is responsible for only using this on queries that are safe
+        to window (see ``ParsedCypherQuery.is_safe_to_window``): an explicit
+        single read projection without an existing ``SKIP/LIMIT`` or ``UNION``.
+
+        Args:
+            graph_name: Name of the graph.
+            cypher_query: Parsed Cypher query (must have a RETURN projection).
+            offset: Zero-based row offset for the window.
+            limit: Maximum rows in the window.
+            params: Optional parameters (prepared-statement path uses $1).
+
+        Returns:
+            Tuple of (page_sql, count_sql).
+        """
+        inner_sql, _ = cls.create_cypher_sql(graph_name, cypher_query, params)
+        inner = inner_sql.as_string(None)
+
+        # OFFSET/LIMIT are integers we control (validated upstream), so inline
+        # them as literals -- keeps the prepared-statement param positions
+        # ($1) intact for AGE's parameterized path.
+        page_sql = sql.SQL(f"SELECT * FROM ({inner}) AS __page OFFSET {int(offset)} LIMIT {int(limit)}")
+        count_sql = sql.SQL(f"SELECT count(*) FROM ({inner}) AS __count")
+        return (page_sql, count_sql)
+
+    @classmethod
     def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.SQL:
         sql_, _ = cls.create_cypher_sql(graph_name, cypher_query)
 

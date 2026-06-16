@@ -282,6 +282,34 @@ class CypherBackend(abc.ABC):
         """
         pass
 
+    def execute_cypher_page(
+        self,
+        cypher_query: ParsedCypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,
+        raw_data: bool = False,
+        params: dict | None = None,
+    ):
+        """Execute a windowed (offset/limit) Cypher query natively.
+
+        Opt-in: only backends that declare ``BackendCapability.PAGINATION_SUPPORT``
+        implement this. The default raises ``NotImplementedError`` so the
+        ``PaginationMixin`` transparently uses its cache-and-slice fallback.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            offset: Zero-based index of the first row to return.
+            limit: Maximum number of rows in the window.
+            want_total: If True, also compute an exact total row count.
+            raw_data: If True, return raw rows without row-factory processing.
+            params: Optional bound parameters.
+
+        Returns:
+            A ``Page`` (from ``cyphergraphdb.pagination``) for the window.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support execute_cypher_page")
+
     @abc.abstractmethod
     def fulltext_search(
         self,

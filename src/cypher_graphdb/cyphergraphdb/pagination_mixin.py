@@ -76,7 +76,10 @@ class PaginationMixin:
         with contextlib.suppress(NotImplementedError):
             supports_pagination = self._backend.get_capability(BackendCapability.PAGINATION_SUPPORT)
 
-        if supports_pagination:
+        # Native windowing is only safe for queries with an explicit projection
+        # and no existing pagination/UNION. For anything else, use the always-
+        # correct cache-and-slice fallback (which slices one materialized result).
+        if supports_pagination and parsed_query.is_safe_to_window():
             return self._backend.execute_cypher_page(
                 parsed_query,
                 offset=offset,

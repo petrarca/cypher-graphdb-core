@@ -167,6 +167,39 @@ class ParsedCypherQuery(BaseModel):
         # Valid if we found at least one clause or return arguments
         return len(self.clauses) > 0 or bool(self.return_arguments)
 
+    def is_safe_to_window(self) -> bool:
+        """Return True if this query can be safely wrapped with offset/limit windowing.
+
+        Backends with native pagination append/wrap the query with their own
+        ``SKIP/LIMIT`` (Cypher) or ``OFFSET/LIMIT`` (outer SQL). That is only
+        safe for a single read query that projects explicit columns and does
+        not already paginate. This is a conservative guard: when in doubt it
+        returns ``False`` so callers fall back to cache-and-slice, which is
+        always correct.
+
+        Unsafe shapes (return ``False``):
+            - No RETURN clause (e.g. CREATE/DELETE/MERGE -- nothing to page).
+            - ``RETURN *`` (column projection is ambiguous for SQL wrapping).
+            - Query already contains ``SKIP``/``LIMIT`` (double pagination).
+            - Query contains ``UNION`` (windowing semantics are ambiguous).
+            - Updating clauses (must not run twice / windowed).
+        """
+        # Must return something to page over.
+        if not self.return_arguments:
+            return False
+        # RETURN * -> ambiguous columns for the SQL column-type spec.
+        if "*" in self.return_arguments:
+            return False
+        # Never window a query that writes.
+        if self.has_updating_clause():
+            return False
+        # Reject queries that already paginate or use UNION. Word-boundary,
+        # case-insensitive scan over the reconstructed query text. A false
+        # positive only triggers the (correct) fallback, so erring toward
+        # caution here is safe.
+        text = self.parsed_query
+        return not re.search(r"(?i)\b(SKIP|LIMIT|UNION)\b", text)
+
 
 class CypherQueryListener(CypherListener):
     """ANTLR listener for parsing Cypher queries.

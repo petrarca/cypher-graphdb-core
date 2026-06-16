@@ -385,3 +385,41 @@ def test_parse_multiple_sequential_returns():
     has_age = has_age or "age" in parsed.return_arguments
     assert has_p1 or has_name
     assert has_age
+
+
+# ── is_safe_to_window guard (used by native pagination) ──────────────────────
+
+
+def test_is_safe_to_window_explicit_projection():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name ORDER BY p.name")
+    assert parsed.is_safe_to_window() is True
+
+
+def test_is_safe_to_window_rejects_return_star():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN *")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_no_return():
+    parsed = parse_cypher_query("CREATE (p:Person {name: 'X'})")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_existing_limit():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name LIMIT 10")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_existing_skip():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name SKIP 5")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_union():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name UNION MATCH (m:Movie) RETURN m.name")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_updating_query():
+    parsed = parse_cypher_query("MATCH (p:Person) SET p.seen = true RETURN p.name")
+    assert parsed.is_safe_to_window() is False
