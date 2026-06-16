@@ -39,7 +39,14 @@ def _page(db, query, **kwargs):
 
 
 class _PaginationContract:
-    """Shared assertions run against each backend fixture."""
+    """Shared assertions run against each backend fixture.
+
+    ``exact_count`` is set per backend: AGE produces an exact total, Memgraph
+    reports ``has_more`` only (total is None). Ordering and ``has_more``
+    behaviour is identical and asserted for both.
+    """
+
+    exact_count: bool = True
 
     def _db(self, request):
         raise NotImplementedError
@@ -54,7 +61,7 @@ class _PaginationContract:
         _seed_people(db, 25)
         page = _page(db, ORDERED_QUERY, offset=0, limit=10)
         assert page.returned == 10
-        assert page.total == 25
+        assert page.total == (25 if self.exact_count else None)
         assert page.has_more is True
         assert page.rows[0] == ("P000",)
         assert page.rows[-1] == ("P009",)
@@ -85,7 +92,7 @@ class _PaginationContract:
         assert page.returned == 0
         assert page.is_empty()
         assert page.has_more is False
-        assert page.total == 5
+        assert page.total == (5 if self.exact_count else None)
         db.execute("MATCH (n) DETACH DELETE n")
 
     def test_params_binding(self, db):
@@ -98,7 +105,7 @@ class _PaginationContract:
             params={"minage": 40},
         )
         # ages 40..44 -> P020..P024
-        assert page.total == 5
+        assert page.total == (5 if self.exact_count else None)
         assert [r[0] for r in page.rows] == ["P020", "P021", "P022", "P023", "P024"]
         db.execute("MATCH (n) DETACH DELETE n")
 
@@ -113,19 +120,46 @@ class _PaginationContract:
         db.execute("MATCH (n) DETACH DELETE n")
         page = _page(db, "MATCH (p:Person {name: 'Nope'}) RETURN p.name", offset=0, limit=10)
         assert page.returned == 0
-        assert page.total == 0
+        assert page.total == (0 if self.exact_count else None)
         assert page.has_more is False
 
 
 class TestMemgraphPagination(_PaginationContract):
-    """Pagination contract against live Memgraph (fallback path)."""
+    """Pagination contract against live Memgraph (native SKIP/LIMIT path).
+
+    Memgraph reports ``has_more`` (limit+1 probe) but no exact total.
+    """
+
+    exact_count = False
 
     @pytest.fixture
     def db(self, memgraph_db):
-        # Memgraph still uses the cache-and-slice fallback (no native pagination yet).
-        assert memgraph_db._backend.has_capability(BackendCapability.PAGINATION_SUPPORT) is False
+        assert memgraph_db._backend.get_capability(BackendCapability.PAGINATION_SUPPORT) is True
+        assert memgraph_db._backend.get_capability(BackendCapability.EXACT_COUNT) is False
         yield memgraph_db
         memgraph_db.execute("MATCH (n) DETACH DELETE n")
+
+    def test_safe_query_uses_native_path(self, db):
+        """A safe query must NOT emit the cache-and-slice fallback warning, and total is None."""
+        _seed_people(db, 12)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            page = db.execute_cypher_page(ORDERED_QUERY, offset=0, limit=5)
+        assert not any("native pagination" in str(w.message) for w in caught)
+        assert page.total is None
+        assert page.has_more is True
+        db.execute("MATCH (n) DETACH DELETE n")
+
+    def test_unsafe_query_falls_back_with_exact_total(self, db):
+        """RETURN * falls back to cache-and-slice, which DOES give an exact total."""
+        _seed_people(db, 12)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            page = db.execute_cypher_page("MATCH (p:Person) RETURN *", offset=0, limit=5)
+        assert any("native pagination" in str(w.message) for w in caught)
+        assert page.returned == 5
+        assert page.total == 12
+        db.execute("MATCH (n) DETACH DELETE n")
 
 
 class TestAGEPagination(_PaginationContract):

@@ -229,6 +229,55 @@ class MemgraphDB(CypherBackend):
 
         return self._execute_query(query, fetch_one, raw_data, params)
 
+    def execute_cypher_page(
+        self,
+        cypher_query: ParsedCypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,  # noqa: ARG002 -- Memgraph never produces an exact total
+        raw_data: bool = False,
+        params: dict | None = None,
+    ):
+        """Execute a windowed Cypher query natively via Cypher SKIP/LIMIT.
+
+        Appends ``SKIP $__skip LIMIT $__limit`` to the query and fetches one
+        extra row (``limit + 1``) to determine ``has_more`` without a separate
+        count query. Memgraph does not declare ``EXACT_COUNT``: ``total`` is
+        always ``None`` here (callers wanting an exact count use the mixin's
+        cache-and-slice fallback). The caller (``PaginationMixin``) only routes
+        here for queries safe to window (no existing SKIP/LIMIT/UNION).
+        """
+        from cypher_graphdb.cyphergraphdb.pagination import Page
+        from cypher_graphdb.utils.column_utils import resolve_column_names
+
+        self._validate_read_only(cypher_query)
+
+        # Fetch one extra row to detect "has_more" cheaply.
+        page_params = dict(params or {})
+        page_params["__skip"] = offset
+        page_params["__limit"] = limit + 1
+        query = f"{cypher_query.parsed_query} SKIP $__skip LIMIT $__limit"
+
+        rows, exec_stats = self._execute_query(query, fetch_one=False, raw_data=raw_data, params=page_params)
+        rows = list(rows) if rows else []
+
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
+        col_names = None
+        if cypher_query.return_arguments:
+            col_names = resolve_column_names(cypher_query.return_arguments, rows, getattr(exec_stats, "col_count", 0) or 0)
+
+        return Page(
+            rows=rows,
+            offset=offset,
+            limit=limit,
+            returned=len(rows),
+            total=None,
+            has_more=has_more,
+            col_names=col_names,
+        )
+
     def fulltext_search(
         self,
         cypher_query: ParsedCypherQuery,
@@ -681,6 +730,14 @@ class MemgraphDB(CypherBackend):
             case BackendCapability.STREAMING_SUPPORT:
                 # Memgraph supports native streaming via fetchmany()
                 return True
+            case BackendCapability.PAGINATION_SUPPORT:
+                # Memgraph windows natively via Cypher SKIP/LIMIT
+                return True
+            case BackendCapability.EXACT_COUNT:
+                # Memgraph cannot cheaply count an arbitrary query (CALL{} count
+                # wrap requires inner-RETURN aliasing we don't control). Pages
+                # report has_more via a limit+1 probe instead of an exact total.
+                return False
             case BackendCapability.PROPERTY_INDEX:
                 # Memgraph supports CREATE/DROP INDEX ON :Label(prop)
                 return True
