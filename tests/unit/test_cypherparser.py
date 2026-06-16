@@ -385,3 +385,70 @@ def test_parse_multiple_sequential_returns():
     has_age = has_age or "age" in parsed.return_arguments
     assert has_p1 or has_name
     assert has_age
+
+
+# ── is_safe_to_window guard (used by native pagination) ──────────────────────
+
+
+def test_is_safe_to_window_explicit_projection():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name ORDER BY p.name")
+    assert parsed.is_safe_to_window() is True
+
+
+def test_is_safe_to_window_rejects_return_star():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN *")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_no_return():
+    parsed = parse_cypher_query("CREATE (p:Person {name: 'X'})")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_existing_limit():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name LIMIT 10")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_existing_skip():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name SKIP 5")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_union():
+    parsed = parse_cypher_query("MATCH (p:Person) RETURN p.name UNION MATCH (m:Movie) RETURN m.name")
+    assert parsed.is_safe_to_window() is False
+
+
+def test_is_safe_to_window_rejects_updating_query():
+    parsed = parse_cypher_query("MATCH (p:Person) SET p.seen = true RETURN p.name")
+    assert parsed.is_safe_to_window() is False
+
+
+# ── has_limit / has_skip / has_pagination_clause (structured, visitor-based) ──
+
+
+def test_has_limit_flag():
+    parsed = parse_cypher_query("MATCH (n) RETURN n LIMIT 10")
+    assert parsed.has_limit is True
+    assert parsed.has_skip is False
+    assert parsed.has_pagination_clause() is True
+
+
+def test_has_skip_flag():
+    parsed = parse_cypher_query("MATCH (n) RETURN n SKIP 5")
+    assert parsed.has_skip is True
+    assert parsed.has_pagination_clause() is True
+
+
+def test_no_pagination_clause():
+    parsed = parse_cypher_query("MATCH (n) RETURN n ORDER BY n.name")
+    assert parsed.has_limit is False
+    assert parsed.has_skip is False
+    assert parsed.has_pagination_clause() is False
+
+
+def test_order_by_with_limit_detected():
+    parsed = parse_cypher_query("MATCH (n) RETURN n.x ORDER BY n.x LIMIT 5")
+    assert parsed.has_limit is True
+    assert parsed.has_pagination_clause() is True

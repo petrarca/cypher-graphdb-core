@@ -70,6 +70,7 @@ from .batch import BatchMixin
 from .connection import ConnectionMixin
 from .criteria import MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
 from .indexing import IndexingMixin
+from .pagination_mixin import PaginationMixin
 from .result import QueryResult
 from .schema import SchemaMixin
 from .search import SearchMixin
@@ -77,7 +78,7 @@ from .sql import SqlMixin
 from .stream_mixin import StreamMixin
 
 
-class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin):
+class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin, PaginationMixin):
     """Primary client for connecting to and managing Cypher-based graph databases.
 
     CypherGraphDB provides a high-level interface for graph database operations

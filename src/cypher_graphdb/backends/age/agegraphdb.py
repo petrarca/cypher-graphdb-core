@@ -25,6 +25,13 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
+
+# Deferred at module level to avoid a circular import:
+# agegraphdb -> pagination (cyphergraphdb package) -> cyphergraphdb -> agegraphdb
+# Both live in sibling packages so the cycle is broken at import time by
+# placing the import here after all backend imports are complete.
+from cypher_graphdb.cyphergraphdb.pagination import Page  # noqa: E402
+from cypher_graphdb.cyphergraphdb.pagination_mixin import _resolve_col_names  # noqa: E402
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
@@ -211,6 +218,185 @@ class AGEGraphDB(CypherBackend):
             (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data, sql_params)
 
         return (result, execute_stats)
+
+    def execute_cypher_page(
+        self,
+        cypher_query: ParsedCypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,
+        raw_data: bool = False,
+        params: dict | None = None,
+    ) -> Page:
+        """Execute a windowed Cypher query natively via outer-SQL OFFSET/LIMIT.
+
+        Wraps the inner ``cypher()`` SELECT in an outer SQL subquery so the
+        user's Cypher text is never rewritten:
+
+        - Page rows: ``SELECT * FROM (<inner>) AS __page OFFSET x LIMIT y``.
+          The AGE agtype row factory receives the same column spec as the
+          unwrapped query.
+        - Exact total (``want_total=True``): ``SELECT count(*) FROM (<inner>)
+          AS __count`` -- a separate plain-integer query, no agtype factory.
+        - ``has_more`` uses a ``limit+1`` probe so it is always exact even when
+          ``want_total=False``.
+
+        Both the page and count SQL go through the same prepared-statement
+        machinery and reconnect/re-prepare recovery as ``execute_cypher``.
+
+        Called only by ``PaginationMixin`` for queries that pass
+        ``is_safe_to_window()`` (explicit RETURN, no SKIP/LIMIT/UNION).
+        """
+        self._validate_read_only(cypher_query)
+
+        # Use the base query text as the cache key prefix so that
+        # execute_cypher / execute_cypher_page share a consistent key space
+        # and the page/count variants are distinguished by a suffix.
+        base_key = cypher_query.parsed_query
+
+        # Build page SQL with limit+1 to detect has_more cheaply.
+        page_pair = SQLBuilder.create_cypher_page_sql(self._graph_name, cypher_query, offset, limit + 1, params)
+        count_pair = SQLBuilder.create_cypher_page_sql(
+            self._graph_name,
+            cypher_query,
+            0,
+            1,
+            params,  # count_sql only; offset/limit irrelevant
+        )
+
+        if params:
+            rows, exec_stats = self._exec_page_prepared(page_pair.page, params, base_key + ":page", raw_data)
+            total = self._exec_count_prepared(count_pair.count, params, base_key + ":count") if want_total else None
+        else:
+            rows, exec_stats, _ = self._execute_sql(page_pair.page, False, raw_data, None)
+            total = None
+            if want_total:
+                try:
+                    with self._fetch_cursor(row_factory=None) as cursor:
+                        total = cursor.execute(count_pair.count).fetchone()[0]
+                    if self.autocommit:
+                        self._connection.commit()
+                except (psycopg.errors.ProgrammingError, psycopg.errors.DataError) as e:
+                    raise AGEExecutionError(f"AGE count query failed: {e}") from e
+                except psycopg.Error as e:
+                    self._close_connection()
+                    raise AGEExecutionError(f"AGE count query failed: {e}") from e
+
+        rows = list(rows) if rows else []
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
+        col_names = _resolve_col_names(cypher_query, rows, exec_stats)
+        return Page(
+            rows=rows,
+            offset=offset,
+            limit=limit,
+            total=total,
+            has_more=has_more,
+            col_names=col_names,
+        )
+
+    def _exec_page_prepared(self, page_sql, params: dict, cache_key: str, raw_data: bool) -> tuple[list, ExecStatistics]:
+        """Execute the page SQL via PREPARE/EXECUTE with reconnect recovery.
+
+        Uses ``cache_key`` (base Cypher text + ":page" suffix) so the cache
+        entry is consistent across calls and distinct from the count entry.
+        """
+        start_time = time.perf_counter()
+        exec_stats = ExecStatistics()
+        params_json = json.dumps(params)
+        stmt_name = self._get_or_prepare_statement(page_sql, cache_key)
+        execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+
+        try:
+            rows = self._run_page_stmt(execute_sql, params_json, exec_stats, raw_data)
+        except psycopg.errors.InvalidSqlStatementName:
+            rows = self._recover_and_rerun_page(page_sql, cache_key, params_json, exec_stats, raw_data)
+        except Exception as e:
+            self._prepared_statements.clear()
+            self._close_connection()
+            raise AGEExecutionError(f"AGE page query failed: {e}") from e
+
+        exec_stats.exec_time = time.perf_counter() - start_time
+        return rows, exec_stats
+
+    def _run_page_stmt(self, execute_sql, params_json: str, exec_stats: ExecStatistics, raw_data: bool) -> list:
+        """Execute a prepared page statement and return rows."""
+        with self._fetch_cursor(
+            row_factory=age_row_factory(exec_stats, self._model_provider) if not raw_data else None
+        ) as cursor:
+            rows = cursor.execute(execute_sql, (params_json,)).fetchall()
+        if self.autocommit:
+            self._connection.commit()
+        return rows
+
+    def _recover_and_rerun_page(
+        self, page_sql, cache_key: str, params_json: str, exec_stats: ExecStatistics, raw_data: bool
+    ) -> list:
+        """Handle dropped prepared statement for page query (mirrors _execute_prepared recovery)."""
+        logger.debug("Page prepared statement gone from server, re-preparing (key={})", cache_key)
+        self._prepared_statements.clear()
+        try:
+            self._connection.rollback()
+        except Exception:
+            with contextlib.suppress(Exception):
+                self._connection.close()
+            self._connection = None
+        self._require_connection()
+        try:
+            stmt_name = self._get_or_prepare_statement(page_sql, cache_key)
+            execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+            return self._run_page_stmt(execute_sql, params_json, exec_stats, raw_data)
+        except Exception as e:
+            self._prepared_statements.clear()
+            self._close_connection()
+            raise AGEExecutionError(f"AGE page query failed after re-prepare: {e}") from e
+
+    def _exec_count_prepared(self, count_sql, params: dict, cache_key: str) -> int:
+        """Execute the count SQL via PREPARE/EXECUTE with reconnect recovery.
+
+        Uses ``cache_key`` (base Cypher text + ":count" suffix) so the cache
+        entry is consistent and distinct from the page entry.
+        """
+        params_json = json.dumps(params)
+        stmt_name = self._get_or_prepare_statement(count_sql, cache_key)
+        execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+        try:
+            with self._fetch_cursor(row_factory=None) as cursor:
+                total = cursor.execute(execute_sql, (params_json,)).fetchone()[0]
+            if self.autocommit:
+                self._connection.commit()
+            return total
+        except psycopg.errors.InvalidSqlStatementName:
+            return self._recover_and_rerun_count(count_sql, cache_key, params_json)
+        except Exception as e:
+            self._prepared_statements.clear()
+            self._close_connection()
+            raise AGEExecutionError(f"AGE count query failed: {e}") from e
+
+    def _recover_and_rerun_count(self, count_sql, cache_key: str, params_json: str) -> int:
+        """Handle dropped prepared statement for count query."""
+        logger.debug("Count prepared statement gone from server, re-preparing (key={})", cache_key)
+        self._prepared_statements.clear()
+        try:
+            self._connection.rollback()
+        except Exception:
+            with contextlib.suppress(Exception):
+                self._connection.close()
+            self._connection = None
+        self._require_connection()
+        try:
+            stmt_name = self._get_or_prepare_statement(count_sql, cache_key)
+            execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
+            with self._fetch_cursor(row_factory=None) as cursor:
+                total = cursor.execute(execute_sql, (params_json,)).fetchone()[0]
+            if self.autocommit:
+                self._connection.commit()
+            return total
+        except Exception as e:
+            self._prepared_statements.clear()
+            self._close_connection()
+            raise AGEExecutionError(f"AGE count query failed after re-prepare: {e}") from e
 
     def _get_query_hash(self, query: str) -> str:
         """Generate consistent hash for query string."""
@@ -599,6 +785,12 @@ class AGEGraphDB(CypherBackend):
             case BackendCapability.STREAMING_SUPPORT:
                 # AGE does not support native streaming
                 return False
+            case BackendCapability.PAGINATION_SUPPORT:
+                # AGE supports native windowing via outer-SQL OFFSET/LIMIT
+                return True
+            case BackendCapability.EXACT_COUNT:
+                # AGE can compute an exact total via a count(*) wrap
+                return True
             case BackendCapability.PROPERTY_INDEX:
                 # AGE supports GIN property indexes via PostgreSQL SQL
                 return True

@@ -5,11 +5,27 @@ interface with Apache AGE graph functionality, including graph creation,
 Cypher query execution, and full-text search operations.
 """
 
+from dataclasses import dataclass
+
 from psycopg import sql
 
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 
 from .ageserializer import escape_string_inner
+
+
+@dataclass(frozen=True)
+class PageSql:
+    """SQL pair produced by :meth:`SQLBuilder.create_cypher_page_sql`.
+
+    Using a named dataclass makes the two members self-documenting at every
+    call site instead of relying on positional tuple unpacking.
+    """
+
+    page: sql.SQL
+    """Outer SELECT with OFFSET/LIMIT applied; preserves the agtype column spec."""
+    count: sql.SQL
+    """Outer SELECT count(*) for the exact total row count."""
 
 
 class SQLBuilder:
@@ -109,6 +125,53 @@ class SQLBuilder:
 
         # TODO: select explicit fields from return argmentents: select p1, ..
         return (sql.SQL(f"SELECT {column_list} FROM {cypher_call} as ({result_types})"), None)
+
+    @classmethod
+    def create_cypher_page_sql(
+        cls,
+        graph_name: str,
+        cypher_query: ParsedCypherQuery,
+        offset: int,
+        limit: int,
+        params: dict | None = None,
+    ) -> PageSql:
+        """Build a :class:`PageSql` for windowed execution of a Cypher query.
+
+        Wraps the inner ``SELECT ... FROM cypher(...)`` produced by
+        :meth:`create_cypher_sql` in an outer SQL ``SELECT`` so we never edit
+        the user's Cypher text:
+
+        - ``PageSql.page`` applies ``OFFSET/LIMIT`` via ``sql.Literal`` and
+          returns the same columns as the inner select (so the AGE agtype row
+          factory is unaffected by the wrapping).
+        - ``PageSql.count`` is ``SELECT count(*) FROM (<inner>) __count`` and
+          returns a single plain integer (no agtype factory needed).
+
+        ``OFFSET``/``LIMIT`` are embedded as ``sql.Literal`` values rather than
+        raw f-string integers, keeping the composable safe and consistent with
+        the rest of the builder.  The inner ``$1`` placeholder (when ``params``
+        is provided) is preserved inside the subquery so prepared-statement
+        parameter positions remain correct.
+
+        The caller is responsible for only using this on queries that are safe
+        to window (see :meth:`~cypher_graphdb.cypherparser.ParsedCypherQuery.is_safe_to_window`).
+
+        Args:
+            graph_name: Name of the graph.
+            cypher_query: Parsed Cypher query (must have an explicit RETURN projection).
+            offset: Zero-based row offset for the window.
+            limit: Maximum rows in the window.
+            params: Optional parameters (prepared-statement path uses $1).
+
+        Returns:
+            :class:`PageSql` with ``page`` and ``count`` composables.
+        """
+        inner_sql, _ = cls.create_cypher_sql(graph_name, cypher_query, params)
+        page = sql.SQL("SELECT * FROM ({}) AS __page OFFSET {} LIMIT {}").format(
+            inner_sql, sql.Literal(offset), sql.Literal(limit)
+        )
+        count = sql.SQL("SELECT count(*) FROM ({}) AS __count").format(inner_sql)
+        return PageSql(page=page, count=count)
 
     @classmethod
     def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.SQL:

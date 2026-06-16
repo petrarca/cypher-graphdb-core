@@ -73,6 +73,8 @@ class ParsedCypherQuery(BaseModel):
     return_arguments: dict = {}
     var_to_labels: dict = {}
     parameters: list[str] = []
+    has_limit: bool = False
+    has_skip: bool = False
     parse_tree: object = Field(exclude=True)
 
     @property
@@ -167,6 +169,61 @@ class ParsedCypherQuery(BaseModel):
         # Valid if we found at least one clause or return arguments
         return len(self.clauses) > 0 or bool(self.return_arguments)
 
+    def is_safe_to_window(self) -> bool:
+        """Return True if this query can be safely wrapped with offset/limit windowing.
+
+        Backends with native pagination append/wrap the query with their own
+        ``SKIP/LIMIT`` (Cypher) or ``OFFSET/LIMIT`` (outer SQL). That is only
+        safe for a single read query that projects explicit columns and does
+        not already paginate. This is a conservative guard: when in doubt it
+        returns ``False`` so callers fall back to cache-and-slice, which is
+        always correct.
+
+        Result is computed once and cached on the instance (the parsed query is
+        immutable so this is always safe).
+
+        Unsafe shapes (return ``False``):
+            - No RETURN clause (e.g. CREATE/DELETE/MERGE -- nothing to page).
+            - ``RETURN *`` (column projection is ambiguous for SQL wrapping).
+            - Query already contains ``SKIP``/``LIMIT`` (double pagination).
+            - Query contains ``UNION`` (windowing semantics are ambiguous).
+            - Updating clauses (must not run twice / windowed).
+        """
+        # Cache on the instance -- Pydantic models use __dict__ for non-field
+        # attributes even when frozen (frozen only prevents field mutation).
+        cached = self.__dict__.get("_safe_to_window")
+        if cached is not None:
+            return cached
+
+        result = self._compute_safe_to_window()
+        self.__dict__["_safe_to_window"] = result
+        return result
+
+    def _compute_safe_to_window(self) -> bool:
+        """Evaluate windowing safety without caching."""
+        if not self.return_arguments:
+            return False
+        if "*" in self.return_arguments:
+            return False
+        if self.has_updating_clause():
+            return False
+        # Existing pagination (captured structurally from the parse tree).
+        if self.has_pagination_clause():
+            return False
+        # UNION has no captured flag; detect it from the reconstructed text.
+        # A false positive only triggers the (correct) fallback, so caution is safe.
+        return not re.search(r"(?i)\bUNION\b", self.parsed_query)
+
+    def has_pagination_clause(self) -> bool:
+        """Return True if the query contains an explicit SKIP or LIMIT clause.
+
+        Captured structurally during parsing (visitor pattern), not by scanning
+        text. Used by callers (e.g. a server) to decide whether the user has
+        bounded the result themselves; when True, respect the user's bound
+        rather than imposing a cap.
+        """
+        return self.has_limit or self.has_skip
+
 
 class CypherQueryListener(CypherListener):
     """ANTLR listener for parsing Cypher queries.
@@ -183,6 +240,11 @@ class CypherQueryListener(CypherListener):
         self.clauses = []
         self.return_arguments = {}
 
+        # Explicit pagination clauses, captured structurally from the parse tree
+        # (visitor pattern) rather than by scanning text.
+        self.has_limit = False
+        self.has_skip = False
+
         self._inside_return = False
         self._expression = ""
         self._var_counter = 0
@@ -190,6 +252,14 @@ class CypherQueryListener(CypherListener):
         self._current_clause = None
         self._current_clause_part = None
         self._regex_clause = re.compile(r"^.*?(?= | \(|$)")
+
+    def enterOC_Limit(self, ctx: CypherParser.OC_LimitContext):  # noqa: N802 (ANTLR-generated name)
+        """Record that the query contains an explicit LIMIT clause."""
+        self.has_limit = True
+
+    def enterOC_Skip(self, ctx: CypherParser.OC_SkipContext):  # noqa: N802 (ANTLR-generated name)
+        """Record that the query contains an explicit SKIP clause."""
+        self.has_skip = True
 
     @property
     def inside_return(self):
@@ -336,7 +406,12 @@ def parse_cypher_query(cypher_str: str, listener: CypherQueryListener | None = N
     ParseTreeWalker().walk(listener, tree)
 
     result = ParsedCypherQuery(
-        submitted_query=cypher_str, clauses=listener.clauses, return_arguments=listener.return_arguments, parse_tree=tree
+        submitted_query=cypher_str,
+        clauses=listener.clauses,
+        return_arguments=listener.return_arguments,
+        has_limit=listener.has_limit,
+        has_skip=listener.has_skip,
+        parse_tree=tree,
     )
     result.resolve()
 

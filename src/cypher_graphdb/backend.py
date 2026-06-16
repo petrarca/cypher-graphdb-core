@@ -31,6 +31,8 @@ class BackendCapability(Enum):
     LABEL_FUNCTION = auto()  # Function to get node labels
     SUPPORT_MULTIPLE_LABELS = auto()  # Support for multiple labels per node
     STREAMING_SUPPORT = auto()  # Native streaming support via server-side cursors
+    PAGINATION_SUPPORT = auto()  # Native windowed pagination (offset/limit) without full materialization
+    EXACT_COUNT = auto()  # Can report an exact total row count for a page (else has_more only)
     PROPERTY_INDEX = auto()  # Supports create_property_index / drop_index / list_indexes
     UNIQUE_CONSTRAINT = auto()  # Supports create_unique_constraint
     FULLTEXT_INDEX = auto()  # Supports create_fulltext_index
@@ -279,6 +281,34 @@ class CypherBackend(abc.ABC):
             Lists of result rows (TabularResult chunks)
         """
         pass
+
+    def execute_cypher_page(
+        self,
+        cypher_query: ParsedCypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,
+        raw_data: bool = False,
+        params: dict | None = None,
+    ):
+        """Execute a windowed (offset/limit) Cypher query natively.
+
+        Opt-in: only backends that declare ``BackendCapability.PAGINATION_SUPPORT``
+        implement this. The default raises ``NotImplementedError`` so the
+        ``PaginationMixin`` transparently uses its cache-and-slice fallback.
+
+        Args:
+            cypher_query: Parsed Cypher query to execute.
+            offset: Zero-based index of the first row to return.
+            limit: Maximum number of rows in the window.
+            want_total: If True, also compute an exact total row count.
+            raw_data: If True, return raw rows without row-factory processing.
+            params: Optional bound parameters.
+
+        Returns:
+            A ``Page`` (from ``cyphergraphdb.pagination``) for the window.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support execute_cypher_page")
 
     @abc.abstractmethod
     def fulltext_search(
