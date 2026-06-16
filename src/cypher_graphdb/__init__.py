@@ -22,6 +22,7 @@ from .cyphergraphdb import (
     MatchNodeCriteria,
     QueryResult,
 )
+from .cyphergraphdb.pagination import Page
 from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
@@ -51,6 +52,7 @@ __all__ = [
     "IndexType",
     "CypherGraphDB",
     "QueryResult",
+    "Page",
     "MatchCriteria",
     "MatchEdgeCriteria",
     "MatchEdgeById",

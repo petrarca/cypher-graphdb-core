@@ -49,10 +49,10 @@ class MockBackend(CypherBackend):
     def graph_exists(self, graph_name: str = None) -> bool:  # noqa: D401
         return True
 
-    def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False):  # noqa: D401
+    def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False, params=None):  # noqa: D401
         return [], None
 
-    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False):  # noqa: D401
+    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False, params=None):  # noqa: D401
         """Mock streaming implementation - yields empty chunks."""
         return
         yield  # Empty generator for mock

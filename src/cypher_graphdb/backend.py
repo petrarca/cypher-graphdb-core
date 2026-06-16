@@ -31,6 +31,8 @@ class BackendCapability(Enum):
     LABEL_FUNCTION = auto()  # Function to get node labels
     SUPPORT_MULTIPLE_LABELS = auto()  # Support for multiple labels per node
     STREAMING_SUPPORT = auto()  # Native streaming support via server-side cursors
+    PAGINATION_SUPPORT = auto()  # Native windowed pagination (offset/limit) without full materialization
+    EXACT_COUNT = auto()  # Can report an exact total row count for a page (else has_more only)
     PROPERTY_INDEX = auto()  # Supports create_property_index / drop_index / list_indexes
     UNIQUE_CONSTRAINT = auto()  # Supports create_unique_constraint
     FULLTEXT_INDEX = auto()  # Supports create_fulltext_index
