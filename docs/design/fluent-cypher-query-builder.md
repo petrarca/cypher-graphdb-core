@@ -19,14 +19,16 @@ Nobody is forced to adopt it.
 
 The proposal is split into:
 
-- **v1 (this document's primary scope):** a read/projection builder with
-  parameter binding (`match / where / with_ / return_ / order_by / skip /
-  limit`), plus a `raw()` escape hatch. Goal: eliminate manual f-string
-  assembly and hand-rolled string escaping for dynamic read queries.
-- **v2 (deferred, described here for direction):** write clauses
-  (`UNWIND / MERGE / CREATE / SET / DELETE`), **backend-aware dialect
-  emission** (e.g. AGE vs Memgraph differences in parameter handling), and an
-  optional typed pattern-object layer (`node()` / `rel()`).
+- **v1:** a read/projection builder with parameter binding (`match / where /
+  with_ / return_ / order_by / skip / limit`), plus a `raw()` escape hatch. Goal:
+  eliminate manual f-string assembly and hand-rolled string escaping for dynamic
+  read queries. **Implemented.**
+- **v2a — write clauses** (`UNWIND / CREATE / MERGE / SET / DELETE / REMOVE /
+  ON CREATE SET / ON MATCH SET`). **Implemented.**
+- **v2c — typed pattern objects** (`node()` / `rel()`). **Implemented.**
+- **v2b — backend-aware dialect emission** (AGE vs Memgraph parameter handling).
+  **Deferred** — see the v2b section for the corrected (narrow) scope and the
+  steps to implement it.
 
 ## Problem Statement
 
@@ -439,11 +441,12 @@ model decorator; callers who need both alias on import. The top-level
 Backends already accept `(query_string, params)`; the builder produces nothing
 new at that layer.
 
-## v2 (Deferred): Write Clauses, Backend Dialects, Typed Patterns
+## v2: Write Clauses, Typed Patterns, Backend Dialects
 
-v2 is **not** part of the initial implementation. It is described here so v1
-internals (ordered clause buffers + param binding + generative chaining) are
-designed to extend cleanly rather than be rewritten.
+v2a (write clauses) and v2c (typed patterns) are **implemented**; v2b
+(backend-aware dialect emission) is **deferred future work**. The v1 internals
+(ordered clause segments + param binding + generative chaining) were designed so
+these extended cleanly rather than requiring a rewrite.
 
 ### v2a — Write-clause support — IMPLEMENTED
 
@@ -480,36 +483,73 @@ This pattern removes copy-pasted UNWIND skeletons and the f-string label
 interpolation, while keeping the already-parameterised `rows` payload at the
 execute layer where it belongs.
 
-### v2b — Backend-aware dialect emission
+### v2b — Backend-aware dialect emission — FUTURE WORK (deferred)
 
-This is a **secondary** benefit, not the driver, but it aligns naturally with
-the builder being the single point that emits the final string.
+Status: **not implemented; deferred as future work.** Investigation narrowed the
+real scope considerably from the original framing, and the payoff is small — see
+"Why deferred" below before picking this up.
 
-The library already models backend differences via the `BackendCapability` enum
-(`PROPERTY_INDEX`, `FULLTEXT_INDEX`, `VECTOR_INDEX`, `SUPPORT_MULTIPLE_LABELS`,
-`STREAMING_SUPPORT`, …) and `has_capability()`. Backends already diverge in
-ways that today leak into consumer code as comments and workarounds — most
-notably:
+#### Actual scope (corrected after investigation)
 
-- AGE does not accept `$params` in certain clauses (e.g. `MERGE` / `UNWIND`
-  contexts) and requires **inline, escaped literals**, handled today by a
-  dedicated serializer.
-- Variable-length relationship patterns and prepared-statement handling differ
-  between backends.
+The original framing ("AGE does not accept `$params` in MERGE/UNWIND") was too
+broad. In practice:
 
-Because the builder owns the final emission step, it is the right place to
-encapsulate "emit the AGE-flavoured or Memgraph-flavoured form of the same
-logical query." The proposed mechanism:
+- **`MATCH` / `WHERE` / `MERGE` / `SET` / `CREATE` with `$name` params work on
+  AGE** via its prepared-statement path (AGE passes all params as a single `$1`
+  agtype JSON blob; the Cypher body references them as `$name`). The builder's
+  standard parameterised output already executes correctly on AGE for these —
+  confirmed by the write-clause integration tests.
+- **The one genuine AGE limitation is `UNWIND` with a list payload.** AGE cannot
+  bind a server-side list parameter for `UNWIND` to iterate; the list must be an
+  **inline Cypher literal**. This is already handled outside the builder by
+  `backends/age/ageserializer.py` (`to_cypher_list` / `escape_value`).
+- **`ON CREATE SET` / `ON MATCH SET` are unsupported *syntax* on AGE**, not a
+  parameter-dialect issue. Dialect emission cannot fix a missing language
+  feature; such queries are simply AGE-incompatible.
 
-- `q.build_for(backend)` (or `cdb.execute(q)` consulting backend capabilities)
-  chooses between `$param` binding and inline-literal serialisation per clause,
-  based on `backend.has_capability(...)`.
-- The inline-literal path reuses the existing backend serializer rather than
-  re-implementing escaping.
+So backend-aware emission collapses to essentially one case: emit an **inline
+AGE list literal** for `UNWIND` (via the existing serializer) instead of a
+`$param` reference, when the target backend is AGE.
 
-The intent is to **centralise** dialect knowledge currently scattered across
-consumer comments and regex guards. This is explicitly a v2 concern; v1 emits
-standard parameterised Cypher only.
+#### What implementing it would require
+
+1. **A new `BackendCapability` member**, e.g. `PARAM_IN_UNWIND` (or
+   `INLINE_UNWIND_LITERALS`). None of the existing capabilities cover parameter
+   handling. AGE → `False`, Memgraph → `True`. This is a public enum change in
+   the core `backend.py`.
+2. **A way for the builder to hold the UNWIND payload values at build time.**
+   Today `unwind("$rows", "row")` takes a *parameter reference*; the list is
+   supplied at execute time via `params=`. AGE inline emission needs the values
+   during emission. Options: add an `unwind_values(rows, "row")` method, or have
+   the execute-layer coercion inline a referenced `params` key for AGE-only.
+3. **An executable inline path.** The builder's current `build(literal_binds=True)`
+   uses `json.dumps` and is documented **debug-only / non-executable**. An AGE
+   dialect must instead call `ageserializer.to_cypher_list` / `escape_value`
+   (agtype-correct escaping: null-byte stripping, `true/false`, bare numerics).
+   Do **not** reuse the `json.dumps` debug path for execution.
+4. **A dispatch point**: either `q.build_for(backend)` or `cdb.execute(q)`
+   consulting `backend.has_capability(PARAM_IN_UNWIND)` to choose the
+   parameterised vs inline form per clause.
+
+#### Why deferred
+
+- The real surface is one construct (`UNWIND` list payloads), not a broad class
+  of clauses.
+- The highest-value real-world case — property-carrying **bulk** writes on AGE —
+  is already solved, and solved better, by `bulk_create_nodes` /
+  `bulk_create_edges` (direct-SQL writer, bypasses Cypher). A builder-driven AGE
+  `UNWIND` would be strictly worse for that case.
+- It costs a public `BackendCapability` change and complicates the clean
+  `unwind()` design, for a narrow benefit.
+
+#### Interim mitigation (lightweight, also not yet implemented)
+
+If surprises become a problem before full emission is built, the cheap option is
+to **fail loudly**: when an `UNWIND $param` builder query is executed on a
+backend without `PARAM_IN_UNWIND`, raise a clear `CypherQueryError` pointing the
+caller at `bulk_create_*` or an inline list — instead of surfacing a cryptic
+backend error. This captures most of the user value (no surprises) without the
+full dialect-emission machinery.
 
 ### v2c — Optional typed pattern objects (richer, still additive) — IMPLEMENTED
 
@@ -537,17 +577,20 @@ q = (
 
 This is forward-compatible because `match()` accepts a pattern object as
 an **additional** input type alongside the existing string form — the v1 string
-API is never removed or changed. It was listed here for direction; not
-scheduled.
+API is never removed or changed.
 
-### Why defer
+### Implementation status
 
-- v1 delivers immediate value (read-query ergonomics + parameter binding) with a
-  small, low-risk surface.
-- Write clauses interact with backend dialect quirks; bundling them with v1 would
-  drag dialect handling forward prematurely.
-- Designing v1's clause buffers and param binder to be extensible makes v2 an
-  additive extension, not a rewrite.
+- **v1** (read builder + parameter binding) — **implemented**.
+- **v2a** (write clauses: `unwind`/`create`/`merge`/`set`/`delete`/`remove`/
+  `on_create_set`/`on_match_set`) — **implemented**.
+- **v2c** (typed `node()`/`rel()` pattern objects) — **implemented**.
+- **v2b** (backend-aware dialect emission) — **deferred** (see that section for
+  the corrected scope and the steps required to pick it up).
+
+The v1 clause model was designed so v2a/v2c were additive extensions rather than
+a rewrite; the ordered-segment storage and deferred-binding pattern objects
+slotted in without changing the v1 public surface.
 
 ### Forward-compatibility guarantee: v2 must not break v1 usage
 
