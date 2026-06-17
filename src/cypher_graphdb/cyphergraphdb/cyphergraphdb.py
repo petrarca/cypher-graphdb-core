@@ -64,6 +64,7 @@ from ..backend import CypherBackend
 from ..backendprovider import backend_provider
 from ..cypherbuilder import CypherBuilder
 from ..cypherparser import ParsedCypherQuery
+from ..cypherquery import CypherQuery
 from ..exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from .batch import BatchMixin
@@ -76,6 +77,29 @@ from .schema import SchemaMixin
 from .search import SearchMixin
 from .sql import SqlMixin
 from .stream_mixin import StreamMixin
+
+
+def _resolve_cypher_input(
+    cypher_cmd: str | ParsedCypherQuery | CypherQuery,
+    params: dict | None,
+) -> tuple[str | ParsedCypherQuery, dict | None]:
+    """Normalise a ``CypherQuery`` builder to ``(cypher_str, merged_params)``.
+
+    Builder-bound params are merged with any caller-supplied ``params``; caller
+    keys win on conflict. Non-builder inputs pass through unchanged.
+    This is the single coercion point — no mixin or other entry-point should
+    duplicate this logic.
+    """
+    if not isinstance(cypher_cmd, CypherQuery):
+        return cypher_cmd, params
+
+    cypher, builder_params = cypher_cmd.build()
+    if params:
+        overlap = builder_params.keys() & params.keys()
+        if overlap:
+            logger.warning("Caller params override builder params: {}", sorted(overlap))
+        builder_params = {**builder_params, **params}
+    return cypher, builder_params or None
 
 
 class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin, PaginationMixin):
@@ -733,6 +757,54 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
         raise RuntimeError(f"Unsupported objectobject type to delete: {type(obj)}")
 
+    def query(self) -> CypherQuery:
+        """Return a fresh fluent ``CypherQuery`` builder.
+
+        The builder is an optional, chainable way to construct read/projection
+        queries with automatic parameter binding. It can be passed directly to
+        ``execute``, ``execute_with_stats``, or ``execute_cypher_page``.
+
+        Examples:
+            ```python
+            q = (
+                cdb.query()
+                .match("(p:Product)")
+                .where_eq("p.name", "CypherGraph")
+                .return_("p.name", "p.gid_")
+                .limit(10)
+            )
+            rows = cdb.execute(q)
+            ```
+        """
+        return CypherQuery()
+
+    def execute_cypher_page(
+        self,
+        cypher_query: str | ParsedCypherQuery | CypherQuery,
+        offset: int = 0,
+        limit: int = 100,
+        want_total: bool = True,
+        raw_data: bool = False,
+        params: dict | None = None,
+        **kwargs,
+    ):
+        """Execute a windowed page query, accepting a ``CypherQuery`` builder.
+
+        Coerces a fluent ``CypherQuery`` to a parameterised string before
+        delegating to the mixin implementation, which only handles
+        ``str | ParsedCypherQuery``. All other arguments are forwarded unchanged.
+        """
+        cypher_query, params = _resolve_cypher_input(cypher_query, params)
+        return super().execute_cypher_page(
+            cypher_query,
+            offset=offset,
+            limit=limit,
+            want_total=want_total,
+            raw_data=raw_data,
+            params=params,
+            **kwargs,
+        )
+
     def parse(self, cypher_cmd: str) -> ParsedCypherQuery:
         """Parse a Cypher command into an internal query representation.
 
@@ -778,7 +850,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
     def execute(
         self,
-        cypher_cmd: str | ParsedCypherQuery,
+        cypher_cmd: str | ParsedCypherQuery | CypherQuery,
         unnest_result: str | bool = None,
         fetch_one: bool = False,
         raw_data: bool = False,
@@ -862,7 +934,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
     def execute_with_stats(
         self,
-        cypher_cmd: str | ParsedCypherQuery,
+        cypher_cmd: str | ParsedCypherQuery | CypherQuery,
         unnest_result: str | bool = None,
         fetch_one: bool = False,
         raw_data: bool = False,
@@ -908,6 +980,8 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         assert self._backend
 
         logger.debug(f"Execute cypher with stats {unnest_result=}, {fetch_one=}: \n{cypher_cmd}")
+
+        cypher_cmd, params = _resolve_cypher_input(cypher_cmd, params)
 
         # Use pre-parsed query if provided, otherwise parse the string
         if isinstance(cypher_cmd, ParsedCypherQuery):
@@ -1160,11 +1234,13 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
 
     def _parse_and_execute(
         self,
-        cypher_cmd: str | ParsedCypherQuery,
+        cypher_cmd: str | ParsedCypherQuery | CypherQuery,
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
     ) -> TabularResult | None:
+        cypher_cmd, params = _resolve_cypher_input(cypher_cmd, params)
+
         if isinstance(cypher_cmd, str):
             if not (parsed_query := self._parse_cypher(cypher_cmd)):
                 return None

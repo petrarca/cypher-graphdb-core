@@ -37,6 +37,15 @@ class LabelNotFoundError(Exception):
     """
 
 
+class CypherQueryError(Exception):
+    """Raised when a fluent ``CypherQuery`` is built or used incorrectly.
+
+    Covers builder-time errors such as building a query with no ``MATCH``
+    clause, or supplying values that cannot be bound. This is distinct from
+    ``QueryExecutionError`` which wraps backend execution failures.
+    """
+
+
 class QueryExecutionError(Exception):
     """Raised when a query fails to execute against the backend.
 
