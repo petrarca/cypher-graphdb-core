@@ -71,7 +71,7 @@ from .batch import BatchMixin
 from .connection import ConnectionMixin
 from .criteria import MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
 from .indexing import IndexingMixin
-from .pagination_mixin import PaginationMixin
+from .pagination_mixin import DEFAULT_MAX_MATERIALIZED_ROWS, PaginationMixin
 from .result import QueryResult
 from .schema import SchemaMixin
 from .search import SearchMixin
@@ -99,7 +99,7 @@ def _resolve_cypher_input(
         if overlap:
             logger.warning("Caller params override builder params: {}", sorted(overlap))
         builder_params = {**builder_params, **params}
-    return cypher, builder_params or None
+    return cypher, builder_params if builder_params else None
 
 
 class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin, PaginationMixin):
@@ -786,7 +786,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         want_total: bool = True,
         raw_data: bool = False,
         params: dict | None = None,
-        **kwargs,
+        max_rows: int = DEFAULT_MAX_MATERIALIZED_ROWS,
     ):
         """Execute a windowed page query, accepting a ``CypherQuery`` builder.
 
@@ -802,7 +802,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             want_total=want_total,
             raw_data=raw_data,
             params=params,
-            **kwargs,
+            max_rows=max_rows,
         )
 
     def parse(self, cypher_cmd: str) -> ParsedCypherQuery:

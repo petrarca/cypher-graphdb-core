@@ -53,6 +53,11 @@ class PropertyRef:
 
     expr: str
 
+    # __eq__ is overridden to return a Predicate instead of bool, which Python
+    # would otherwise use to set __hash__ to None (making PropertyRef unhashable).
+    # Restore identity-based hashing so PropertyRef stays usable in sets/dicts.
+    __hash__ = object.__hash__  # type: ignore[assignment]
+
     def _compare(self, op: str, other: Any) -> Predicate:
         if isinstance(other, PropertyRef):
             return Predicate(f"{self.expr} {op} {other.expr}")
@@ -180,7 +185,7 @@ class PathPattern:
     """A multi-hop path: a head node followed by (direction, rel, node) hops."""
 
     heads: tuple[NodePattern, ...]
-    hops: tuple[tuple[str, RelPattern, NodePattern], ...] = field(default_factory=tuple)
+    hops: tuple[tuple[str, RelPattern, NodePattern], ...] = field(default=())
 
     def to(self, rel: RelPattern, other: NodePattern) -> PathPattern:
         """Extend the path with another outgoing hop."""
