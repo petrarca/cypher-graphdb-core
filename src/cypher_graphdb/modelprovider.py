@@ -412,6 +412,24 @@ class ModelProvider(collections.abc.Collection):
             return any(f.endswith(".py") and f != "__init__.py" for f in os.listdir(p))
         return False
 
+    @staticmethod
+    def _model_defined_under(info: GraphModelInfo, root: str) -> bool:
+        """Whether a model class is defined in a Python file under ``root``.
+
+        Used to scope the already-registered fallback in
+        ``generate_schemas_from_path`` to the requested path: without this, a
+        path-scoped request would leak every globally registered model (e.g. a
+        second graph domain whose models were imported as a side effect into the
+        same global provider). The defining file is resolved from the model
+        class's module; models without a resolvable file are excluded.
+        """
+        module_name = getattr(info.graph_model, "__module__", None)
+        module = sys.modules.get(module_name) if module_name else None
+        file = getattr(module, "__file__", None)
+        if not file:
+            return False
+        return os.path.abspath(file).startswith(root)
+
     def _update_source_and_collect(self, file_to_models: dict[str, list[str]]) -> list[GraphModelInfo]:
         """Update source property for loaded models and collect their info.
 
@@ -553,11 +571,17 @@ class ModelProvider(collections.abc.Collection):
         loaded_models = self.try_to_load_models(None, models_path)
 
         # If no new models were loaded, they may already be registered
-        # (e.g. from a prior load or import side-effect). Fall back to
-        # all source="model" models only if the path contains loadable
-        # Python files (not an empty directory or non-Python files).
+        # (e.g. from a prior load or import side-effect). Fall back to the
+        # already-registered models -- but ONLY those actually defined under
+        # ``models_path``. Returning every ``source="model"`` model here would
+        # leak unrelated domains' models that happen to share this global
+        # provider (the root cause of cross-graph schema pollution). Scope by
+        # the model class's defining file.
         if not loaded_models and self._path_has_python_models(models_path):
-            loaded_models = [info for info in self._models.values() if info.source == "model"]
+            root = os.path.abspath(models_path)
+            loaded_models = [
+                info for info in self._models.values() if info.source == "model" and self._model_defined_under(info, root)
+            ]
 
         if not loaded_models:
             return {} if combine else []
