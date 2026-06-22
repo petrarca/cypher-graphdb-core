@@ -568,7 +568,14 @@ class ModelProvider(collections.abc.Collection):
         """
         from .utils.schema_utils import combine_schemas, extract_schemas_from_model_infos
 
-        loaded_models = self.try_to_load_models(None, models_path)
+        # Activate ``self`` while loading so the imported module's
+        # ``@node``/``@edge`` decorators register into THIS provider (they
+        # resolve their target via ``get_active_provider()``). Without this, a
+        # non-global provider would import the file but the classes would land
+        # in whatever provider is globally active, leaving ``self`` empty. This
+        # makes generation honor the same active provider as registration.
+        with self.activate():
+            loaded_models = self.try_to_load_models(None, models_path)
 
         # If no new models were loaded, they may already be registered
         # (e.g. from a prior load or import side-effect). Fall back to the

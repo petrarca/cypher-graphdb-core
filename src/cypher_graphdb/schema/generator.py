@@ -2,12 +2,15 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from ..utils import combine_schemas
+
+if TYPE_CHECKING:
+    from ..modelprovider import ModelProvider
 
 
 class GenerateResult(BaseModel):
@@ -40,6 +43,29 @@ class GenerateResult(BaseModel):
 class SchemaGenerator:
     """Generate JSON schema files from Python graph models."""
 
+    def __init__(self, provider: ModelProvider | None = None) -> None:
+        """Create a schema generator.
+
+        Args:
+            provider: Model provider to generate schemas from. If ``None``
+                (default), the currently active provider is used at generation
+                time -- the one set via ``ModelProvider.activate()`` /
+                ``use_model_provider()`` if any, otherwise the global singleton.
+                This mirrors how ``@node``/``@edge`` decorators resolve their
+                provider, so registration and generation honor the same active
+                provider. Pass an explicit provider for fully isolated,
+                state-independent generation.
+        """
+        self._provider = provider
+
+    def _resolve_provider(self) -> ModelProvider:
+        """Return the explicit provider, or the currently active one."""
+        if self._provider is not None:
+            return self._provider
+        from ..modelprovider import get_active_provider
+
+        return get_active_provider()
+
     def _load_schemas(self, models_path: str | Path) -> list[dict[str, Any]]:
         """Load schemas from Python models.
 
@@ -49,9 +75,7 @@ class SchemaGenerator:
         Returns:
             List of individual schema dicts
         """
-        from ..modelprovider import model_provider
-
-        return model_provider.generate_schemas_from_path(str(models_path), combine=False)
+        return self._resolve_provider().generate_schemas_from_path(str(models_path), combine=False)
 
     def generate_schemas(
         self,
