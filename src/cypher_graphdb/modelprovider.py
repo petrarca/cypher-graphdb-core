@@ -422,13 +422,22 @@ class ModelProvider(collections.abc.Collection):
         second graph domain whose models were imported as a side effect into the
         same global provider). The defining file is resolved from the model
         class's module; models without a resolvable file are excluded.
+
+        ``root`` must be an absolute path (file or directory). For a directory,
+        the prefix check appends ``os.sep`` to avoid a false positive where e.g.
+        ``/foo/bar`` would incorrectly match ``/foo/bar_extra``.
         """
         module_name = getattr(info.graph_model, "__module__", None)
         module = sys.modules.get(module_name) if module_name else None
         file = getattr(module, "__file__", None)
         if not file:
             return False
-        return os.path.abspath(file).startswith(root)
+        abs_file = os.path.abspath(file)
+        if os.path.isfile(root):
+            return abs_file == root
+        # directory: require the file to sit under root/ (not merely share a prefix)
+        prefix = root if root.endswith(os.sep) else root + os.sep
+        return abs_file.startswith(prefix)
 
     def _update_source_and_collect(self, file_to_models: dict[str, list[str]]) -> list[GraphModelInfo]:
         """Update source property for loaded models and collect their info.

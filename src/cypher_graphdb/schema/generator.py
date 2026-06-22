@@ -151,18 +151,17 @@ class SchemaGenerator:
             if verbose:
                 logger.info(f"Collected schema: {schema_label} ({schema_type})")
 
-        if all_schemas:
-            try:
-                file_path = self._write_combined_schema_file(
-                    schemas=all_schemas,
-                    output_path=output_dir,
-                    overwrite=overwrite,
-                )
-                logger.info(f"Written combined schema file: {file_path}")
-            except (FileExistsError, OSError) as e:
-                error_msg = f"Failed to write combined schema file: {e}"
-                logger.error(error_msg)
-                result.add_error(error_msg)
+        try:
+            file_path = self._write_combined_schema_file(
+                schemas=all_schemas,
+                output_path=output_dir,
+                overwrite=overwrite,
+            )
+            logger.info(f"Written combined schema file: {file_path}")
+        except (FileExistsError, OSError) as e:
+            error_msg = f"Failed to write combined schema file: {e}"
+            logger.error(error_msg)
+            result.add_error(error_msg)
 
         return result
 
