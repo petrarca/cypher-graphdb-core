@@ -1,8 +1,8 @@
 """Shared fixtures and utilities for integration tests."""
 
 import pytest
+from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
-from testcontainers.postgres import PostgresContainer
 
 from cypher_graphdb import CypherGraphDB
 

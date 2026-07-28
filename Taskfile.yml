@@ -12,9 +12,18 @@ tasks:
     desc: "Install the package in editable mode"
     cmds:
       - uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
-      - uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
+      - uv pip install --no-build-isolation -e ".[dev,build,docs]"
     deps:
       - setup
+
+  upgrade:
+    desc: "Upgrade all deps to the latest allowed versions and reinstall. Commits uv.lock."
+    cmds:
+      # antlr4-python3-runtime stays pinned (==4.11.1 in pyproject): the generated
+      # parser in src/cypher_graphdb/cypher/ must match the runtime version.
+      - uv lock --upgrade --no-sources
+      - uv pip install --upgrade setuptools psycopg "antlr4-python3-runtime==4.11.1"
+      - uv pip install --upgrade --no-build-isolation -e ".[dev,build,docs]"
 
   clean:
     desc: "Clean the build files"

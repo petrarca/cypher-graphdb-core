@@ -158,9 +158,11 @@ Provides a test-friendly backend implementation:
 # Using the mock backend
 from .mock_backend import build_db
 
+
 def test_graph_operations():
     db = build_db()
     # Test operations...
+
 
 # Temporary file testing
 def test_file_export(tmp_path):
