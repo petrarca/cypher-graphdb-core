@@ -2,15 +2,12 @@
 
 > Design document | Status: implemented
 
-This document describes how `cypher-graphdb` keeps the graph models of
-different graphs separated within a single process, and the technique a
-consumer uses to generate or register a schema for exactly one graph without
-picking up other graphs' types.
+This document describes how `cypher-graphdb` keeps the graph models of different
+graphs separated within a single process.
 
 It complements [model-provider-label-collision.md](model-provider-label-collision.md),
 which covers the related label-uniqueness concern. Here the focus is the
-*provider* as the unit of isolation and how registration and schema generation
-both resolve which provider they act on.
+*provider* as the unit of isolation.
 
 ## The model: a `ModelProvider` is the unit of isolation
 
@@ -18,130 +15,90 @@ A `ModelProvider` is a registry of typed graph-model classes keyed by label. It
 is the boundary across which models do **not** leak: two providers can each hold
 their own `Product` (or any disjoint set of types) with no interaction.
 
-There are two kinds of provider in play:
-
-- **The global provider** -- a module-level singleton (`model_provider`). It
-  exists for single-graph scripts and tools that never adopt the pool pattern.
-- **Per-graph providers** -- one `ModelProvider` per named graph/pool. This is
-  the unit a multi-graph application should use: each graph parses its results,
-  generates its schema, and resolves its relations against its **own** provider.
-
-The architectural rule is simple: *in multi-graph usage, the global provider is
-irrelevant; every graph acts on its own provider.* The rest of this document is
-about how the API makes "act on a specific provider" reliable, given that
-`@node`/`@edge` are import-time side effects.
-
-## The core mechanism: registration resolves the *active* provider
-
-`@node`/`@edge` register a class into a provider as a side effect of importing
-the module that defines it. The provider they register into is **not** hardcoded
-to the global singleton -- it is resolved at decoration time via
-`get_active_provider()`:
+**There is no global provider.** A provider is an ordinary value that a module
+creates and models register on explicitly:
 
 ```python
-def get_active_provider() -> ModelProvider:
-    # the provider on top of the thread-local activation stack,
-    # else the global singleton
-    ...
+from cypher_graphdb import GraphNode, ModelProvider
+
+mp = ModelProvider()
+
+@mp.node()
+class Product(GraphNode):
+    key: str
 ```
 
-A provider becomes "active" for the current thread by entering its
-`activate()` context manager (a thread-local stack, so concurrent threads each
-have their own active provider):
+Isolation is therefore *structural*, not something a caller has to arrange:
+importing a model module has no process-wide side effect, so nothing can leak
+between graphs and no cleanup, redirection, or copying step is required.
+
+## Why explicit registration rather than an ambient default
+
+Registration happens as a side effect of importing a module. If the target
+registry were ambient -- a global singleton, or a thread-local "currently
+active" provider -- then *when* a module is first imported would determine
+*where* its models land. That coupling is the root of the problems this design
+removes:
+
+- Two graphs defining the same label collide in the shared registry.
+- A provider can only capture a module's models if it is active **before** the
+  first import; Python's import cache means a second attempt silently registers
+  nothing.
+- Consumers must defend against eager imports (lazy `__getattr__` in package
+  `__init__`, careful import ordering), or repair the damage afterwards by
+  copying models out of the global registry into a dedicated one.
+
+Naming the provider at the definition site makes the binding static: a model
+belongs to the provider it was declared on, regardless of who imports it, when,
+or from how many threads.
+
+## Loading models from a path: provider discovery
+
+Loading models from a file, package, or directory (`cgdb-cli --model-path`,
+`SchemaGenerator`, `ModelProvider.generate_schemas_from_path`) cannot rely on
+decorators firing, because the module may already be imported. Instead, loading
+**discovers** the providers declared in the loaded modules and adopts their
+models:
 
 ```python
 provider = ModelProvider()
-with provider.activate():
-    import my.graph_models      # @node/@edge here register into `provider`
-# stack popped; the global singleton is active again
+provider.try_to_load_models(None, "my/graph_models")
 ```
 
-This is the primitive that makes registration target a specific provider. The
-two higher-level techniques below build on it.
+`ModelProvider.discover_providers(module)` reads module-level `ModelProvider`
+values back off the imported module. This has three consequences worth naming:
 
-## Technique 1 -- register from an already-imported module
+- **Import-order independent.** An already-imported module still yields its
+  provider, so repeat loads are idempotent rather than silently empty.
+- **Multiple providers per module are supported.** A module may declare several
+  providers (e.g. `taxonomy` and `domain`); all are discovered.
+- **Packages are walked recursively.** A package `__init__.py` doing
+  `from .a import *` / `from .b import *` leaves only the *last* `mp` visible at
+  top level, so submodules are scanned too and providers de-duplicated by
+  identity.
 
-When the model module is *already* a Python object (already imported, or you
-hold a reference to it), the most direct and import-order-independent way to
-populate a provider is `register_from_module`:
-
-```python
-import my.graph_models as models
-
-provider = ModelProvider()
-provider.register_from_module(models)   # copies every @node/@edge class into `provider`
-```
-
-`register_from_module` scans the module for decorated classes (identified by the
-`graph_info_` attribute set at decoration time) and registers each into *this*
-provider directly. Because it reads classes that already exist, it does **not**
-depend on import timing or on what is globally active: even if the module was
-first imported into a different provider, its classes are copied here correctly.
-
-This is the recommended technique whenever the caller already has the module
-object -- it is the most robust path and the one to reach for by default.
-
-## Technique 2 -- generate a schema scoped to one provider
-
-Schema generation from a path (`SchemaGenerator` /
-`ModelProvider.generate_schemas_from_path`) honors the same active-provider
-rule as the decorators, so registration and generation are symmetric.
-
-`SchemaGenerator` resolves its provider the same way the decorators do:
-
-```python
-SchemaGenerator()                  # uses the active provider (or global if none active)
-SchemaGenerator(provider=my_prov)  # uses an explicit, isolated provider
-```
-
-Internally, `generate_schemas_from_path` **activates `self`** while it imports
-the model file, so the freshly imported module's `@node`/`@edge` decorators
-register into that same provider rather than into whatever happened to be active
-before. The consequence:
-
-```python
-prov = ModelProvider()
-schema = SchemaGenerator(provider=prov).generate_schemas("my/models.py", combine=True)
-# `schema` contains exactly the types defined under my/models.py,
-# and the global provider is NOT polluted by the import.
-```
-
-Passing an explicit provider therefore gives a clean, isolated schema **and**
-keeps the global provider untouched -- the two write-side operations
-(registration and generation) now obey one rule: *the provider you act on is the
-explicit one if given, else the active one, else the global one.*
-
-### When generation falls back to already-registered models
-
-If the path's module was already imported elsewhere (Python caches imports, so
-the decorators do not fire again), `generate_schemas_from_path` falls back to
-already-registered models -- but only those whose **defining file lives under
-the requested path**. It never returns every `source="model"` entry in the
-provider. This scoping ensures a path-based request cannot pull in unrelated
-graphs' types that happen to share the same provider.
-
-For this already-imported case, prefer Technique 1 (`register_from_module`),
-which is unaffected by the import cache.
+A same-named package cached from a different directory is dropped from
+`sys.modules` before import, so the requested path is the one actually loaded.
 
 ## Result parsing uses the connection's provider
 
 On the read side, a `CypherGraphDB` connection carries the provider it was
-created with (`cdb.model_provider`). When a pool is created with a per-graph
-provider, query results are hydrated into that graph's own types. This is a
-separate channel from registration/generation: a pool's provider governs how
-*results are typed*, while `activate()` / explicit-provider governs where
-*models register and schemas generate*. A complete per-graph setup wires both to
-the same provider instance.
+created with (`cdb.model_provider`), and query results are hydrated into that
+provider's types. A connection created without one gets a fresh empty provider
+-- results come back as generic `GraphNode` / `GraphEdge` rather than reaching
+into shared state.
+
+The provider can also be rebound after construction (`cdb.model_provider = mp`),
+which is how a pool hands a graph's models to the connections it lends out.
 
 ## Summary
 
-| Concern | Resolves the provider via | Recommended API |
-|---|---|---|
-| `@node`/`@edge` registration | active provider (`get_active_provider`) | `use_model_provider` / `activate`, or `register_from_module` |
-| Schema generation from a path | explicit `provider=`, else active | `SchemaGenerator(provider=...)` / `save_from_path(provider=...)` |
-| Result hydration | the connection's `model_provider` | per-pool provider set at pool creation |
+| Concern | Provider used |
+|---|---|
+| `@mp.node` / `@mp.edge` registration | the provider named at the definition site |
+| Loading / schema generation from a path | the provider you call it on; models are discovered and adopted into it |
+| Result hydration | the connection's `model_provider` |
 
-The single guiding rule: an isolated graph acts on an **explicit, dedicated
-`ModelProvider`** -- populated by `register_from_module` (have the module) or
-generated via `SchemaGenerator(provider=...)` (have a path) -- so its model is
-independent of import order and of whatever else is registered in the process.
+The single guiding rule: **a graph's models live on a provider that is named
+explicitly**, so the model set is a property of the code that declares it rather
+than of import order or process-wide state.

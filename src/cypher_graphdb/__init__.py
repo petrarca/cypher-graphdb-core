@@ -26,10 +26,10 @@ from .cyphergraphdb.pagination import Page
 from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
-from .decorators import edge, extend_relation, extend_relations, node, relation
 from .exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
-from .modelinfo import GraphEdgeInfo, GraphNodeInfo
-from .modelprovider import ModelProvider, model_provider, validate_node_properties
+from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
+from .modelprovider import ModelProvider, validate_node_properties
+from .modelrelations import RelationSpec
 from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
 from .settings import Settings, get_settings
 from .statistics import GraphStatistics, IndexInfo, IndexType
@@ -43,10 +43,11 @@ __all__ = [
     "TabularResult",
     "GraphJSONEncoder",
     "ModelProvider",
-    "model_provider",
+    "RelationSpec",
     "validate_node_properties",
     "GraphNodeInfo",
     "GraphEdgeInfo",
+    "GraphRelationInfo",
     "GraphStatistics",
     "IndexInfo",
     "IndexType",
@@ -70,11 +71,6 @@ __all__ = [
     "backend",
     "BackendCapability",
     "backend_provider",
-    "node",
-    "edge",
-    "relation",
-    "extend_relations",
-    "extend_relation",
     "Cardinality",
     "graphops",
     "backends",
@@ -83,8 +79,3 @@ __all__ = [
 ]
 
 # logger.disable(__name__)
-
-# Apply decorators to base classes - not needed anymore
-#
-# node("GraphNode")(GraphNode)
-# edge("GraphEdge")(GraphEdge)

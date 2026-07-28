@@ -73,8 +73,9 @@ class CypherBackend(abc.ABC):
         # None means no timeout (backend default). Set via connect(query_timeout_s=N).
         self._query_timeout_s: int | None = kwargs.get("query_timeout_s")
 
-        # use global model provider if not injected in constructor
-        self._model_provider = kwargs.get("model_provider", modelprovider.model_provider)
+        # An empty, backend-local provider unless one is injected. CypherGraphDB
+        # overwrites this with its own provider right after construction.
+        self._model_provider = kwargs.get("model_provider") or modelprovider.ModelProvider()
 
         self._connection = None
 

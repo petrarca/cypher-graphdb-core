@@ -343,32 +343,41 @@ cypher-graphdb schema generate -m ./models.py -o ./schemas/ --yes
 
 ## 2. Typed ORM-Like Access Layer
 
-Define typed models with decorators for better type safety and metadata:
+Define typed models against an explicit `ModelProvider` for better type safety
+and metadata. The provider is the registry your models belong to -- create one
+per graph and register models on it:
 
 ```python
-from cypher_graphdb import GraphNode, GraphEdge, node, edge, relation
+from cypher_graphdb import GraphNode, GraphEdge, ModelProvider
 
-@node(label="Product")
-@relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
+mp = ModelProvider()
+
+@mp.node(label="Product")
+@mp.relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
 class Product(GraphNode):
     name: str
     multi_tenancy: bool | None = None
 
-@node(label="Technology")
+@mp.node(label="Technology")
 class Technology(GraphNode):
     name: str
 
-@edge(label="USES_TECHNOLOGY")
+@mp.edge(label="USES_TECHNOLOGY")
 class UsesTechnology(GraphEdge):
     version: str | None = None
 ```
 
+There is no global registry: importing this module has no process-wide side
+effect, so two graphs may define the same label without colliding.
+
 ### Using Typed Models
+
+Pass the provider to the connection so query results hydrate into your classes:
 
 ```python
 from cypher_graphdb import CypherGraphDB
 
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
+db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687", model_provider=mp)
 
 # Create typed nodes
 demo_product = Product(name="CypherGraph Demo", multi_tenancy=True)

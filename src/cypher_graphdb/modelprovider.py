@@ -1,48 +1,49 @@
 """modelprovider module: Registry and factory for typed graph model classes.
 
-Provides ModelProvider for registering, loading, and creating
-GraphNode/GraphEdge instances from label-based class mappings.
+``ModelProvider`` is the single registration surface for typed graph models.
+Models declare their provider explicitly::
+
+    from cypher_graphdb import GraphNode, ModelProvider
+
+    mp = ModelProvider()
+
+    @mp.node()
+    class Product(GraphNode):
+        key: str
+
+There is no global provider and no implicit registration: importing a model
+module has no process-wide side effect, so two graphs can define the same label
+without colliding. A provider is a plain value -- create it, pass it to a
+connection or pool, and it travels with them.
+
+Loading models from a path (file, package, or directory) works by *discovering*
+the ``ModelProvider`` instances declared in the loaded modules and adopting
+their models, so a module may declare several providers and load order never
+matters.
 """
 
 import collections.abc
+import importlib
 import importlib.util
 import os
+import pkgutil
 import re
 import sys
 import threading
 import traceback
-from collections.abc import Iterator
-from contextlib import contextmanager
-from typing import Any
+from collections.abc import Callable
+from types import ModuleType
+from typing import Any, TypeVar
 
 from loguru import logger
 
-from . import config, utils
+from . import config, modelrelations, utils
+from .cardinality import Cardinality
+from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from .models import GraphEdge, GraphNode, GraphObject, GraphObjectType
 
-# Thread-local stack of active providers. When a provider is activated
-# via ``provider.activate()``, decorators register into it instead of
-# the global ``model_provider`` singleton.
-_active_provider: threading.local = threading.local()
-
-
-def get_active_provider() -> ModelProvider:
-    """Return the currently active ModelProvider.
-
-    If a provider has been activated via ``provider.activate()``,
-    returns that provider. Otherwise returns the global
-    ``model_provider`` singleton.
-
-    Used by ``@node`` and ``@edge`` decorators to resolve the default
-    provider when no explicit ``provider=`` argument is given.
-    """
-    stack = getattr(_active_provider, "stack", None)
-    if stack:
-        provider = stack[-1]
-        logger.trace("Active provider: {} (activated, depth={})", id(provider), len(stack))
-        return provider
-    return model_provider
+T = TypeVar("T")
 
 
 class ModelProvider(collections.abc.Collection):
@@ -61,39 +62,6 @@ class ModelProvider(collections.abc.Collection):
 
         # passed to callbacks
         self._ctx = ctx
-
-    @contextmanager
-    def activate(self) -> Iterator[ModelProvider]:
-        """Temporarily make this provider the active registration target.
-
-        While active, ``@node()`` and ``@edge()`` decorators (without
-        an explicit ``provider=`` argument) will register models into
-        this provider instead of the global singleton.
-
-        Thread-safe: uses a thread-local stack, so concurrent threads
-        can each have their own active provider.
-
-        Usage::
-
-            pool_provider = ModelProvider()
-            with pool_provider.activate():
-                import my_graph_models  # @node() registers here
-            # global provider is restored
-
-        Yields:
-            This ModelProvider instance.
-        """
-        stack = getattr(_active_provider, "stack", None)
-        if stack is None:
-            _active_provider.stack = []
-            stack = _active_provider.stack
-        stack.append(self)
-        logger.debug("ModelProvider {} activated (depth={})", id(self), len(stack))
-        try:
-            yield self
-        finally:
-            stack.pop()
-            logger.debug("ModelProvider {} deactivated (depth={})", id(self), len(stack))
 
     @classmethod
     def sort_model_names(cls, model_names: set[str] | list[str]) -> list[str]:
@@ -124,47 +92,305 @@ class ModelProvider(collections.abc.Collection):
             # fires for every @node/@edge class -- trace, not debug.
             logger.trace("Registered {} '{}' in provider {}", modelinfo.type_, modelinfo.label_, id(self))
 
-    def register_from_module(self, module: object) -> int:
-        """Register all ``@node``/``@edge`` decorated classes from a module.
+    def adopt(self, other: ModelProvider, *, overwrite: bool = True) -> list[GraphModelInfo]:
+        """Copy every model registered in ``other`` into this provider.
 
-        Scans ``module`` for classes with a ``graph_info_`` attribute (set
-        by the ``@node``/``@edge`` decorators) and registers each into this
-        provider.
-
-        This is the correct way to populate an isolated provider with real
-        Python classes after module-level imports have already fired the
-        decorators into the global provider. Because ``graph_info_.graph_model``
-        always references the original decorated class, two plugins with the
-        same label (e.g. both define ``Product``) are correctly isolated when
-        each registers from its own module into its own provider. The global
-        provider collision is irrelevant.
-
-        Usage::
-
-            import plugins.tech_assessment.graph_models as ta_models
-
-            provider = ModelProvider()
-            provider.register_from_module(ta_models)
+        Used to merge an independently declared provider (e.g. one discovered in
+        a loaded module, or a shared set of infrastructure types) into this one.
+        The model *classes* are shared, not copied -- only the label -> info
+        mapping is extended.
 
         Args:
-            module: Python module (or any namespace) containing
-                ``@node``/``@edge`` decorated classes.
+            other: Provider whose models should be adopted.
+            overwrite: If False, labels already present here are left untouched.
 
         Returns:
-            Number of model classes registered.
+            The model infos that were actually adopted.
         """
-        count = 0
-        for attr_name in dir(module):
-            obj = getattr(module, attr_name, None)
-            if isinstance(obj, type) and hasattr(obj, "graph_info_"):
-                self.register(obj.graph_info_)
-                count += 1
-        return count
+        adopted: list[GraphModelInfo] = []
+        with self._lock:
+            for info in other.values():
+                if not overwrite and info.label_ in self._models:
+                    continue
+                self.register(info)
+                adopted.append(info)
+        return adopted
 
     def remove(self, modelinfo: GraphModelInfo) -> bool:
         """Remove a registered model and return True if it existed."""
         with self._lock:
             return bool(self._models.pop(modelinfo.label_, None))
+
+    # -- registration decorators ---------------------------------------------
+
+    def node(
+        self,
+        label: str | None = None,
+        display: DisplayConfig | None = None,
+        inherit_relations: bool = True,
+        merge_keys: list[str] | None = None,
+    ) -> Callable[[type[T]], type[T]]:
+        """Register a ``GraphNode`` subclass with this provider (decorator).
+
+        Usage::
+
+            mp = ModelProvider()
+
+            @mp.node()
+            class Product(GraphNode):
+                key: str
+
+        Args:
+            label: Graph label for this node type (defaults to the class name).
+            display: Display configuration for UI rendering.
+            inherit_relations: Whether to inherit relations from parent classes.
+            merge_keys: Property names used as business keys for MERGE. When set,
+                ``create_or_merge`` identifies existing nodes by these properties
+                instead of ``gid_``. ``[]`` means MERGE on label alone
+                (singleton); ``None`` keeps the standard ``gid_`` resolution.
+
+        Returns:
+            A class decorator that registers the node class.
+        """
+
+        def decorator(cls: type[T]) -> type[T]:
+            if not issubclass(cls, GraphNode):
+                raise RuntimeError(f"node() can only be applied to GraphNode models. {cls.__name__} is not.")
+
+            label_ = cls.__name__ if label is None else label
+            inherited = modelrelations.collect_inherited_relations(cls) if inherit_relations else []
+
+            # ``relation()`` may have run first (decorators apply bottom-up) and
+            # already created the info; reuse it so its relations survive.
+            node_info = getattr(cls, "graph_info_", None)
+            if node_info is not None:
+                # Re-registering under a possibly different label: drop the old key.
+                self.remove(node_info)
+                node_info.label_ = label_
+                node_info.display = display
+                node_info.source = config.MODEL_SOURCE_MODEL
+                node_info.merge_keys = merge_keys
+                node_info.relations = inherited + node_info.relations
+            else:
+                node_info = GraphNodeInfo(
+                    label_=label_,
+                    graph_model=cls,
+                    display=display,
+                    source=config.MODEL_SOURCE_MODEL,
+                    relations=inherited,
+                    merge_keys=merge_keys,
+                )
+                cls.graph_info_ = node_info
+
+            self.register(node_info)
+            return cls
+
+        return decorator
+
+    def edge(
+        self,
+        label: str | None = None,
+        display: DisplayConfig | None = None,
+    ) -> Callable[[type[T]], type[T]]:
+        """Register a ``GraphEdge`` subclass with this provider (decorator).
+
+        Usage::
+
+            @mp.edge(label="USES_TECHNOLOGY")
+            class UsesTechnology(GraphEdge):
+                version: str | None = None
+
+        Args:
+            label: Graph label for this edge type (defaults to the class name).
+            display: Display configuration for UI rendering.
+
+        Returns:
+            A class decorator that registers the edge class.
+        """
+
+        def decorator(cls: type[T]) -> type[T]:
+            if not issubclass(cls, GraphEdge):
+                raise RuntimeError(f"edge() can only be applied to GraphEdge models. {cls.__name__} is not.")
+
+            edge_info = GraphEdgeInfo(
+                label_=cls.__name__ if label is None else label,
+                graph_model=cls,
+                display=display,
+                source=config.MODEL_SOURCE_MODEL,
+            )
+            cls.graph_info_ = edge_info
+
+            self.register(edge_info)
+            return cls
+
+        return decorator
+
+    def relation(
+        self,
+        rel_type: type[GraphEdge] | str,
+        to_type: type[GraphNode] | str,
+        cardinality: Cardinality = Cardinality.ONE_TO_MANY,
+        form_field: bool = False,
+        description: str | None = None,
+    ) -> Callable[[type[T]], type[T]]:
+        """Declare an outbound relationship on a node type (decorator).
+
+        Usage::
+
+            @mp.node()
+            @mp.relation(rel_type="CONTAINS", to_type="Module")
+            class Source(GraphNode): ...
+
+        Args:
+            rel_type: Edge class or label string for the relationship type.
+            to_type: Target node class or label string.
+            cardinality: Relationship cardinality.
+            form_field: Whether the relation appears as a form field.
+            description: Optional description of the relationship.
+
+        Returns:
+            A class decorator that records the relation on the node's metadata.
+        """
+
+        def decorator(cls: type[T]) -> type[T]:
+            if not issubclass(cls, GraphNode):
+                raise RuntimeError(f"relation() can only be applied to GraphNode models. {cls.__name__} is not.")
+
+            if getattr(cls, "graph_info_", None) is None:
+                self.node()(cls)
+
+            rel_info = GraphRelationInfo(
+                rel_type_name=modelrelations.resolve_label(rel_type, "rel_type"),
+                to_type_name=modelrelations.resolve_label(to_type, "to_type"),
+                cardinality=cardinality,
+                form_field=form_field,
+                description=description,
+            )
+
+            if inherited := modelrelations.collect_inherited_relations(cls):
+                conflicts = modelrelations.detect_relation_conflicts(inherited, [rel_info], cls.__name__)
+                modelrelations.warn_relation_conflicts(conflicts, cls.__name__, stacklevel=4)
+
+            cls.graph_info_.relations.append(rel_info)
+            return cls
+
+        return decorator
+
+    def extend_relation(
+        self,
+        target: type[GraphNode] | str,
+        rel_type: type[GraphEdge] | str,
+        to_type: type[GraphNode] | str | None = None,
+        cardinality: Cardinality = Cardinality.ONE_TO_MANY,
+        form_field: bool = False,
+        description: str | None = None,
+    ) -> Callable[[type[T]], type[T]] | None:
+        """Add a relation to an already-registered node type.
+
+        Two calling styles:
+
+        1. Function -- ``mp.extend_relation(Product, "HAS_STACK", TechStack)``
+        2. Decorator -- ``@mp.extend_relation(Product, "HAS_STACK")`` on the
+           target class, whose own class becomes ``to_type``.
+
+        Args:
+            target: The node type that gains the outbound relation.
+            rel_type: Edge class or label string.
+            to_type: Target node class/label. Omit when used as a decorator.
+            cardinality: Relationship cardinality.
+            form_field: Whether the relation appears as a form field.
+            description: Optional description.
+
+        Returns:
+            ``None`` for function use, or the decorator for decorator use.
+        """
+        if to_type is not None:
+            self._extend_relation(target, rel_type, to_type, cardinality, form_field, description)
+            return None
+
+        def decorator(cls: type[T]) -> type[T]:
+            if getattr(cls, "graph_info_", None) is None:
+                self.node()(cls)
+            self._extend_relation(target, rel_type, cls, cardinality, form_field, description)
+            return cls
+
+        return decorator
+
+    def extend_relations(
+        self,
+        target: type[GraphNode] | str,
+        relations: list[GraphRelationInfo | modelrelations.RelationSpec],
+    ) -> None:
+        """Add multiple relations to an already-registered node type.
+
+        Enables modular schema composition -- an extension adds relations to a
+        base model without redefining the class::
+
+            mp.extend_relations(Product, [
+                {"rel_type": HasTechStack, "to_type": TechnologyStack},
+                {"rel_type": "OWNED_BY", "to_type": Company,
+                 "cardinality": Cardinality.ONE_TO_ONE},
+            ])
+
+        Args:
+            target: Node class or label whose relations should be extended.
+            relations: ``GraphRelationInfo`` objects or ``RelationSpec`` dicts.
+
+        Raises:
+            ValueError: If ``target`` is not a registered node in this provider.
+        """
+        node_info = self._require_node_info(modelrelations.resolve_label(target, "target"))
+
+        for rel in relations:
+            if isinstance(rel, GraphRelationInfo):
+                modelrelations.add_relation_if_not_exists(
+                    node_info,
+                    rel.rel_type_name,
+                    rel.to_type_name,
+                    rel.cardinality,
+                    rel.form_field,
+                    rel.description,
+                )
+            else:
+                modelrelations.add_relation_if_not_exists(
+                    node_info,
+                    modelrelations.resolve_label(rel["rel_type"], "rel_type"),
+                    modelrelations.resolve_label(rel["to_type"], "to_type"),
+                    rel.get("cardinality", Cardinality.ONE_TO_MANY),
+                    rel.get("form_field", False),
+                    rel.get("description"),
+                )
+
+    def _extend_relation(
+        self,
+        target: type[GraphNode] | str,
+        rel_type: type[GraphEdge] | str,
+        to_type: type[GraphNode] | str,
+        cardinality: Cardinality,
+        form_field: bool,
+        description: str | None,
+    ) -> None:
+        """Resolve labels and append a single relation to a registered node."""
+        node_info = self._require_node_info(modelrelations.resolve_label(target, "target"))
+        modelrelations.add_relation_if_not_exists(
+            node_info,
+            modelrelations.resolve_label(rel_type, "rel_type"),
+            modelrelations.resolve_label(to_type, "to_type"),
+            cardinality,
+            form_field,
+            description,
+        )
+
+    def _require_node_info(self, label: str) -> GraphNodeInfo:
+        """Return the registered ``GraphNodeInfo`` for ``label``, or raise."""
+        info = self.get(label)
+        if info is None:
+            raise ValueError(f"'{label}' is not registered in this provider. Register the base model first.")
+        if not isinstance(info, GraphNodeInfo):
+            raise ValueError(f"'{label}' is not a node type (found {type(info).__name__}).")
+        return info
+
+    # -- lookup ---------------------------------------------------------------
 
     def get(self, label: str) -> GraphModelInfo:
         """Get model info by label, returning None if not found."""
@@ -260,61 +486,142 @@ class ModelProvider(collections.abc.Collection):
 
         return result
 
-    def _load_single_file(self, file_path: str, mod_name: str | None = None) -> tuple[bool, list[str]]:
-        """Load a single Python module file.
+    @staticmethod
+    def discover_providers(module: ModuleType) -> list[ModelProvider]:
+        """Find every ``ModelProvider`` declared in ``module`` and its submodules.
+
+        Model modules declare their provider as a module-level value::
+
+            mp = ModelProvider()
+
+            @mp.node()
+            class Product(GraphNode): ...
+
+        Discovery reads that value back after import. It is therefore immune to
+        Python's import cache: a module that was already imported (so its
+        decorators will not fire again) still yields its provider.
+
+        Packages are walked recursively, because a package's ``__init__.py``
+        that does ``from .a import *`` / ``from .b import *`` leaves only the
+        *last* ``mp`` visible at top level -- the submodules must be inspected to
+        find them all. Providers are de-duplicated by identity.
 
         Args:
-            file_path: Path to the Python file to load
-            mod_name: Optional module name (defaults to filename without
-                      extension)
+            module: The imported module or package to inspect.
 
         Returns:
-            Tuple of (success, list_of_newly_loaded_model_labels)
+            All distinct providers found, in discovery order.
+        """
+        found: list[ModelProvider] = []
+        seen: set[int] = set()
+        ModelProvider._discover_into(module, found, seen)
+        return found
+
+    @staticmethod
+    def _discover_into(module: ModuleType, found: list[ModelProvider], seen: set[int]) -> None:
+        """Collect providers from ``module``, recursing into a package's submodules."""
+        for value in vars(module).values():
+            if isinstance(value, ModelProvider) and id(value) not in seen:
+                seen.add(id(value))
+                found.append(value)
+
+        # Packages only: walk submodules so shadowed providers are still found.
+        if not hasattr(module, "__path__"):
+            return
+
+        for _, sub_name, _ in pkgutil.iter_modules(module.__path__):
+            try:
+                sub = importlib.import_module(f"{module.__name__}.{sub_name}")
+            except Exception as e:  # noqa: BLE001 - a broken submodule must not abort discovery
+                logger.debug("Could not import submodule {}.{}: {}", module.__name__, sub_name, e)
+                continue
+            ModelProvider._discover_into(sub, found, seen)
+
+    def _adopt_discovered(self, module: ModuleType) -> list[str]:
+        """Adopt all models from providers declared in ``module``.
+
+        Returns:
+            The labels adopted into this provider.
+        """
+        labels: list[str] = []
+        for provider in self.discover_providers(module):
+            if provider is self:
+                continue
+            labels.extend(info.label_ for info in self.adopt(provider))
+        return labels
+
+    @staticmethod
+    def _log_load_failure(context: str, error: Exception) -> None:
+        """Log why a module/package failed to load, including the root cause."""
+        logger.debug("{} could not be loaded. Reason: {}", context, error)
+        tb = traceback.extract_tb(error.__traceback__)
+        if tb:
+            root = tb[-1]
+            logger.debug("File: {}", root.filename)
+            logger.debug("Line: {}: {}", root.lineno, root.line)
+
+    def _load_single_file(self, file_path: str, mod_name: str | None = None) -> tuple[bool, list[str]]:
+        """Load a single Python module file and adopt its declared providers.
+
+        Args:
+            file_path: Path to the Python file to load.
+            mod_name: Optional module name (defaults to the filename stem).
+
+        Returns:
+            Tuple of (success, list_of_adopted_model_labels).
         """
         if not mod_name:
             mod_name = (utils.split_path(file_path))[1]
 
-        # Track models before loading
-        before = set(self._models.keys())
-
         try:
             spec = importlib.util.spec_from_file_location(mod_name, file_path)
             if spec is None:
-                logger.debug(f"Could not find module at {file_path=}")
+                logger.debug("Could not find module at file_path={}", file_path)
                 return (False, [])
 
             module = importlib.util.module_from_spec(spec)
+            # Register before exec so intra-module dataclass/pydantic lookups
+            # and any relative self-import resolve against the same object.
+            sys.modules[mod_name] = module
             spec.loader.exec_module(module)
-            logger.debug(f"Successfully loaded module from {file_path}")
+            logger.debug("Successfully loaded module from {}", file_path)
 
-            # Get newly loaded models
-            newly_loaded = list(set(self._models.keys()) - before)
-            return (True, newly_loaded)
-        # pylint: disable=W0718
-        except Exception as e:
-            logger.debug(f"Module could not be loaded. Reason {e}")
-            tb = traceback.extract_tb(e.__traceback__)
-            root_cause = tb[-1]
-            logger.debug(f"File: {root_cause.filename}")
-            logger.debug(f"Line: {root_cause.lineno}: {root_cause.line}")
+            return (True, self._adopt_discovered(module))
+        except Exception as e:  # noqa: BLE001 - surfaced to the caller as a load failure
+            self._log_load_failure(f"Module {file_path}", e)
             return (False, [])
 
-    def _load_as_package(self, dir_path: str, package_name: str) -> tuple[bool, list[str]]:
-        """Load a directory as a Python package with proper relative import support.
+    @staticmethod
+    def _package_matches(module: ModuleType, dir_path: str) -> bool:
+        """Whether an already-imported package really lives at ``dir_path``."""
+        paths = getattr(module, "__path__", None) or []
+        target = os.path.realpath(dir_path)
+        return any(os.path.realpath(p) == target for p in paths)
 
-        Note: Caller must verify __init__.py exists before calling this method.
+    @staticmethod
+    def _purge_package(package_name: str) -> None:
+        """Drop a package and all its submodules from ``sys.modules``."""
+        prefix = f"{package_name}."
+        for name in [n for n in sys.modules if n == package_name or n.startswith(prefix)]:
+            sys.modules.pop(name, None)
+
+    def _load_as_package(self, dir_path: str, package_name: str) -> tuple[bool, list[str]]:
+        """Load a directory as a Python package and adopt its declared providers.
+
+        Note: the caller must verify ``__init__.py`` exists before calling this.
+
+        Unlike a plain import, an already-imported package is *not* reloaded --
+        discovery reads the providers off the module object, so re-executing the
+        decorators is unnecessary.
 
         Args:
-            dir_path: Path to the package directory (must contain __init__.py)
-            package_name: Name to use for the package
+            dir_path: Path to the package directory (must contain __init__.py).
+            package_name: Name to use for the package.
 
         Returns:
-            Tuple of (success, list_of_newly_loaded_model_labels)
+            Tuple of (success, list_of_adopted_model_labels).
         """
-        # Track models before loading
-        before = set(self._models.keys())
-
-        # Add parent directory to sys.path so relative imports work
+        # Add the parent directory to sys.path so relative imports resolve.
         parent_dir = os.path.dirname(dir_path)
         path_added = False
         if parent_dir not in sys.path:
@@ -322,28 +629,22 @@ class ModelProvider(collections.abc.Collection):
             path_added = True
 
         try:
-            # Import the package using standard import mechanism
-            if package_name in sys.modules:
-                # Reload if already imported
-                importlib.reload(sys.modules[package_name])
-            else:
-                importlib.import_module(package_name)
+            cached = sys.modules.get(package_name)
+            if cached is not None and not self._package_matches(cached, dir_path):
+                # A different package of the same name is cached (common with
+                # temp dirs and same-named model packages). Drop it so the
+                # requested directory is the one actually imported.
+                logger.debug("Cached package {} resolves elsewhere; re-importing from {}", package_name, dir_path)
+                self._purge_package(package_name)
+                cached = None
 
-            logger.debug(f"Successfully loaded package {package_name} from {dir_path}")
-
-            # Get newly loaded models
-            newly_loaded = list(set(self._models.keys()) - before)
-            return (True, newly_loaded)
-        except Exception as e:
-            logger.debug(f"Package could not be loaded. Reason {e}")
-            tb = traceback.extract_tb(e.__traceback__)
-            if tb:
-                root_cause = tb[-1]
-                logger.debug(f"File: {root_cause.filename}")
-                logger.debug(f"Line: {root_cause.lineno}: {root_cause.line}")
+            module = cached or importlib.import_module(package_name)
+            logger.debug("Successfully loaded package {} from {}", package_name, dir_path)
+            return (True, self._adopt_discovered(module))
+        except Exception as e:  # noqa: BLE001 - surfaced to the caller as a load failure
+            self._log_load_failure(f"Package {package_name}", e)
             return (False, [])
         finally:
-            # Clean up sys.path
             if path_added and parent_dir in sys.path:
                 sys.path.remove(parent_dir)
 
@@ -402,43 +703,6 @@ class ModelProvider(collections.abc.Collection):
         logger.debug(f"Successfully loaded {loaded_count} module(s) from {path}")
         return (True, file_to_models)
 
-    @staticmethod
-    def _path_has_python_models(models_path: str) -> bool:
-        """Check if a path points to a Python file or a directory with .py files."""
-        p = os.path.abspath(models_path)
-        if os.path.isfile(p):
-            return p.endswith(".py")
-        if os.path.isdir(p):
-            return any(f.endswith(".py") and f != "__init__.py" for f in os.listdir(p))
-        return False
-
-    @staticmethod
-    def _model_defined_under(info: GraphModelInfo, root: str) -> bool:
-        """Whether a model class is defined in a Python file under ``root``.
-
-        Used to scope the already-registered fallback in
-        ``generate_schemas_from_path`` to the requested path: without this, a
-        path-scoped request would leak every globally registered model (e.g. a
-        second graph domain whose models were imported as a side effect into the
-        same global provider). The defining file is resolved from the model
-        class's module; models without a resolvable file are excluded.
-
-        ``root`` must be an absolute path (file or directory). For a directory,
-        the prefix check appends ``os.sep`` to avoid a false positive where e.g.
-        ``/foo/bar`` would incorrectly match ``/foo/bar_extra``.
-        """
-        module_name = getattr(info.graph_model, "__module__", None)
-        module = sys.modules.get(module_name) if module_name else None
-        file = getattr(module, "__file__", None)
-        if not file:
-            return False
-        abs_file = os.path.abspath(file)
-        if os.path.isfile(root):
-            return abs_file == root
-        # directory: require the file to sit under root/ (not merely share a prefix)
-        prefix = root if root.endswith(os.sep) else root + os.sep
-        return abs_file.startswith(prefix)
-
     def _update_source_and_collect(self, file_to_models: dict[str, list[str]]) -> list[GraphModelInfo]:
         """Update source property for loaded models and collect their info.
 
@@ -471,8 +735,8 @@ class ModelProvider(collections.abc.Collection):
         2. Directory: If path points to a directory, all .py files in that
            directory are loaded
 
-        Note: Models in the loaded files register with the model provider
-        specified in their decorators (defaults to global model_provider).
+        Models declare their own ``ModelProvider`` at module level; loading
+        discovers those providers and adopts their models into this one.
 
         Args:
             module_name: Dotted module name to import (used if path not given).
@@ -545,10 +809,10 @@ class ModelProvider(collections.abc.Collection):
         Loads models from the specified path (file or directory) and extracts
         their JSON schemas. Optionally combines them into a single enriched schema.
 
-        If models are already registered (e.g. from a previous load or import
-        side-effect), their schemas are still extracted. This makes the method
-        idempotent -- calling it multiple times with the same path produces
-        the same result.
+        The loaded modules' own ``ModelProvider`` instances are discovered and
+        adopted into this provider, so the result contains exactly the models
+        declared under ``models_path`` -- never models belonging to another
+        graph. Repeat calls with the same path are idempotent.
 
         Args:
             models_path: Path to Python file or directory with models
@@ -566,38 +830,18 @@ class ModelProvider(collections.abc.Collection):
 
         Examples:
             Generate individual schemas:
-            >>> schemas = model_provider.generate_schemas_from_path("./models.py")
+            >>> schemas = ModelProvider().generate_schemas_from_path("./models.py")
             >>> len(schemas)
             3
 
             Generate combined schema:
-            >>> combined = model_provider.generate_schemas_from_path("./models/", combine=True)
+            >>> combined = ModelProvider().generate_schemas_from_path("./models/", combine=True)
             >>> combined["$defs"]["Product"]["title"]
             'Product'
         """
         from .utils.schema_utils import combine_schemas, extract_schemas_from_model_infos
 
-        # Activate ``self`` while loading so the imported module's
-        # ``@node``/``@edge`` decorators register into THIS provider (they
-        # resolve their target via ``get_active_provider()``). Without this, a
-        # non-global provider would import the file but the classes would land
-        # in whatever provider is globally active, leaving ``self`` empty. This
-        # makes generation honor the same active provider as registration.
-        with self.activate():
-            loaded_models = self.try_to_load_models(None, models_path)
-
-        # If no new models were loaded, they may already be registered
-        # (e.g. from a prior load or import side-effect). Fall back to the
-        # already-registered models -- but ONLY those actually defined under
-        # ``models_path``. Returning every ``source="model"`` model here would
-        # leak unrelated domains' models that happen to share this global
-        # provider (the root cause of cross-graph schema pollution). Scope by
-        # the model class's defining file.
-        if not loaded_models and self._path_has_python_models(models_path):
-            root = os.path.abspath(models_path)
-            loaded_models = [
-                info for info in self._models.values() if info.source == "model" and self._model_defined_under(info, root)
-            ]
+        loaded_models = self.try_to_load_models(None, models_path)
 
         if not loaded_models:
             return {} if combine else []
@@ -868,7 +1112,18 @@ class ModelProvider(collections.abc.Collection):
             return loaded_models
 
     def __contains__(self, x: object) -> bool:
-        return x.label_ in self._models
+        """Membership by label, or by a model info / model class.
+
+        ``__iter__`` yields labels, so ``"Product" in provider`` is the natural
+        spelling and is what the Collection contract implies. Passing a
+        ``GraphModelInfo`` (or a registered model class) is also accepted.
+        """
+        if isinstance(x, str):
+            return x in self._models
+        label = getattr(x, "label_", None)
+        if label is None:
+            label = getattr(getattr(x, "graph_info_", None), "label_", None)
+        return label in self._models if label is not None else False
 
     def __len__(self):
         return len(self._models)
@@ -912,9 +1167,3 @@ def validate_node_properties(provider: ModelProvider, label: str, properties: di
     if model_class is None:
         return
     model_class(**properties)
-
-
-# Global default provider. Decorators use ``get_active_provider()`` to
-# resolve the registration target: the active provider if one is set
-# via ``provider.activate()``, or this global instance otherwise.
-model_provider: ModelProvider = ModelProvider()

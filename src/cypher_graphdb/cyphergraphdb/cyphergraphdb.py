@@ -209,7 +209,10 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         assert backend
 
         self._backend = backend
-        self._model_provider = model_provider if model_provider is not None else modelprovider.model_provider
+        # No provider given -> this connection is untyped: results hydrate as
+        # generic GraphNode/GraphEdge. A fresh (empty) provider is used rather
+        # than a shared global so nothing can leak between connections.
+        self._model_provider = model_provider if model_provider is not None else modelprovider.ModelProvider()
         # inject into the backend
         self._backend.model_provider = self._model_provider
 
@@ -266,6 +269,17 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             ModelProvider instance for managing graph model classes.
         """
         return self._model_provider
+
+    @model_provider.setter
+    def model_provider(self, provider: modelprovider.ModelProvider) -> None:
+        """Rebind this connection (and its backend) to another model provider.
+
+        Lets a caller attach the provider that owns a graph's models after the
+        connection was created -- e.g. a pool handing out connections, or a test
+        binding its module-level provider.
+        """
+        self._model_provider = provider
+        self._backend.model_provider = provider
 
     @staticmethod
     def get_settings() -> config.Settings:

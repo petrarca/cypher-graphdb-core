@@ -6,10 +6,12 @@ _create_edge, and _merge_edge on both Memgraph and Apache AGE backends.
 
 import pytest
 
-from cypher_graphdb import GraphEdge, GraphNode, edge, node
+from cypher_graphdb import GraphEdge, GraphNode, ModelProvider
+
+mp = ModelProvider()
 
 
-@node(label="PersonNode")
+@mp.node(label="PersonNode")
 class PersonNode(GraphNode):
     """Person node model for testing."""
 
@@ -18,7 +20,7 @@ class PersonNode(GraphNode):
     email: str | None = None
 
 
-@edge(label="RelationEdge")
+@mp.edge(label="RelationEdge")
 class RelationEdge(GraphEdge):
     """Relation edge model for testing."""
 
@@ -28,8 +30,14 @@ class RelationEdge(GraphEdge):
 
 @pytest.fixture(params=["memgraph_db", "age_db"])
 def test_db(request):
-    """Parametrized fixture providing both Memgraph and AGE database connections."""
-    return request.getfixturevalue(request.param)
+    """Parametrized fixture providing both Memgraph and AGE database connections.
+
+    Binds this module's provider so query results hydrate into the typed
+    classes declared above.
+    """
+    db = request.getfixturevalue(request.param)
+    db.model_provider = mp
+    return db
 
 
 @pytest.fixture
@@ -302,7 +310,7 @@ class TestRoundTrip:
         assert final_edge.role == "best_friend"
 
 
-@node(label="BizKeyNode", merge_keys=["biz_key"])
+@mp.node(label="BizKeyNode", merge_keys=["biz_key"])
 class BizKeyNode(GraphNode):
     """Node merged on a business key instead of gid_."""
 
@@ -311,7 +319,7 @@ class BizKeyNode(GraphNode):
     rank: int | None = None
 
 
-@node(label="SingletonNode", merge_keys=[])
+@mp.node(label="SingletonNode", merge_keys=[])
 class SingletonNode(GraphNode):
     """Singleton node merged on label alone."""
 

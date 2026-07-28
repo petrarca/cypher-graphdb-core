@@ -6,7 +6,9 @@ and bulk_create_edges for both Memgraph and AGE backends.
 
 import pytest
 
-from cypher_graphdb import BackendCapability, GraphEdge, GraphNode, edge, node
+from cypher_graphdb import BackendCapability, GraphEdge, GraphNode, ModelProvider
+
+mp = ModelProvider()
 
 pytestmark = pytest.mark.integration
 
@@ -14,7 +16,7 @@ pytestmark = pytest.mark.integration
 # ── Typed model fixtures (shared across typed-path tests) ────────────────────
 
 
-@node()
+@mp.node()
 class _ITPerson(GraphNode):
     """Integration-test typed person node."""
 
@@ -23,7 +25,7 @@ class _ITPerson(GraphNode):
     age: int = 0
 
 
-@edge(label="FRIENDS_WITH")
+@mp.edge(label="FRIENDS_WITH")
 class _ITFriendsWith(GraphEdge):
     """Integration-test typed edge with a property."""
 
@@ -32,8 +34,14 @@ class _ITFriendsWith(GraphEdge):
 
 @pytest.fixture
 def test_db(request):
-    """Parametrized fixture providing both Memgraph and AGE database connections."""
-    return request.getfixturevalue(request.param)
+    """Parametrized fixture providing both Memgraph and AGE database connections.
+
+    Binds this module's provider so query results hydrate into the typed
+    classes declared above.
+    """
+    db = request.getfixturevalue(request.param)
+    db.model_provider = mp
+    return db
 
 
 @pytest.fixture

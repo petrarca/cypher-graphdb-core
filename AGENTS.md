@@ -169,6 +169,44 @@ completion = {"type": "label_props", "complete_mandatory_props": True}
 ```
 4. Update `cli/help/_overview.md` with the new command.
 
+## Graph Models (`ModelProvider`)
+
+Typed models are registered on an **explicit** `ModelProvider`. There is no
+global provider and no implicit registration -- importing a model module has no
+process-wide side effect.
+
+```python
+from cypher_graphdb import GraphEdge, GraphNode, ModelProvider
+
+mp = ModelProvider()
+
+@mp.node(label="Product")
+@mp.relation(rel_type="USES_TECHNOLOGY", to_type="Technology")
+class Product(GraphNode):
+    key: str
+
+@mp.edge(label="USES_TECHNOLOGY")
+class UsesTechnology(GraphEdge):
+    version: str | None = None
+```
+
+Rules:
+
+- **Always declare a module-level `mp = ModelProvider()`** in a `graph_models`
+  module; never expect models to land somewhere by import side effect.
+- Registration API is `mp.node()`, `mp.edge()`, `mp.relation()`,
+  `mp.extend_relation()`, `mp.extend_relations()` -- all instance methods.
+- Wire the provider to the connection/pool so results hydrate typed:
+  `CypherGraphDB(..., model_provider=mp)` or `cdb.model_provider = mp`.
+  Without one, a connection returns generic `GraphNode`/`GraphEdge`.
+- Two graphs may reuse the same label -- separate providers cannot collide.
+- Loading from a path (`--model-path`, `SchemaGenerator`,
+  `generate_schemas_from_path`) **discovers** providers declared in the loaded
+  modules and adopts their models. A module may declare several providers;
+  packages are walked recursively. This is import-order independent.
+
+See `docs/design/model-provider-isolation.md`.
+
 ## Backend Architecture
 
 ### CypherBackend ABC (`backend.py`)
@@ -220,7 +258,6 @@ McCabe max-complexity = 10. Refactor complex functions into helpers.
 
 - Commit prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`
 - Short commit messages, max two sentences
-- Current feature branch: `feat/bulk-write-and-property-indexes`
 
 ## Documentation
 
