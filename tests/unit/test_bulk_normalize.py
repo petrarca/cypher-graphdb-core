@@ -6,11 +6,13 @@ rejection, empty lists, label derivation, and all error paths.
 
 import pytest
 
-from cypher_graphdb import GraphEdge, GraphNode, edge, node
+from cypher_graphdb import GraphEdge, GraphNode, ModelProvider
 from cypher_graphdb.cyphergraphdb.bulk_normalize import normalize_edges_input, normalize_nodes_input
 
+mp = ModelProvider()
 
-@node()
+
+@mp.node()
 class _TestPerson(GraphNode):
     """Unit-test fixture node class."""
 
@@ -19,21 +21,21 @@ class _TestPerson(GraphNode):
     age: int = 0
 
 
-@node(label="CustomLabel")
+@mp.node(label="CustomLabel")
 class _TestTagged(GraphNode):
     """Fixture node with an explicit label override."""
 
     id: str
 
 
-@edge(label="KNOWS")
+@mp.edge(label="KNOWS")
 class _TestKnows(GraphEdge):
     """Fixture edge with extra property."""
 
     since: int = 0
 
 
-@edge(label="FOLLOWS")
+@mp.edge(label="FOLLOWS")
 class _TestFollows(GraphEdge):
     """Fixture edge with no extra properties."""
 

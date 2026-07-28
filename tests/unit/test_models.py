@@ -259,12 +259,11 @@ class TestMergeKeysDecorator:
     """merge_keys parameter on @node decorator."""
 
     def test_merge_keys_stored_on_graph_info(self):
-        from cypher_graphdb.decorators import node
         from cypher_graphdb.modelprovider import ModelProvider
 
         provider = ModelProvider()
 
-        @node(label="_TestMergeKeys", merge_keys=["query_key"], provider=provider)
+        @provider.node(label="_TestMergeKeys", merge_keys=["query_key"])
         class TestQuery(GraphNode):
             query_key: str | None = None
             title: str | None = None
@@ -272,119 +271,112 @@ class TestMergeKeysDecorator:
         assert TestQuery.graph_info_.merge_keys == ["query_key"]
 
     def test_empty_merge_keys_for_singleton(self):
-        from cypher_graphdb.decorators import node
         from cypher_graphdb.modelprovider import ModelProvider
 
         provider = ModelProvider()
 
-        @node(label="_TestSingleton", merge_keys=[], provider=provider)
+        @provider.node(label="_TestSingleton", merge_keys=[])
         class TestSingleton(GraphNode):
             name: str | None = None
 
         assert TestSingleton.graph_info_.merge_keys == []
 
     def test_no_merge_keys_default(self):
-        from cypher_graphdb.decorators import node
         from cypher_graphdb.modelprovider import ModelProvider
 
         provider = ModelProvider()
 
-        @node(label="_TestNoKeys", provider=provider)
+        @provider.node(label="_TestNoKeys")
         class TestNoKeys(GraphNode):
             name: str | None = None
 
         assert TestNoKeys.graph_info_.merge_keys is None
 
 
-class TestRegisterFromModule:
-    """ModelProvider.register_from_module -- populates provider from decorated classes."""
+class TestAdoptAndDiscovery:
+    """ModelProvider.adopt / discover_providers -- merging independent providers."""
 
-    def test_registers_decorated_classes(self):
-        """Classes with graph_info_ are registered into the provider."""
-        import types
-
-        from cypher_graphdb.decorators import node
+    def test_adopt_copies_models(self):
+        """adopt() copies another provider's models into this one."""
         from cypher_graphdb.modelprovider import ModelProvider
 
-        provider_a = ModelProvider()
+        source = ModelProvider()
 
-        @node(label="Widget", provider=provider_a)
+        @source.node(label="Widget")
         class Widget(GraphNode):
             key: str
 
-        module = types.SimpleNamespace(Widget=Widget, unrelated="string", number=42)
         target = ModelProvider()
-        count = target.register_from_module(module)
+        adopted = target.adopt(source)
 
-        assert count == 1
-        assert target.get("Widget") is not None
+        assert [i.label_ for i in adopted] == ["Widget"]
         assert target.get("Widget").graph_model is Widget
 
-    def test_two_modules_same_label_isolated(self):
-        """Two modules defining the same label register independently."""
-        import types
+    def test_adopt_can_preserve_existing_labels(self):
+        """overwrite=False leaves labels already present in the target alone."""
+        from cypher_graphdb.modelprovider import ModelProvider
 
-        from cypher_graphdb.decorators import node
+        target = ModelProvider()
+
+        @target.node(label="Product")
+        class Original(GraphNode):
+            key: str
+
+        source = ModelProvider()
+
+        @source.node(label="Product")
+        class Replacement(GraphNode):
+            key: str
+
+        assert target.adopt(source, overwrite=False) == []
+        assert target.get("Product").graph_model is Original
+
+        target.adopt(source)
+        assert target.get("Product").graph_model is Replacement
+
+    def test_two_providers_same_label_stay_isolated(self):
+        """Two providers may define the same label without interfering."""
         from cypher_graphdb.modelprovider import ModelProvider
 
         provider_a = ModelProvider()
         provider_b = ModelProvider()
 
-        @node(label="Product", provider=provider_a)
+        @provider_a.node(label="Product")
         class ProductA(GraphNode):
             key: str
             revenue: float | None = None
 
-        @node(label="Product", provider=provider_b)
+        @provider_b.node(label="Product")
         class ProductB(GraphNode):
             key: str
             fitness_score: float | None = None
 
-        module_a = types.SimpleNamespace(ProductA=ProductA)
-        module_b = types.SimpleNamespace(ProductB=ProductB)
+        assert provider_a.get("Product").graph_model is ProductA
+        assert provider_b.get("Product").graph_model is ProductB
+        assert "revenue" in provider_a.get("Product").graph_model.model_fields
+        assert "fitness_score" in provider_b.get("Product").graph_model.model_fields
 
-        pool_a = ModelProvider()
-        pool_b = ModelProvider()
-        pool_a.register_from_module(module_a)
-        pool_b.register_from_module(module_b)
-
-        assert pool_a.get("Product").graph_model is ProductA
-        assert pool_b.get("Product").graph_model is ProductB
-        assert "revenue" in pool_a.get("Product").graph_model.model_fields
-        assert "fitness_score" in pool_b.get("Product").graph_model.model_fields
-
-    def test_skips_non_class_attributes(self):
-        """Non-class attributes and classes without graph_info_ are skipped."""
+    def test_discover_providers_finds_module_level_providers(self):
+        """discover_providers() returns every provider declared in a module."""
         import types
 
         from cypher_graphdb.modelprovider import ModelProvider
 
-        module = types.SimpleNamespace(
-            some_string="hello",
-            some_int=42,
-            PlainClass=type("PlainClass", (), {}),  # no graph_info_
-        )
-        provider = ModelProvider()
-        count = provider.register_from_module(module)
-        assert count == 0
+        taxonomy = ModelProvider()
+        domain = ModelProvider()
+        module = types.SimpleNamespace(taxonomy=taxonomy, domain=domain, unrelated="string", number=42)
 
-    def test_returns_count(self):
-        """Returns the number of classes registered."""
+        found = ModelProvider.discover_providers(module)
+
+        assert len(found) == 2
+        assert {id(p) for p in found} == {id(taxonomy), id(domain)}
+
+    def test_discover_providers_ignores_modules_without_one(self):
+        """A module declaring no provider yields nothing."""
         import types
 
-        from cypher_graphdb.decorators import node
         from cypher_graphdb.modelprovider import ModelProvider
 
-        provider_src = ModelProvider()
+        module = types.SimpleNamespace(some_string="hello", PlainClass=type("PlainClass", (), {}))
 
-        @node(label="Alpha", provider=provider_src)
-        class Alpha(GraphNode):
-            x: str
-
-        @node(label="Beta", provider=provider_src)
-        class Beta(GraphNode):
-            y: str
-
-        module = types.SimpleNamespace(Alpha=Alpha, Beta=Beta)
-        target = ModelProvider()
-        assert target.register_from_module(module) == 2
+        assert ModelProvider.discover_providers(module) == []

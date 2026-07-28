@@ -7,7 +7,6 @@ internal structure and behavior as models defined using @node, @edge, and @relat
 import pytest
 
 from cypher_graphdb.cardinality import Cardinality
-from cypher_graphdb.decorators import edge, node, relation
 from cypher_graphdb.display import DisplayConfig
 from cypher_graphdb.modelprovider import ModelProvider
 from cypher_graphdb.models import GraphEdge, GraphNode
@@ -26,7 +25,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that simple node models are equivalent."""
 
         # Define using decorators
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
             age: int
@@ -65,7 +64,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that simple edge models are equivalent."""
 
         # Define using decorators
-        @edge(label="KNOWS_DECORATOR", provider=provider)
+        @provider.edge(label="KNOWS_DECORATOR")
         class KnowsDecorator(GraphEdge):
             since: int
 
@@ -98,9 +97,9 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that nodes with relations are equivalent."""
 
         # Define using decorators (note: decorators are applied bottom-up, so order is reversed)
-        @node(label="PersonDecorator", provider=provider)
-        @relation(rel_type="WORKS_FOR", to_type="Company", cardinality=Cardinality.ONE_TO_ONE, form_field=True)
-        @relation(rel_type="KNOWS", to_type="PersonDecorator", cardinality=Cardinality.ONE_TO_MANY, form_field=False)
+        @provider.node(label="PersonDecorator")
+        @provider.relation(rel_type="WORKS_FOR", to_type="Company", cardinality=Cardinality.ONE_TO_ONE, form_field=True)
+        @provider.relation(rel_type="KNOWS", to_type="PersonDecorator", cardinality=Cardinality.ONE_TO_MANY, form_field=False)
         class PersonDecorator(GraphNode):
             name: str
 
@@ -145,7 +144,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that node creation works the same for both approaches."""
 
         # Define using decorators
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
             age: int
@@ -176,7 +175,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that edge creation works the same for both approaches."""
 
         # Define using decorators
-        @edge(label="KNOWS_DECORATOR", provider=provider)
+        @provider.edge(label="KNOWS_DECORATOR")
         class KnowsDecorator(GraphEdge):
             since: int
 
@@ -206,7 +205,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that validation works the same for both approaches."""
 
         # Define using decorators
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
             age: int
@@ -244,7 +243,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that both approaches generate similar schemas."""
 
         # Define using decorators
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
             age: int
@@ -282,7 +281,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that optional fields work the same way."""
 
         # Define using decorators
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
             email: str | None = None
@@ -319,7 +318,7 @@ class TestDecoratorVsSchemaEquivalence:
         display_config = DisplayConfig(labelProperty="name", sortProperty="name", sortOrder="ASC")
 
         # Define using decorators
-        @node(label="PersonDecorator", display=display_config, provider=provider)
+        @provider.node(label="PersonDecorator", display=display_config)
         class PersonDecorator(GraphNode):
             name: str
 
@@ -350,7 +349,7 @@ class TestDecoratorVsSchemaEquivalence:
         """Test that source tracking correctly distinguishes the two approaches."""
 
         # Define using decorators (source will be "model")
-        @node(label="PersonDecorator", provider=provider)
+        @provider.node(label="PersonDecorator")
         class PersonDecorator(GraphNode):
             name: str
 

@@ -47,24 +47,21 @@ class SchemaGenerator:
         """Create a schema generator.
 
         Args:
-            provider: Model provider to generate schemas from. If ``None``
-                (default), the currently active provider is used at generation
-                time -- the one set via ``ModelProvider.activate()`` /
-                ``use_model_provider()`` if any, otherwise the global singleton.
-                This mirrors how ``@node``/``@edge`` decorators resolve their
-                provider, so registration and generation honor the same active
-                provider. Pass an explicit provider for fully isolated,
-                state-independent generation.
+            provider: Model provider to generate schemas into. If ``None``
+                (default), a fresh empty provider is created per generation, so
+                the result contains exactly the models declared under the
+                requested path and nothing else. Pass an explicit provider to
+                also keep the loaded models registered for later use.
         """
         self._provider = provider
 
     def _resolve_provider(self) -> ModelProvider:
-        """Return the explicit provider, or the currently active one."""
+        """Return the explicit provider, or a fresh isolated one."""
         if self._provider is not None:
             return self._provider
-        from ..modelprovider import get_active_provider
+        from ..modelprovider import ModelProvider as _ModelProvider
 
-        return get_active_provider()
+        return _ModelProvider()
 
     def _load_schemas(self, models_path: str | Path) -> list[dict[str, Any]]:
         """Load schemas from Python models.

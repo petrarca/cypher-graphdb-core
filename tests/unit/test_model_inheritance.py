@@ -1,33 +1,26 @@
 """Test model inheritance: relation inheritance and schema description merging."""
 
-import pytest
-
-from cypher_graphdb import GraphNode, node, relation
+from cypher_graphdb import GraphNode
 from cypher_graphdb.utils import combine_schemas
-
-
-@pytest.fixture(autouse=True)
-def _cleanup(cleanup_model_provider):  # noqa: ARG001 - fixture parameter intentionally unused
-    """Auto-use the shared cleanup fixture."""
 
 
 class TestRelationInheritance:
     """Test that relation inheritance copies metadata identically to manual definition."""
 
-    def test_inherited_relation_shares_object_reference(self):
+    def test_inherited_relation_shares_object_reference(self, mp):
         """Test that inherited relations share the same object as parent."""
 
         # Base class with relation
-        @node()
+        @mp.node()
         class Product(GraphNode):
             name: str
 
-        Product = relation(
+        Product = mp.relation(
             rel_type="HAS_CATEGORY", to_type="Category", cardinality="ONE_TO_MANY", description="Product has categories"
         )(Product)
 
         # Inherited class
-        @node(label="Product")
+        @mp.node(label="Product")
         class TechProduct(Product):
             tech_stack: str
 
@@ -38,24 +31,24 @@ class TestRelationInheritance:
         # Should share the same object reference
         assert product_rel is inherited_rel, "Inherited relation should share parent's object"
 
-    def test_manual_relation_creates_new_object(self):
+    def test_manual_relation_creates_new_object(self, mp):
         """Test that manually defined relations create new objects."""
 
         # Base class with relation
-        @node()
+        @mp.node()
         class Product(GraphNode):
             name: str
 
-        Product = relation(
+        Product = mp.relation(
             rel_type="HAS_CATEGORY", to_type="Category", cardinality="ONE_TO_MANY", description="Product has categories"
         )(Product)
 
         # Manual class (no inheritance)
-        @node(label="Product", inherit_relations=False)
+        @mp.node(label="Product", inherit_relations=False)
         class ManualProduct(GraphNode):
             name: str
 
-        ManualProduct = relation(
+        ManualProduct = mp.relation(
             rel_type="HAS_CATEGORY", to_type="Category", cardinality="ONE_TO_MANY", description="Product has categories"
         )(ManualProduct)
 
@@ -66,15 +59,15 @@ class TestRelationInheritance:
         # Should create separate object
         assert product_rel is not manual_rel, "Manual relation should create new object"
 
-    def test_inherited_and_manual_relations_have_identical_attributes(self):
+    def test_inherited_and_manual_relations_have_identical_attributes(self, mp):
         """Test that inherited and manual relations have identical attributes."""
 
         # Base class with relation
-        @node()
+        @mp.node()
         class Product(GraphNode):
             name: str
 
-        Product = relation(
+        Product = mp.relation(
             rel_type="HAS_CATEGORY",
             to_type="Category",
             cardinality="ONE_TO_MANY",
@@ -83,16 +76,16 @@ class TestRelationInheritance:
         )(Product)
 
         # Inherited class
-        @node(label="Product")
+        @mp.node(label="Product")
         class TechProduct(Product):
             tech_stack: str
 
         # Manual class
-        @node(label="Product", inherit_relations=False)
+        @mp.node(label="Product", inherit_relations=False)
         class ManualProduct(GraphNode):
             name: str
 
-        ManualProduct = relation(
+        ManualProduct = mp.relation(
             rel_type="HAS_CATEGORY",
             to_type="Category",
             cardinality="ONE_TO_MANY",
@@ -112,43 +105,42 @@ class TestRelationInheritance:
         assert product_rel.description == inherited_rel.description == manual_rel.description
         assert product_rel.form_field == inherited_rel.form_field == manual_rel.form_field
 
-    def test_schema_generation_treats_inherited_and_manual_identically(self):
+    def test_schema_generation_treats_inherited_and_manual_identically(self, mp):
         """Test that schema generation treats inherited and manual relations identically."""
-        from cypher_graphdb.modelprovider import model_provider
         from cypher_graphdb.utils.schema_utils import extract_schemas_from_model_infos
 
         # Base class with relation
-        @node()
+        @mp.node()
         class Product(GraphNode):
             name: str
 
-        Product = relation(
+        Product = mp.relation(
             rel_type="HAS_CATEGORY", to_type="Category", cardinality="ONE_TO_MANY", description="Product has categories"
         )(Product)
 
         # Inherited class
-        @node(label="Product")
+        @mp.node(label="Product")
         class TechProduct(Product):
             tech_stack: str
 
         # Manual class
-        @node(label="Product", inherit_relations=False)
+        @mp.node(label="Product", inherit_relations=False)
         class ManualProduct(GraphNode):
             name: str
 
-        ManualProduct = relation(
+        ManualProduct = mp.relation(
             rel_type="HAS_CATEGORY", to_type="Category", cardinality="ONE_TO_MANY", description="Product has categories"
         )(ManualProduct)
 
         # Register models
-        model_provider.register(Product)
-        model_provider.register(TechProduct)
-        model_provider.register(ManualProduct)
+        mp.register(Product)
+        mp.register(TechProduct)
+        mp.register(ManualProduct)
 
         # Generate schemas
-        product_schema = extract_schemas_from_model_infos([model_provider.get("Product")])[0]
-        techproduct_schema = extract_schemas_from_model_infos([model_provider.get("Product")])[0]
-        manualproduct_schema = extract_schemas_from_model_infos([model_provider.get("Product")])[0]
+        product_schema = extract_schemas_from_model_infos([mp.get("Product")])[0]
+        techproduct_schema = extract_schemas_from_model_infos([mp.get("Product")])[0]
+        manualproduct_schema = extract_schemas_from_model_infos([mp.get("Product")])[0]
 
         # All should have same number of relations
         product_relations = product_schema.get("x-graph", {}).get("relations", [])
@@ -171,7 +163,7 @@ class TestRelationInheritance:
                 == manualproduct_relations[0]["to_type_name"]
             )
 
-    def test_schema_description_merging(self):
+    def test_schema_description_merging(self, mp):
         """Test that schema-level descriptions are merged during schema combination."""
         # Two schemas with different descriptions for the same title
         schemas = [
@@ -196,7 +188,7 @@ class TestRelationInheritance:
         assert "A product in the catalog" in product_def["description"]
         assert "Technology-specific product" in product_def["description"]
 
-    def test_schema_description_no_duplication(self):
+    def test_schema_description_no_duplication(self, mp):
         """Test that identical descriptions are not duplicated."""
         schemas = [
             {
@@ -219,7 +211,7 @@ class TestRelationInheritance:
         # Should not duplicate
         assert company_def["description"] == "A company entity"
 
-    def test_schema_description_partial(self):
+    def test_schema_description_partial(self, mp):
         """Test that missing descriptions are handled gracefully."""
         schemas = [
             {

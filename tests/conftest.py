@@ -4,30 +4,24 @@ import pathlib
 
 import pytest
 
-from cypher_graphdb.modelprovider import model_provider
+from cypher_graphdb import ModelProvider
 
 
 @pytest.fixture
-def cleanup_model_provider():
-    """Clean up models registered during tests.
+def mp() -> ModelProvider:
+    """A fresh, isolated ModelProvider for one test.
 
-    Use this fixture in tests that register models to the global model_provider
-    to ensure proper test isolation.
+    There is no global provider, so every test that registers models simply
+    declares its own. Isolation is structural -- nothing leaks between tests and
+    no cleanup is required.
 
     Example:
-        def test_my_model(cleanup_model_provider):
-            @node()
+        def test_my_model(mp):
+            @mp.node()
             class MyModel(GraphNode):
                 name: str
-            # Model will be cleaned up after test
     """
-    initial_labels = set(model_provider._models.keys())
-    yield
-    # Remove models added during the test
-    current_labels = set(model_provider._models.keys())
-    added_labels = current_labels - initial_labels
-    for label in added_labels:
-        model_provider.remove(model_provider.get(label))
+    return ModelProvider()
 
 
 def pytest_collection_modifyitems(items):

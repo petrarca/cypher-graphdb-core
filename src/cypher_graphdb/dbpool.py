@@ -85,8 +85,8 @@ class CypherGraphDBPool:
                 lazily. `None` disables expiration.
             auto_connect: If True, new instances are connected automatically.
             model_provider: Optional ModelProvider instance shared by all
-                connections in this pool. If None, each connection uses the
-                global model_provider singleton.
+                connections in this pool. If None, each connection gets its own
+                empty provider (untyped results).
         Raises:
             ValueError: If `min_size` > `pool_size`.
         """

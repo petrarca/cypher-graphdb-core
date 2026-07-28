@@ -626,9 +626,7 @@ class TestReplaceExisting:
         provider.load_from_json_schemas(schema_model)
 
         # Load decorator-based model (source="model")
-        from cypher_graphdb import node
-
-        @node(label="Company", provider=provider)
+        @provider.node(label="Company")
         class Company(GraphNode):
             name: str
 

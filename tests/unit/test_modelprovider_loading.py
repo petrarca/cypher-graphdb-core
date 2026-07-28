@@ -1,8 +1,9 @@
-"""Improved tests for ModelProvider model loading functionality.
+"""Tests for ModelProvider loading models from files, packages and directories.
 
-This test suite demonstrates a better approach to testing model loading
-by creating actual model files and testing against the global provider
-with proper cleanup.
+Loading works by *discovering* the ``ModelProvider`` instances declared in the
+loaded modules and adopting their models. Each test therefore writes real model
+files that declare their own provider, and loads them into a fresh, isolated
+provider -- exactly how a consumer does it.
 """
 
 import tempfile
@@ -10,451 +11,246 @@ from pathlib import Path
 
 import pytest
 
-from cypher_graphdb.modelprovider import model_provider
+from cypher_graphdb import ModelProvider
+
+PREAMBLE = "from cypher_graphdb import GraphEdge, GraphNode, ModelProvider\n\nmp = ModelProvider()\n"
 
 
-@pytest.fixture(autouse=True)
-def record_initial_models():
-    """Record models before each test for proper cleanup verification."""
-    initial_models = set(model_provider._models.keys())
-    yield initial_models
-    # After test, we can verify what was added (but not remove for isolation)
+def write_model(directory: Path, filename: str, body: str) -> Path:
+    """Write a model file that declares its own provider, and return its path."""
+    path = Path(directory) / filename
+    path.write_text(PREAMBLE + body, encoding="utf-8")
+    return path
 
 
-class TestModelProviderFileLoading:
-    """Test loading models from files - demonstrating real-world usage."""
+class TestSingleFileLoading:
+    """Loading one Python file."""
 
-    def test_load_single_file_basic(self, record_initial_models):
-        """Test loading a single model file - basic case."""
+    def test_load_single_file(self, mp):
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a simple model file
-            model_file = Path(tmpdir, "person.py")
-            model_file.write_text(
+            model_file = write_model(
+                Path(tmpdir),
+                "person.py",
                 """
-from cypher_graphdb import node, GraphNode
-
-@node()
+@mp.node()
 class Person(GraphNode):
-    '''A person node.'''
     name: str
     age: int
 """,
-                encoding="utf-8",
             )
 
-            # Load the model
-            loaded_models = model_provider.try_to_load_models(None, str(model_file))
+            loaded = mp.try_to_load_models(None, str(model_file))
 
-            # Verify
-            assert loaded_models is not None
-            assert len(loaded_models) == 1
-            assert loaded_models[0].label_ == "Person"
-            assert loaded_models[0].source is not None
-            assert loaded_models[0].source == "model"
+            assert loaded is not None
+            assert len(loaded) == 1
+            assert loaded[0].label_ == "Person"
+            assert loaded[0].source == "model"
 
-    def test_load_directory_with_multiple_models(self, record_initial_models):
-        """Test loading all models from a directory."""
+    def test_load_with_explicit_module_name(self, mp):
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create multiple model files
-            (Path(tmpdir) / "company.py").write_text(
+            model_file = write_model(
+                Path(tmpdir),
+                "my_model.py",
                 """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Company(GraphNode):
-    '''A company node.'''
-    name: str
-    industry: str
-""",
-                encoding="utf-8",
-            )
-
-            (Path(tmpdir) / "employee.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Employee(GraphNode):
-    '''An employee node.'''
-    name: str
-    position: str
-""",
-                encoding="utf-8",
-            )
-
-            (Path(tmpdir) / "works_at.py").write_text(
-                """
-from cypher_graphdb import edge, GraphEdge
-
-@edge()
-class WORKS_AT(GraphEdge):
-    '''Employment relationship.'''
-    since: int
-""",
-                encoding="utf-8",
-            )
-
-            # Load all models from directory
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            # Verify
-            assert loaded_models is not None
-            assert len(loaded_models) == 3
-            labels = [m.label_ for m in loaded_models]
-            assert "Company" in labels
-            assert "Employee" in labels
-            assert "WORKS_AT" in labels
-            # Verify all have source set
-            for model_info in loaded_models:
-                assert model_info.source is not None
-                assert model_info.source == "model"
-
-    def test_models_are_sorted_correctly(self, record_initial_models):
-        """Test that nodes come before edges in sorted results."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create edge first (alphabetically), then node
-            (Path(tmpdir) / "a_edge.py").write_text(
-                """
-from cypher_graphdb import edge, GraphEdge
-
-@edge()
-class RELATED_TO(GraphEdge):
-    '''A relationship.'''
-    type: str
-""",
-                encoding="utf-8",
-            )
-
-            (Path(tmpdir) / "z_node.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Thing(GraphNode):
-    '''A thing node.'''
-    name: str
-""",
-                encoding="utf-8",
-            )
-
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            # Nodes should come before edges
-            assert loaded_models is not None
-            labels = [m.label_ for m in loaded_models]
-            thing_idx = labels.index("Thing")
-            related_idx = labels.index("RELATED_TO")
-            assert thing_idx < related_idx, "Nodes should come before edges"
-
-    def test_load_single_file_that_does_not_exist(self):
-        """Test loading a non-existent file."""
-        import pytest
-
-        path = "/tmp/nonexistent_model_file_12345.py"
-        with pytest.raises(FileNotFoundError, match="Path does not exist"):
-            model_provider.try_to_load_models(None, path)
-
-    def test_load_empty_directory(self):
-        """Test loading from an empty directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            assert loaded_models is None
-
-    def test_directory_ignores_init_files(self, record_initial_models):
-        """Test that __init__.py files are properly ignored."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create __init__.py
-            (Path(tmpdir) / "__init__.py").write_text("# Package init", encoding="utf-8")
-
-            # Create one actual model
-            (Path(tmpdir) / "widget.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Widget(GraphNode):
-    '''A widget.'''
-    id: str
-""",
-                encoding="utf-8",
-            )
-
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            # Should only load Widget, not __init__
-            assert loaded_models is not None
-            assert len(loaded_models) == 1
-            assert loaded_models[0].label_ == "Widget"
-
-    def test_directory_with_syntax_error_file(self, record_initial_models):
-        """Test that directory loading continues despite syntax errors."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a file with syntax error
-            (Path(tmpdir) / "bad.py").write_text("this is invalid python <<<", encoding="utf-8")
-
-            # Create a valid file
-            (Path(tmpdir) / "good.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class ValidModel(GraphNode):
-    '''A valid model.'''
-    value: str
-""",
-                encoding="utf-8",
-            )
-
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            # Should load the valid model despite the error
-            assert loaded_models is not None
-            labels = [m.label_ for m in loaded_models]
-            assert "ValidModel" in labels
-
-    def test_load_with_module_name_and_path(self, record_initial_models):
-        """Test specifying both module_name and path."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_file = Path(tmpdir, "my_model.py")
-            model_file.write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
+@mp.node()
 class CustomModel(GraphNode):
-    '''A custom model.'''
     data: str
 """,
-                encoding="utf-8",
             )
 
-            loaded_models = model_provider.try_to_load_models("my_custom_module_name", str(model_file))
+            loaded = mp.try_to_load_models("my_custom_module_name", str(model_file))
 
-            assert loaded_models is not None
-            assert loaded_models[0].label_ == "CustomModel"
+            assert loaded is not None
+            assert loaded[0].label_ == "CustomModel"
 
-
-class TestModelProviderDirectoryScanning:
-    """Test directory scanning behavior."""
-
-    def test_loads_all_py_files_in_directory(self, record_initial_models):
-        """Test that all .py files are discovered and loaded."""
+    def test_loaded_model_is_registered_and_usable(self, mp):
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create multiple files
-            for i in range(5):
-                (Path(tmpdir) / f"model{i}.py").write_text(
-                    f"""
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Model{i}(GraphNode):
-    '''Model {i}.'''
-    value: int
-""",
-                    encoding="utf-8",
-                )
-
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            assert loaded_models is not None
-            assert len(loaded_models) == 5
-            labels = [m.label_ for m in loaded_models]
-            for i in range(5):
-                assert f"Model{i}" in labels
-
-    def test_skips_non_python_files(self, record_initial_models):
-        """Test that non-.py files are ignored."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create .py file
-            (Path(tmpdir) / "model.py").write_text(
+            model_file = write_model(
+                Path(tmpdir),
+                "product.py",
                 """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class RealModel(GraphNode):
-    '''A real model.'''
-    val: str
-""",
-                encoding="utf-8",
-            )
-
-            # Create non-.py files
-            (Path(tmpdir) / "README.md").write_text("# Readme", encoding="utf-8")
-            (Path(tmpdir) / "config.json").write_text("{}", encoding="utf-8")
-            (Path(tmpdir) / "data.txt").write_text("data", encoding="utf-8")
-
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
-
-            # Should only load the .py file
-            assert loaded_models is not None
-            assert len(loaded_models) == 1
-            assert loaded_models[0].label_ == "RealModel"
-
-
-class TestRealWorldScenarios:
-    """Test real-world usage scenarios."""
-
-    def test_typical_models_directory_structure(self, record_initial_models):
-        """Test a typical project models directory structure."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            models_dir = Path(tmpdir) / "models"
-            models_dir.mkdir()
-
-            # Create a typical models structure
-            (models_dir / "user.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class User(GraphNode):
-    '''User node.'''
-    username: str
-    email: str
-    active: bool = True
-""",
-                encoding="utf-8",
-            )
-
-            (models_dir / "post.py").write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Post(GraphNode):
-    '''Post node.'''
-    title: str
-    content: str
-    published: bool = False
-""",
-                encoding="utf-8",
-            )
-
-            (models_dir / "_relationships.py").write_text(
-                """
-from cypher_graphdb import edge, GraphEdge
-
-@edge()
-class AUTHORED(GraphEdge):
-    '''User authored post.'''
-    timestamp: int
-
-@edge()
-class LIKES(GraphEdge):
-    '''User likes post.'''
-    timestamp: int
-""",
-                encoding="utf-8",
-            )
-
-            loaded_models = model_provider.try_to_load_models(None, str(models_dir))
-
-            assert loaded_models is not None
-            assert len(loaded_models) == 4
-            labels = [m.label_ for m in loaded_models]
-            assert "User" in labels
-            assert "Post" in labels
-            assert "AUTHORED" in labels
-            assert "LIKES" in labels
-
-    def test_load_single_model_file_from_project(self, record_initial_models):
-        """Test loading just one specific model file."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a specific model file
-            model_file = Path(tmpdir, "product.py")
-            model_file.write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
+@mp.node()
 class Product(GraphNode):
-    '''Product in catalog.'''
     sku: str
-    name: str
     price: float
     in_stock: bool = True
 """,
-                encoding="utf-8",
             )
 
-            # Load only this file
-            loaded_models = model_provider.try_to_load_models(None, str(model_file))
+            loaded = mp.try_to_load_models(None, str(model_file))
 
-            assert loaded_models is not None
-            assert len(loaded_models) == 1
-            assert loaded_models[0].label_ == "Product"
+            assert loaded is not None
+            assert [m.label_ for m in loaded] == ["Product"]
 
-            # Verify the model is registered and usable
-            model_info = model_provider.get("Product")
-            assert model_info is not None
-            assert model_info.label_ == "Product"
+            info = mp.get("Product")
+            assert info is not None
+            assert info.label_ == "Product"
 
-    def test_source_property_is_set_on_loaded_models(self, record_initial_models):
-        """Test that source property contains the correct file URI."""
+            node = mp.create_node("Product", {"sku": "A-1", "price": 9.5})
+            assert node.sku == "A-1"
+            assert node.in_stock is True
+
+    def test_multiple_providers_in_one_file_are_all_adopted(self, mp):
+        """A module may declare several providers -- all of them are adopted."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create model files with unique names
-            account_file = Path(tmpdir, "account.py")
-            account_file.write_text(
+            model_file = Path(tmpdir) / "multi.py"
+            model_file.write_text(
                 """
-from cypher_graphdb import node, GraphNode
+from cypher_graphdb import GraphNode, ModelProvider
 
-@node()
-class Account(GraphNode):
-    '''An account node.'''
-    account_id: str
-    balance: float
-""",
-                encoding="utf-8",
-            )
+taxonomy = ModelProvider()
+domain = ModelProvider()
 
-            permission_file = Path(tmpdir, "permission.py")
-            permission_file.write_text(
-                """
-from cypher_graphdb import node, GraphNode
-
-@node()
-class Permission(GraphNode):
-    '''A permission node.'''
+@taxonomy.node()
+class Category(GraphNode):
     name: str
-    level: int
+
+@domain.node()
+class Order(GraphNode):
+    ref: str
 """,
                 encoding="utf-8",
             )
 
-            # Load all models from directory
-            loaded_models = model_provider.try_to_load_models(None, tmpdir)
+            loaded = mp.try_to_load_models(None, str(model_file))
 
-            # Verify source property is set for all loaded models
-            assert loaded_models is not None
-            assert len(loaded_models) >= 2  # At least the two we created
+            assert loaded is not None
+            assert sorted(m.label_ for m in loaded) == ["Category", "Order"]
 
-            # Find our specific models
-            account_model = None
-            permission_model = None
-            for model_info in loaded_models:
-                if model_info.label_ == "Account":
-                    account_model = model_info
-                elif model_info.label_ == "Permission":
-                    permission_model = model_info
+    def test_missing_file_raises(self, mp):
+        with pytest.raises(FileNotFoundError, match="Path does not exist"):
+            mp.try_to_load_models(None, "/tmp/nonexistent_model_file_12345.py")
 
-            # Verify both were loaded
-            assert account_model is not None, "Account model not found"
-            assert permission_model is not None, "Permission model not found"
 
-            # Check each model has a source set to "file"
-            assert account_model.source is not None
-            assert account_model.source == "model"
+class TestDirectoryLoading:
+    """Loading a directory of loose .py files."""
 
-            assert permission_model.source is not None
-            assert permission_model.source == "model"
+    def test_load_directory_with_multiple_models(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_model(Path(tmpdir), "company.py", "\n@mp.node()\nclass Company(GraphNode):\n    name: str\n")
+            write_model(Path(tmpdir), "employee.py", "\n@mp.node()\nclass Employee(GraphNode):\n    name: str\n")
+            write_model(Path(tmpdir), "works_at.py", "\n@mp.edge()\nclass WORKS_AT(GraphEdge):\n    since: int\n")
 
-            # Also verify via model_provider.get()
-            account_from_provider = model_provider.get("Account")
-            assert account_from_provider is not None
-            assert account_from_provider.source is not None
-            assert account_from_provider.source == "model"
+            loaded = mp.try_to_load_models(None, tmpdir)
 
-            permission_from_provider = model_provider.get("Permission")
-            assert permission_from_provider is not None
-            assert permission_from_provider.source is not None
-            assert permission_from_provider.source == "model"
+            assert loaded is not None
+            assert sorted(m.label_ for m in loaded) == ["Company", "Employee", "WORKS_AT"]
+            assert all(m.source == "model" for m in loaded)
+
+    def test_nodes_are_sorted_before_edges(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_model(Path(tmpdir), "a_edge.py", "\n@mp.edge()\nclass RELATED_TO(GraphEdge):\n    type: str\n")
+            write_model(Path(tmpdir), "z_node.py", "\n@mp.node()\nclass Thing(GraphNode):\n    name: str\n")
+
+            loaded = mp.try_to_load_models(None, tmpdir)
+
+            assert loaded is not None
+            labels = [m.label_ for m in loaded]
+            assert labels.index("Thing") < labels.index("RELATED_TO")
+
+    def test_empty_directory_returns_none(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert mp.try_to_load_models(None, tmpdir) is None
+
+    def test_non_python_files_are_skipped(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_model(Path(tmpdir), "model.py", "\n@mp.node()\nclass RealModel(GraphNode):\n    val: str\n")
+            (Path(tmpdir) / "README.md").write_text("# Readme", encoding="utf-8")
+            (Path(tmpdir) / "config.json").write_text("{}", encoding="utf-8")
+
+            loaded = mp.try_to_load_models(None, tmpdir)
+
+            assert loaded is not None
+            assert [m.label_ for m in loaded] == ["RealModel"]
+
+    def test_directory_with_broken_file_still_loads_the_rest(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "bad.py").write_text("this is invalid python <<<", encoding="utf-8")
+            write_model(Path(tmpdir), "good.py", "\n@mp.node()\nclass ValidModel(GraphNode):\n    value: str\n")
+
+            loaded = mp.try_to_load_models(None, tmpdir)
+
+            assert loaded is not None
+            assert "ValidModel" in [m.label_ for m in loaded]
+
+    def test_all_files_in_a_directory_are_discovered(self, mp):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for i in range(5):
+                write_model(Path(tmpdir), f"model{i}.py", f"\n@mp.node()\nclass Model{i}(GraphNode):\n    value: int\n")
+
+            loaded = mp.try_to_load_models(None, tmpdir)
+
+            assert loaded is not None
+            assert sorted(m.label_ for m in loaded) == [f"Model{i}" for i in range(5)]
+
+
+class TestPackageLoading:
+    """Loading a directory that is a Python package (has __init__.py)."""
+
+    def test_providers_shadowed_by_star_imports_are_still_found(self, mp):
+        """``from .a import *`` shadows ``mp``; submodules must still be scanned."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pkg = Path(tmpdir) / "graph_models"
+            pkg.mkdir()
+            (pkg / "__init__.py").write_text("from .part_a import *\nfrom .part_b import *\n", encoding="utf-8")
+            write_model(pkg, "part_a.py", "\n@mp.node()\nclass Beta(GraphNode):\n    x: str\n")
+            write_model(pkg, "part_b.py", "\n@mp.node()\nclass Gamma(GraphNode):\n    y: str\n")
+
+            loaded = mp.try_to_load_models(None, str(pkg))
+
+            assert loaded is not None
+            assert sorted(m.label_ for m in loaded) == ["Beta", "Gamma"]
+
+    def test_same_named_package_in_a_different_directory_is_not_reused(self, mp):
+        """A stale same-named package in sys.modules must not shadow a new path."""
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            pkg_a = Path(first) / "graph_models"
+            pkg_a.mkdir()
+            (pkg_a / "__init__.py").write_text("from .m import *\n", encoding="utf-8")
+            write_model(pkg_a, "m.py", "\n@mp.node()\nclass FromFirst(GraphNode):\n    a: str\n")
+
+            pkg_b = Path(second) / "graph_models"
+            pkg_b.mkdir()
+            (pkg_b / "__init__.py").write_text("from .m import *\n", encoding="utf-8")
+            write_model(pkg_b, "m.py", "\n@mp.node()\nclass FromSecond(GraphNode):\n    b: str\n")
+
+            first_provider = ModelProvider()
+            first_loaded = first_provider.try_to_load_models(None, str(pkg_a))
+            assert first_loaded is not None
+            assert [m.label_ for m in first_loaded] == ["FromFirst"]
+
+            second_loaded = mp.try_to_load_models(None, str(pkg_b))
+            assert second_loaded is not None
+            assert [m.label_ for m in second_loaded] == ["FromSecond"]
+
+
+class TestIsolation:
+    """Loading never leaks between independent providers."""
+
+    def test_two_providers_loading_the_same_label_stay_independent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_file = write_model(
+                Path(tmpdir),
+                "shared.py",
+                "\n@mp.node()\nclass Product(GraphNode):\n    key: str\n",
+            )
+
+            a, b = ModelProvider(), ModelProvider()
+            a.try_to_load_models(None, str(model_file))
+
+            assert "Product" in a
+            assert "Product" not in b, "loading into one provider must not touch another"
+
+    def test_loading_is_idempotent_across_the_import_cache(self, mp):
+        """A second load of an already-imported package still yields its models."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pkg = Path(tmpdir) / "cached_models"
+            pkg.mkdir()
+            (pkg / "__init__.py").write_text("from .m import *\n", encoding="utf-8")
+            write_model(pkg, "m.py", "\n@mp.node()\nclass Cached(GraphNode):\n    v: str\n")
+
+            first = ModelProvider().try_to_load_models(None, str(pkg))
+            second = mp.try_to_load_models(None, str(pkg))
+
+            assert first is not None and [m.label_ for m in first] == ["Cached"]
+            assert second is not None and [m.label_ for m in second] == ["Cached"]
