@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #
-# Shared release helper (petrarca standard interface).
+# Shared release helper (petrarca standard interface). CANONICAL TEMPLATE —
+# copy into a repo's `scripts/` unchanged; put all per-repo values in
+# `scripts/release.config.sh`. To take shared updates, re-copy this file.
 #
-# Subcommands (called from the Taskfile -- see `task release:*`):
+# Subcommands (called from the Taskfile — see `task release:*`):
 #   check                 git-state preflight (on main, clean, synced). No side effects.
-#   tag <vX.Y.Z>          validate version, create annotated tag, push -> CI publishes.
-#   verify <vX.Y.Z>       watch publish workflow + show published versions.
+#   tag <vX.Y.Z>          validate version, create annotated tag, push -> CI publishes/builds.
+#   verify <vX.Y.Z>       watch the publish workflow + show published versions.
 #   abort <vX.Y.Z>        delete a bad tag (local + remote).
 #
-# Only the CONFIG block below differs between repos. Read-only lint/format/lock
-# verification lives in `task verify` and is invoked by the Taskfile separately,
-# so this script stays package-manager agnostic.
+# Read-only lint/format/lock verification lives in `scripts/verify.sh` (run by
+# `task verify`), so this script stays package-manager agnostic.
 set -euo pipefail
 
-# --- CONFIG (per repo) ------------------------------------------------------
-# Packages to check on the registry during `verify` (PyPI for Python repos).
-PACKAGES=("cypher-graphdb")
-REGISTRY="pypi"   # pypi | npm
-# ---------------------------------------------------------------------------
+# Load the per-repo config (the only file that differs between repos).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=release.config.sh
+. "${SCRIPT_DIR}/release.config.sh"
 
 err()  { echo "ERROR: $*" >&2; exit 1; }
 
@@ -46,7 +46,6 @@ cmd_check() {
   echo "Commits since $last:"
   git log --oneline "$last"..HEAD 2>/dev/null || git log --oneline -10
   echo ""
-  echo "Reminder: run 'task test:integration' before releasing (needs docker backends)."
   echo "Then: task release -- vX.Y.Z"
 }
 
@@ -57,26 +56,34 @@ cmd_tag() {
   echo "Tagging $ver at $(git rev-parse --short HEAD) and pushing..."
   git tag -a "$ver" -m "Release $ver"
   git push origin "$ver"
-  echo "Pushed $ver. CI will publish and create the GitHub release."
+  echo "Pushed $ver. CI will publish/build and create the GitHub release."
   echo "Track with: task release:verify -- $ver"
+  echo "Then curate the notes: gh release edit $ver --notes-file <notes.md>"
 }
 
 cmd_verify() {
-  local ver="${1:-}"
+  local ver="${1:-}" run_id
   require_version "$ver" "release:verify"
   echo "Recent workflow runs:"
   gh run list --limit 5 || true
   echo ""
-  echo "Watching the latest publish run (Ctrl-C to stop watching)..."
-  gh run watch "$(gh run list --workflow=publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')" || true
+  echo "Watching the latest '${PUBLISH_WORKFLOW}' run (Ctrl-C to stop)..."
+  run_id="$(gh run list --workflow="${PUBLISH_WORKFLOW}" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+  [ -n "$run_id" ] && gh run watch "$run_id" || echo "(no '${PUBLISH_WORKFLOW}' run found yet)"
   echo ""
-  for name in "${PACKAGES[@]}"; do
-    if [ "$REGISTRY" = "npm" ]; then
-      echo "npm versions for $name:"; npm view "$name" version 2>/dev/null || echo "  (check https://www.npmjs.com/package/$name)"
-    else
-      echo "PyPI versions for $name:"; pip index versions "$name" 2>/dev/null || echo "  (check https://pypi.org/project/$name/)"
-    fi
-  done
+  case "$RELEASE_MODE" in
+    pypi)
+      for name in "${PACKAGES[@]}"; do
+        echo "PyPI versions for $name:"; pip index versions "$name" 2>/dev/null || echo "  (check https://pypi.org/project/$name/)"
+      done ;;
+    npm)
+      for name in "${PACKAGES[@]}"; do
+        echo "npm versions for $name:"; npm view "$name" version 2>/dev/null || echo "  (check https://www.npmjs.com/package/$name)"
+      done ;;
+    docker)
+      echo "Confirm the image(s) for $ver in GHCR (Packages tab of the repo/org)." ;;
+    *) err "unknown RELEASE_MODE '$RELEASE_MODE' (use: pypi | npm | docker)." ;;
+  esac
 }
 
 cmd_abort() {
@@ -85,7 +92,7 @@ cmd_abort() {
   echo "Deleting tag $ver locally and on origin..."
   git tag -d "$ver" 2>/dev/null || echo "(no local tag $ver)"
   git push origin ":refs/tags/$ver" 2>/dev/null || echo "(no remote tag $ver)"
-  echo "Done. Note: a published release CANNOT be overwritten -- bump to the next version instead."
+  echo "Done. Note: a published release CANNOT be overwritten — bump to the next version instead."
 }
 
 case "${1:-}" in

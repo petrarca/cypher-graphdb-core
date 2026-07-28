@@ -224,19 +224,20 @@ tasks:
   #
   # Notes:
   # - The git tag IS the version (setuptools-scm); nothing to edit in pyproject.toml.
-  # - release:check runs `task verify` (read-only lint+format-check -- it NEVER mutates
-  #   files, so it cannot dirty the tree mid-release, unlike `task fct`/`task format`).
+  # - release:check runs scripts/verify.sh (read-only lint+format+lock check -- it NEVER
+  #   mutates files, so it cannot dirty the tree mid-release, unlike `task fct`/`task format`).
   #   It does NOT run integration tests (run `task test:integration` explicitly first --
   #   it needs live Memgraph + AGE).
   # - HEAD must already be pushed to origin/main before tagging (release:check enforces it).
-  # - Shared logic lives in scripts/release.sh (identical across petrarca repos
-  #   except the CONFIG block); the Taskfile only wires it to `task verify`.
+  # - scripts/release.sh and scripts/verify.sh are copied UNCHANGED from the handbook
+  #   (engineering-handbook/templates/scripts). All per-repo values live in
+  #   scripts/release.config.sh. Re-copy the two scripts to take shared updates.
   # ---------------------------------------------------------------------------
   release:check:
-    desc: "Preflight release checks (on main, clean, synced, lint+format verified). No side effects."
+    desc: "Preflight release checks (on main, clean, synced, lint+format+lock verified). No side effects."
     cmds:
       - bash scripts/release.sh check
-      - bash scripts/verify.sh   # read-only lint + format verification (never mutates the tree)
+      - bash scripts/verify.sh   # read-only lint + format + lock verification (never mutates)
 
   release:
     desc: "Create and push a release tag (vX.Y.Z) -> CI publishes to PyPI. Usage: task release -- v0.3.0"
