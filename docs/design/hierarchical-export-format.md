@@ -1,4 +1,17 @@
-# Hierarchical Export Format Specification
+---
+type: Design
+title: Hierarchical export format
+description: JSON/YAML export formats for graph data supporting round-trip import/export with gid_-based deduplication.
+tags: [cypher-graphdb, export, import, json, yaml, round-trip, gid]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
+
+# Hierarchical export format
+
+> **Built.** `tools/hierarchical_row_source.py`, with `tools/data_flattener.py`
+> and `tools/yaml_importer.py`.
 
 ## Goal
 

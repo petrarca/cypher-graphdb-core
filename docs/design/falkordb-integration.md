@@ -1,4 +1,17 @@
-# Analysis: FalkorDB Integration
+---
+type: Design
+title: FalkorDB integration
+description: Technical design for adding FalkorDB as a third Cypher backend — dependencies, connection model, and capability mapping. Not built.
+tags: [cypher-graphdb, falkordb, backend, integration, proposal]
+status: stable
+implementation: proposed
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
+
+# FalkorDB integration
+
+> **Not built.** `backends/` contains `age` and `memgraph` only. FalkorDB
+> appears in a few docstrings as a comparison point, not as an implementation.
 
 This document outlines the technical design for integrating FalkorDB as a supported backend in the `cypher-graphdb` library.
 

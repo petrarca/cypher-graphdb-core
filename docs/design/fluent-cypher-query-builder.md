@@ -1,12 +1,22 @@
-# Design Document: Fluent Cypher Query Builder
+---
+type: Design
+title: Fluent Cypher query builder
+description: An optional, opt-in fluent builder for constructing Cypher queries that terminates in the (cypher, params) pair the library already accepts.
+tags: [cypher-graphdb, query-builder, fluent, cypher, parameterized]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-**Date:** 2026-06-17
-**Status:** Proposal
-**Author:** Auto-generated from query-construction analysis
+# Fluent Cypher query builder
+
+> **Built.** Lives in `src/cypher_graphdb/cypherquery/` (`builder.py`,
+> `patterns.py`, `params.py`). It is an internal layer — deliberately not
+> exported from the package root — so the public surface stays Cypher-first.
 
 ## Executive Summary
 
-This document proposes an **optional, opt-in fluent query builder** for
+This document describes an **optional, opt-in fluent query builder** for
 constructing Cypher queries in `cypher-graphdb-core`, analogous to how
 SQLAlchemy Core constructs SQL. The builder is a convenience layer that sits
 **above** the existing execution machinery and terminates in the contract the

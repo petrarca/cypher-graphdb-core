@@ -42,7 +42,7 @@ Example: `feature/add-neo4j-support`
 - Use ruff for linting and formatting
 - Add type annotations to all functions and methods
 - Write tests for new functionality
-- Document your code using Google-style docstrings (see [Documentation Guide](docs/documentation-guide.md))
+- Document your code using Google-style docstrings (see [Docstrings](#docstrings))
 
 ### Testing
 
@@ -56,13 +56,61 @@ Ensure all tests pass and aim for good test coverage.
 
 ### Documentation
 
-- Update documentation for any changes to the API
-- Follow the [Documentation Guide](docs/documentation-guide.md) for docstring format
-- Build and check documentation locally:
-  ```bash
-  task build:docs
-  task serve:docs
-  ```
+Documentation lives in [`docs/`](docs/README.md) as plain markdown with
+[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+frontmatter. There is **no documentation build** — no mkdocs, no generated API
+reference, no site to publish. Read the files, edit the files.
+
+- `docs/usage/` — task-oriented guides for people *using* the library. Update
+  these when you change public behaviour.
+- `docs/design/` — architecture and the *why*. Every doc carries `status` (is the
+  document trustworthy?) and `implementation` (does the thing exist?). Keep both
+  honest: a design that ships moves to `implementation: implemented`, and the
+  body sheds whatever the code now owns.
+- `docs/adr/` — decision records, for direction changes.
+
+Because there is no generated reference, **docstrings are the API
+documentation**. Treat them accordingly.
+
+New files need OKF frontmatter; see the
+[documentation standard](../engineering-handbook/standards/sdlc/documentation.md).
+
+#### Docstrings
+
+Google-style, on every public module, class, and function. `task check`
+enforces their presence on public packages, modules and classes (`D100`, `D101`,
+`D104`).
+
+```python
+def fetch_nodes(criteria: dict | MatchCriteria, unnest_result: bool = False) -> Any:
+    """Fetch nodes matching the given criteria.
+
+    Extended description covering behaviour, edge cases, or backend
+    differences worth knowing at the call site.
+
+    Args:
+        criteria: Match criteria — an ID, a GID, a property dict, or a
+            MatchCriteria instance.
+        unnest_result: Collapse trivial nesting in the result.
+
+    Returns:
+        A list of result rows, or the bare object when unnesting collapses
+        a single match.
+
+    Raises:
+        QueryExecutionError: If the backend rejects the query.
+    """
+```
+
+Conventions:
+
+- **Type annotations carry the types** — do not repeat them in `Args:`.
+- Document **`Raises:`** whenever a caller could reasonably be expected to catch
+  it.
+- Add an **`Example:`** for anything with a non-obvious calling convention.
+- Say what is **backend-specific**. A behavioural difference between AGE and
+  Memgraph belongs in the docstring, not only in a design doc.
+- Keep them in sync with the code in the same commit.
 
 ## Pull Request Process
 

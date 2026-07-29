@@ -12,7 +12,7 @@ tasks:
     desc: "Install the package in editable mode"
     cmds:
       - uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
-      - uv pip install --no-build-isolation -e ".[dev,build,docs]"
+      - uv pip install --no-build-isolation -e ".[dev,build]"
     deps:
       - setup
 
@@ -23,7 +23,7 @@ tasks:
       # parser in src/cypher_graphdb/cypher/ must match the runtime version.
       - uv lock --upgrade --no-sources
       - uv pip install --upgrade setuptools psycopg "antlr4-python3-runtime==4.11.1"
-      - uv pip install --upgrade --no-build-isolation -e ".[dev,build,docs]"
+      - uv pip install --upgrade --no-build-isolation -e ".[dev,build]"
 
   clean:
     desc: "Clean the build files"
@@ -32,12 +32,7 @@ tasks:
       - find . -type d -name __pycache__ -exec rm -rf {} +
       - find . -type f -name "*.pyc" -delete
       - rm -rf src/*.egg-info/ .mypy_cache/ .coverage .scannerwork
-      - rm -rf docs/coverage/ tests/coverage.xml
-
-  clean:docs:
-    desc: "Clean generated documentation site"
-    cmds:
-      - rm -rf site
+      - rm -rf htmlcov/ tests/coverage.xml
 
   clean:venv:
     desc: "Clean .venv"
@@ -63,26 +58,10 @@ tasks:
     desc: "Build all artifacts"
     cmds:
       - task: build
-      - task: build:docs
   build:
     desc: "Build the package"
     cmds:
       - uv build
-  build:docs:
-    desc: "Build the documentation"
-    cmds:
-      - mkdir -p docs
-      - ln -sf ../CONTRIBUTING.md docs/CONTRIBUTING.md
-      - ln -sf ../LICENSE.md docs/LICENSE.md
-      - .venv/bin/mkdocs build
-      - rm -f docs/CONTRIBUTING.md
-      - rm -f docs/LICENSE.md
-
-  serve:docs:
-    desc: "Run MkDocs live preview server"
-    cmds:
-      - .venv/bin/mkdocs serve
-
   format:
     desc: "Format the code using ruff"
     cmds:
@@ -137,7 +116,7 @@ tasks:
   test:cov:
     desc: "Run the unit tests using pytest with coverage"
     cmds:
-      - .venv/bin/pytest -m unit --cov src --cov-report html:docs/coverage --cov-report xml:tests/coverage.xml -x
+      - .venv/bin/pytest -m unit --cov src --cov-report html:htmlcov --cov-report xml:tests/coverage.xml -x
 
   test:all:
     desc: "Run all tests (unit and integration)"

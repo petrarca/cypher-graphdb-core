@@ -1,4 +1,18 @@
-# Read-Only Mode Design
+---
+type: Concept
+title: Read-only mode
+description: How read-only mode blocks writing Cypher clauses before they reach the backend, and why the check sits in the parser rather than in a callback.
+tags: [cypher-graphdb, read-only, safety, parser, settings]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
+
+# Read-only mode
+
+> **Built.** `read_only` on `Settings` (env `CGDB_READ_ONLY`, CLI `-r`),
+> enforced in `cyphergraphdb/connection.py` via `cypherparser`, raising
+> `ReadOnlyModeError`.
 
 ## Overview
 

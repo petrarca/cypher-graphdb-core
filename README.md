@@ -1,354 +1,118 @@
-# CypherGraphDB Library
+# cypher-graphdb
 
-## Overview
+One Python API for **Cypher graph databases** — Apache AGE (a PostgreSQL
+extension) and Memgraph (Bolt) today, others behind the same seam. Plus optional
+Pydantic typing and an interactive CLI over the same surface.
 
-CypherGraphDB is a unified Python toolkit for working with Cypher-capable graph databases. It provides three core capabilities:
+Cypher is close to a standard; the databases that speak it are not. AGE keeps
+properties in a single `agtype` column and cannot bind parameters inside
+`UNWIND`; Memgraph is a native graph store with per-property indexes and real
+streaming. `cypher-graphdb` absorbs those differences **without pretending they
+do not exist**.
 
-### 1. **Generalized API** - Vendor-Neutral Graph Database Access
+## Why cypher-graphdb
 
-Work with multiple graph database backends through a unified, consistent interface:
+1. **Portable, honestly.** One API across backends, with the differences
+   *declared* rather than discovered. Anything a backend may not support sits
+   behind `has_capability(...)`, so you branch on a fact instead of catching a
+   failure mid-load.
 
-- **Vendor Neutrality** – Same API works across Apache AGE, Memgraph, and other Cypher databases
-- **Extensible Architecture** – Add new backends by implementing the `CypherBackend` abstract class
-- **Connection Management** – Pooled connections with automatic reconnection and configuration
-- **Query Execution** – Direct Cypher queries with result processing and statistics
-- **Data Exchange** – Built-in import/export tools for CSV, Excel, JSON formats
-- **Schema Operations** – Graph introspection, schema dumping, and analysis tools
+2. **Never in your way.** Every layer above raw Cypher is optional and the
+   database stays reachable — down to `execute_sql()` against PostgreSQL/AGE
+   directly. Dropping a level for one awkward query is a supported move.
 
-### 2. **Typed ORM-Like Access Layer**
+3. **Typing you opt into.** Register Pydantic models on a `ModelProvider` you
+   construct and results hydrate into your own classes. No global registry, so
+   importing a module has no process-wide effect and two graphs can use the same
+   label for different things.
 
-Optional Pydantic-based object mapping for type-safe graph operations:
+4. **Built for bulk.** `bulk_create_nodes` / `bulk_create_edges` batch through
+   `UNWIND` (or a direct SQL path), and property indexing is first-class —
+   because a graph load that ignores indexes is a graph load that never
+   finishes.
 
-- **Model Decorators** – `@node`, `@edge`, `@relation` for defining graph schemas
-- **Type Safety** – Automatic validation and IDE support with autocompletion
-- **Custom Methods** – Add business logic directly to your graph models
-- **Schema Generation** – Automatic JSON schema generation from Python models
+5. **Safe by construction.** Query building returns `(query, params)`;
+   read-only mode rejects writing clauses in the parser before they reach the
+   backend; results and their statistics come back as one immutable value, which
+   is what makes pooling and concurrency safe.
 
-### 3. **Interactive CLI** - Vendor-Neutral Graph Database Operations
+## Feature shortlist
 
-Comprehensive command-line interface that works identically across all supported backends:
+- **Backends** — `age` (Apache AGE on PostgreSQL) and `memgraph` (Bolt). Both
+  drivers ship as regular dependencies; there is no per-backend extra. Add
+  another by implementing the `CypherBackend` ABC.
+- **Capability model** — `BackendCapability` covers property indexes, unique
+  constraints, full-text and vector indexes, streaming, pagination, multiple
+  labels and more. Optional methods raise `NotImplementedError`; the check is
+  how you avoid that.
+- **Typed models** — `mp.node()` / `mp.edge()` / `mp.relation()` on an explicit
+  `ModelProvider`, with `Cardinality` on declared relationships and JSON-schema
+  generation from the models.
+- **Queries** — parameterized `execute(cypher, params=…)`, optional result
+  unnesting, `QueryResult` with execution statistics, chunked streaming, and
+  pagination via `Page`.
+- **Graph objects** — `GraphNode`, `GraphEdge`, `GraphPath`, `Graph`, with match
+  criteria (`MatchNodeCriteria`, `MatchEdgeCriteria`, `MatchNodeById`, …) that
+  build parameterized Cypher rather than concatenated strings.
+- **Bulk + indexes** — batched node/edge creation, `create_property_index`,
+  `drop_index`, `list_indexes` returning normalized `IndexInfo`.
+- **Client-side analysis** — `graphops` over a materialized `Graph`:
+  `root_nodes`, `incoming_nodes` / `outgoing_nodes`, `build_tree`, `has_cycles`,
+  `density`.
+- **Import / export** — CSV, Excel, JSON and YAML, including a hierarchical
+  round-trip format with `gid_` deduplication.
+- **Safety** — read-only mode, connection guards, credential-redacting settings.
+- **Pooling** — `CypherGraphDBPool` with a size bound and idle TTL.
+- **CLI** — `cgdb-cli`, interactive or scripted, over every backend.
 
-- **44+ Commands** – Full suite of graph operations, schema management, and analysis tools
-- **Rich Formatting** – Colorized output with tables, trees, and JSON highlighting
-- **Cross-Platform** – Same commands work with Apache AGE, Memgraph, or any supported backend
-- **Interactive Exploration** – Real-time graph querying and visualization
+## Levels of abstraction
 
-## Supported Backends
+Four layers, each usable on its own, all on the same connection and transaction.
 
-- **age** – Apache AGE extension on PostgreSQL
-- **memgraph** – Memgraph database via Bolt protocol
-
-**Extensible:** Add new Cypher-compatible backends by implementing the `CypherBackend` abstract class.
-
-## Prerequisites
-
-| Tool | Purpose | Install |
-|------|---------|---------|
-| Python 3.13+ | Runtime | `uv python install 3.13` |
-| [uv](https://github.com/astral-sh/uv) | Dependency & venv manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Task](https://taskfile.dev) | Automation | `brew install go-task` |
-| Docker | Integration tests | `brew install --cask docker` |
-
-## Quick Start
-
-```bash
-git clone https://github.com/petrarca/cypher-graphdb-core.git
-cd cypher-graphdb-core
-task install    # Create venv + install library
-task test:unit  # Run unit tests
-task run:cli    # Launch interactive CLI
+```
+TYPED OBJECTS     your Pydantic classes, registered on a ModelProvider
+GRAPH OBJECTS     GraphNode / GraphEdge / GraphPath / Graph + match criteria
+CYPHER            execute(cypher, params=…) → QueryResult
+BACKEND SQL       execute_sql() — straight to PostgreSQL/AGE
 ```
 
-## Backend Configuration
+`CypherGraphDB` is a facade composed of mixins — connection, batch, indexing,
+schema, search, SQL, streaming, pagination — so every layer is reachable from
+one object. Details in
+[`docs/usage/index.md`](docs/usage/index.md#layering-high-level--low-level).
 
-### Apache AGE (backend="age")
-
-Apache AGE runs as a PostgreSQL extension. Connection strings use PostgreSQL format.
-
-**Key Parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `host` | PostgreSQL server hostname | `localhost` |
-| `port` | PostgreSQL server port | `5432` |
-| `dbname` | Database name | (required) |
-| `user` | Username for authentication | - |
-| `password` | Password for authentication | - |
-| `graph_name` | AGE graph name to use/create | - |
-
-**Connection Examples:**
-
-```bash
-# CLI with connection info
-cypher-graphdb --backend age --cinfo "host=localhost port=5432 dbname=postgres"
-
-# Environment variable
-export CGDB_CINFO="postgresql://postgres:secret@localhost:5432/postgres"
-cypher-graphdb --backend age
-```
-
-### Memgraph (backend="memgraph")
-
-Memgraph uses the Bolt protocol for connections.
-
-**Key Parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `host` | Memgraph server hostname | `127.0.0.1` |
-| `port` | Memgraph Bolt port | `7687` |
-| `username` | Username for authentication | (empty) |
-| `password` | Password for authentication | (empty) |
-
-**Connection Formats:**
-
-- Bolt URI: `bolt://[username:password@]hostname:port`
-- Key=value: `host=localhost port=7687 username=user password=secret`
-- Partial: `port=1234` or `host=192.168.1.100`
-
-**Connection Examples:**
-
-```bash
-# Bolt URI
-cypher-graphdb --backend memgraph --cinfo "bolt://localhost:7687"
-
-# Environment variable
-export CGDB_CINFO="bolt://user:pass@localhost:7687"
-cypher-graphdb --backend memgraph
-```
-
-## 1. Generalized API Usage
-
-### Vendor-Neutral Database Access
-
-The unified API provides consistent access to different graph database backends:
-
-#### Connection (Recommended)
-
-The recommended connection method is `connect_url` for simplicity:
-
-```python
-from cypher_graphdb import CypherGraphDB
-
-# Memgraph - recommended
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
-
-# Apache AGE
-db = CypherGraphDB(backend="age", connect_url="postgresql://postgres:secret@localhost:5432/postgres")
-
-# Context manager (recommended - auto-cleanup)
-with CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687") as db:
-   result = db.execute("RETURN 1 AS value", unnest_result=True)
-   print(result)  # 1
-```
-
-Alternative connection methods (CINFO parameter, individual params, environment variables) are also supported. See documentation for details.
-
-## Configuration
-
-The library reads configuration from environment variables (can be overridden by CLI flags or constructor parameters):
-
-| Setting | Env Var | CLI Flag | Default | Description |
-|---------|---------|----------|---------|-------------|
-| backend | `CGDB_BACKEND` | `-b / --backend` | `None` | Backend type (`memgraph`, `age`) |
-| cinfo | `CGDB_CINFO` | `-c / --cinfo` | `None` | Connection string / DSN |
-| graph | `CGDB_GRAPH` | `-g / --graph` | `None` | Graph name (backend-specific) |
-| read_only | `CGDB_READ_ONLY` | `-r / --read-only` | `False` | Block write operations |
-| create_graph | `CGDB_CREATE_GRAPH_IF_NOT_EXISTS` | - | `False` | Auto-create graph if missing (AGE only) |
-
-**Precedence:** CLI arguments > Environment variables > Constructor parameters > Defaults
-
-**Example .env files:**
-- `.env.memgraph.example` - Pre-configured for Memgraph Docker Compose stack
-- `.env.age.example` - Pre-configured for Apache AGE Docker Compose stack
-
-Copy the appropriate example file to `.env` and the library will automatically load it:
-
-```bash
-# For Memgraph
-cp .env.memgraph.example .env
-
-# For Apache AGE
-cp .env.age.example .env
-```
-
-### Basic Queries
-
-```python
-from cypher_graphdb import CypherGraphDB
-
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
-
-# Execute query with multiple results
-rows = db.execute("MATCH (n:Person) RETURN n.name, n.age LIMIT 5")
-for name, age in rows:
-    print(f"{name}: {age}")
-
-# Unnest single scalar result
-count = db.execute("MATCH (n) RETURN count(n)", unnest_result=True)
-print(f"Total nodes: {count}")  # 42
-
-# Fetch one row
-result = db.execute("RETURN 1 AS x, 2 AS y", fetch_one=True, unnest_result=True)
-print(result)  # (1, 2)
-```
-
-### Create & Merge Nodes and Edges
+## Example
 
 ```python
 from cypher_graphdb import CypherGraphDB, GraphNode, GraphEdge
 
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
+with CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687") as db:
+    alice = db.create_or_merge(GraphNode(label_="Person",
+                                         properties_={"name": "Alice", "age": 30}))
+    acme  = db.create_or_merge(GraphNode(label_="Company",
+                                         properties_={"name": "TechCorp"}))
+    db.create_or_merge(
+        GraphEdge.build(alice, acme, label_="WORKS_FOR", properties_={"since": 2020})
+    )
+    db.commit()
 
-# Create nodes
-person = GraphNode(label_="Person", properties_={"name": "Alice", "age": 30})
-person = db.create_or_merge(person)  # Returns node with ID assigned
-print(f"Created person with ID: {person.id_}")
-
-company = GraphNode(label_="Company", properties_={"name": "TechCorp"})
-company = db.create_or_merge(company)
-
-# Create relationship
-rel = GraphEdge.build(person, company, label_="WORKS_FOR", properties_={"since": 2020})
-rel = db.create_or_merge(rel)
-print(f"Created relationship: {person.properties_['name']} WORKS_FOR {company.properties_['name']}")
+    for name, company in db.execute(
+        "MATCH (p:Person)-[:WORKS_FOR]->(c:Company) RETURN p.name, c.name"
+    ):
+        print(f"{name} works for {company}")
 ```
 
-### Fetch Nodes (Multiple Methods)
+Swap `backend="age"` and a `postgresql://` URL and the rest is unchanged. Note
+that nothing commits implicitly — not `create_or_merge`, not leaving the `with`
+block.
+
+### With typed models
+
+Models register on a provider you construct, and the provider is wired to the
+connection:
 
 ```python
-from cypher_graphdb import CypherGraphDB
-
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
-
-# Fetch by database ID
-node = db.fetch_nodes(12345, unnest_result=True)
-
-# Fetch by GID (string identifier)
-node = db.fetch_nodes("6f628f1e7tFZHfis", unnest_result=True)
-
-# Fetch by properties
-nodes = db.fetch_nodes({"label_": "Product", "name": "CypherGraph"})
-
-# Fetch all nodes of a type (with typed models)
-from my_models import Product
-products = db.fetch_nodes({"label_": Product})
-```
-
-### Bulk Data Setup
-
-```python
-from cypher_graphdb import CypherGraphDB
-
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687")
-
-# Create multiple nodes and relationships in one query
-db.execute("""
-    CREATE (p1:Person {name: 'Alice', age: 30, email: 'alice@example.com'})
-    CREATE (p2:Person {name: 'Bob', age: 25, email: 'bob@example.com'})
-    CREATE (c:Company {name: 'TechCorp', founded: 2010})
-    CREATE (p1)-[:WORKS_FOR {since: 2020, role: 'Engineer'}]->(c)
-    CREATE (p2)-[:WORKS_FOR {since: 2021, role: 'Designer'}]->(c)
-    CREATE (p1)-[:KNOWS {since: 2019}]->(p2)
-""")
-```
-
-## 3. Interactive CLI - Vendor-Neutral Graph Operations
-
-The library includes a comprehensive interactive CLI with 44+ commands for exploring graph databases. The CLI provides identical functionality across all supported backends.
-
-### Running the CLI
-
-```bash
-# Using task automation
-task run:cli
-
-# Direct execution
-.venv/bin/cypher-graphdb
-```
-
-### Command Categories
-
-**Connection Management:**
-- `connect memgraph bolt://localhost:7687` – Connect to Memgraph
-- `connect age postgresql://...` – Connect to Apache AGE
-- `disconnect` – Close current connection
-
-**Query Execution:**
-- `MATCH (n) RETURN n LIMIT 5;` – Execute any Cypher query
-- `stats` – Show last query execution statistics
-- `format_output` – Configure result display format
-
-**Graph Operations:**
-- `create_node` – Create nodes with properties
-- `create_edge` – Create relationships between nodes
-- `fetch_nodes` – Retrieve nodes by criteria
-- `fetch_edges` – Retrieve edges by criteria
-- `delete_graphobj` – Remove nodes or edges
-
-**Schema & Introspection:**
-- `dump_schema` – Export graph schema definitions
-- `dump_labels` – List all node and edge labels
-- `dump_models` – Show registered model classes
-- `load_models` – Import model definitions
-
-**Import/Export:**
-- `import_graph` – Load data from CSV, Excel, JSON files
-- `export_graph` – Export graph data to various formats
-
-**Schema Generation:**
-- `schema generate` – Generate JSON schema from Python models (standalone, no DB required)
-
-**Transaction Control:**
-- `commit` – Commit current transaction
-- `rollback` – Rollback current transaction
-
-**Utilities:**
-- `help` – Show all available commands
-- `exit` – Exit CLI (aliases: `quit`, `q`, `bye`)
-- `search` – Full-text search across graph data
-- `graph_to_tree` – Visualize graph structure as tree
-
-> **Vendor Neutrality:** All CLI commands work identically across Apache AGE, Memgraph, and any other supported backend.
-
-### Schema Generation (Standalone)
-
-Generate JSON schema files from Python graph models without requiring a database connection:
-
-```bash
-# Generate from a single Python file
-cypher-graphdb schema generate --models ./models.py --output ./schemas/
-
-# Generate from a package directory (with __init__.py)
-cypher-graphdb schema generate -m ./graph_models/ -o ./output/
-
-# Specify output filename
-cypher-graphdb schema generate -m ./models.py -o ./my-schema.json
-
-# With verbose output
-cypher-graphdb schema generate -m ./models.py -o ./schemas/ --verbose
-
-# Skip confirmation prompt
-cypher-graphdb schema generate -m ./models.py -o ./schemas/ --yes
-```
-
-**Options:**
-- `-m, --models` – Path to Python file or directory with `@node`/`@edge` decorated models
-- `-o, --output` – Output path (directory uses `graph.schema.json`, or specify filename)
-- `-v, --verbose` – Show detailed output
-- `--overwrite` – Overwrite existing file without prompting
-- `-y, --yes` – Skip confirmation prompt
-
-**Package Support:** Directories with `__init__.py` are loaded as packages, enabling relative imports between model files.
-
-## 2. Typed ORM-Like Access Layer
-
-Define typed models against an explicit `ModelProvider` for better type safety
-and metadata. The provider is the registry your models belong to -- create one
-per graph and register models on it:
-
-```python
-from cypher_graphdb import GraphNode, GraphEdge, ModelProvider
+from cypher_graphdb import CypherGraphDB, GraphNode, GraphEdge, ModelProvider
 
 mp = ModelProvider()
 
@@ -358,85 +122,115 @@ class Product(GraphNode):
     name: str
     multi_tenancy: bool | None = None
 
-@mp.node(label="Technology")
-class Technology(GraphNode):
-    name: str
-
 @mp.edge(label="USES_TECHNOLOGY")
 class UsesTechnology(GraphEdge):
     version: str | None = None
+
+db = CypherGraphDB(backend="age", model_provider=mp)
 ```
 
-There is no global registry: importing this module has no process-wide side
-effect, so two graphs may define the same label without colliding.
+There is no global registry — importing this module has no process-wide effect,
+so two graphs may define the same label without colliding. See
+[`docs/adr/0001-explicit-model-providers.md`](docs/adr/0001-explicit-model-providers.md).
 
-### Using Typed Models
-
-Pass the provider to the connection so query results hydrate into your classes:
+### Loading data in bulk
 
 ```python
-from cypher_graphdb import CypherGraphDB
-
-db = CypherGraphDB(backend="memgraph", connect_url="bolt://localhost:7687", model_provider=mp)
-
-# Create typed nodes
-demo_product = Product(name="CypherGraph Demo", multi_tenancy=True)
-db.create_or_merge(demo_product)
-
-demo_technology = Technology(name="Python")
-db.create_or_merge(demo_technology)
-
-# Create typed relationship
-demo_relation = UsesTechnology.build(demo_product, demo_technology, version="3.13")
-db.create_or_merge(demo_relation)
-
-# Fetch typed nodes
-products = db.fetch_nodes({"label_": Product})
-for product in products:
-    print(f"Product: {product.name}, Multi-tenant: {product.multi_tenancy}")
+db.bulk_create_nodes(rows, label="Component", batch_size=200)
+db.create_property_index("Component", "symbol", "name")   # before the edges
+db.bulk_create_edges(edges, src_refs=…, dst_refs=…,
+                     src_label="Component", dst_label="Component",
+                     src_ref_prop="symbol", dst_ref_prop="symbol")
 ```
 
-## Result Unnesting
+Order matters: nodes, then the indexes the edge load matches on, then edges.
+[`docs/usage/bulk-and-indexes.md`](docs/usage/bulk-and-indexes.md) explains why,
+and what each backend actually does with an index.
 
-Simplify common query patterns:
+## Install
 
-```python
-# Single scalar
-value = db.execute("RETURN 42", unnest_result=True)  # 42 (not [(42,)])
+Requires **Python 3.14+**.
 
-# Single row
-row = db.execute("RETURN 1, 2", fetch_one=True, unnest_result=True)  # (1, 2)
+```bash
+pip install cypher-graphdb
+# or
+uv add cypher-graphdb
 ```
 
-## Task Automation
+The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
+Installing it also puts **`cgdb-cli`** on your `PATH`.
 
-| Task | Purpose |
-|------|---------|
-| `install` | Install library with dependencies |
-| `test:unit` | Run unit tests |
-| `test:integration` | Integration tests (requires Docker) |
-| `format` | Format code with Ruff |
-| `check` | Lint and check code quality |
-| `run:cli` | Run interactive CLI |
-| `fct` | Format + check + test |
+Connection details come from arguments, the environment, or a `.env` file:
 
-## Development Workflow
+```bash
+export CGDB_BACKEND=age
+export CGDB_CINFO=postgresql://postgres:postgres@localhost:5432/graphdb
+export CGDB_GRAPH=my_graph
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and guidelines.
+Then start with [`docs/usage/getting-started.md`](docs/usage/getting-started.md).
+
+## The CLI
+
+```bash
+cgdb-cli --graph my_graph                    # interactive REPL
+cgdb-cli --graph my_graph -e "labels"        # execute and exit
+cgdb-cli --graph my_graph --json -e "indexes"
+cgdb-cli schema generate -m ./graph_models/ -o ./schemas/   # no database needed
+```
+
+Anything that is not a recognised command runs as Cypher. Output is a table
+interactively and JSON when scripted. Full command set in
+[`docs/usage/cli.md`](docs/usage/cli.md).
+
+## Develop
+
+Requires [`uv`](https://docs.astral.sh/uv/) and [`task`](https://taskfile.dev/);
+integration tests need Docker.
+
+```bash
+task install           # venv + editable install
+task fct               # format + check + unit tests — the local loop
+task test:all          # unit + integration
+task run:cli           # run cgdb-cli from the venv
+```
+
+Conventions and the release flow are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Layout
+
+```
+src/cypher_graphdb/
+  backend.py            the CypherBackend ABC + BackendCapability
+  cyphergraphdb/        the facade and its mixins (connection, batch, indexing,
+                        schema, search, sql, streaming, pagination, criteria)
+  backends/             age/ and memgraph/ implementations
+  cypherquery/          the opt-in fluent query builder
+  cypherbuilder.py      parameterized Cypher construction
+  cypherparser.py       query parsing (drives read-only mode)
+  modelprovider.py      explicit model registries
+  models.py             GraphNode / GraphEdge / GraphPath / Graph
+  graphops.py           client-side analysis over a materialized Graph
+  tools/                import / export (CSV, Excel, JSON, YAML)
+  cli/                  cgdb-cli — REPL, commands, rendering
+docs/                   usage/, design/, adr/
+```
 
 ## Documentation
 
-Library documentation is built with MkDocs:
+- **Using the library** — install, connect, query, type your models, bulk-load,
+  and the CLI: [`docs/usage/index.md`](docs/usage/index.md).
+- **Design** — the backend seam, the layer stack, and one document per concept,
+  each declaring whether it is built:
+  [`docs/design/index.md`](docs/design/index.md).
+- **Decisions** — [`docs/adr/index.md`](docs/adr/index.md).
 
-```bash
-task build:docs   # Build docs site
-```
+Plain markdown with OKF frontmatter; there is no doc build and no generated API
+reference. Docstrings in the code are the API reference.
 
-Output: `site/` directory. API reference auto-generated from docstrings.
+## Contributing & License
 
-## License
-
-Apache License 2.0 -- see [LICENSE.md](LICENSE.md).
-
----
-Happy graph hacking!
+Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (and
+[`AGENTS.md`](AGENTS.md) if you use an AI coding assistant). Licensed under the
+Apache License 2.0 — see [`LICENSE.md`](LICENSE.md).

@@ -1,6 +1,14 @@
-# ModelProvider Isolation -- Per-Graph Model Separation
+---
+type: Concept
+title: ModelProvider isolation — per-graph model separation
+description: How cypher-graphdb keeps the graph models of different graphs separate in one process, with no global registry and no import side effects.
+tags: [cypher-graphdb, model-provider, isolation, multi-graph, registry]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-> Design document | Status: implemented
+# ModelProvider isolation — per-graph model separation
 
 This document describes how `cypher-graphdb` keeps the graph models of different
 graphs separated within a single process.

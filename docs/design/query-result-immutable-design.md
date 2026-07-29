@@ -1,46 +1,25 @@
-# QueryResult and Dual Execute Methods Design
+---
+type: Design
+title: Immutable QueryResult and dual execute methods
+description: Why query results and their statistics are returned as one immutable object rather than read back from mutable connection state, and what that buys in concurrent use.
+tags: [cypher-graphdb, query-result, immutability, thread-safety, statistics, pooling]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-## Overview
+# Immutable QueryResult and dual execute methods
 
-This document outlines the design for implementing immutable `QueryResult` objects alongside dual execute methods to address state management issues in the CypherGraphDatabase library while maintaining backward compatibility.
+> **Built.** `QueryResult` lives in `cyphergraphdb/result.py`;
+> `execute_with_stats()` and `execute_sql_with_stats()` return it. The mutable
+> connection state this replaced — `_exec_statistics`, `_sql_statistics`,
+> `_last_parsed_query`, and the `exec_statistics()` / `last_parsed_query` /
+> `sql_statistics()` accessors — was removed outright rather than deprecated,
+> since the library had no external users at the time.
 
-## ✅ IMPLEMENTATION COMPLETED (November 25, 2025)
-
-**Status**: ✅ **FULLY IMPLEMENTED**
-
-This design has been successfully implemented with all core features working and tested. The implementation provides thread safety, immutable state management, and clear migration paths.
-
-### Implementation Summary
-- ✅ **QueryResult Pydantic model**: Immutable container with helper methods
-- ✅ **execute_with_stats() method**: Returns complete QueryResult with statistics
-- ✅ **execute_sql_with_stats() method**: SQL version with SqlStatistics
-- ✅ **Deprecated methods**: exec_statistics(), last_parsed_query, sql_statistics() **completely removed**
-- ✅ **Internal mutable state**: _exec_statistics, _sql_statistics, _last_parsed_query **completely eliminated**
-- ✅ **Server integration**: QueryService migrated to new pattern
-- ✅ **Thread safety**: Eliminated race conditions in concurrent scenarios
-
-### Files Modified
-- `src/cypher_graphdb/cyphergraphdb.py` - Added QueryResult class and new methods
-- `src/cypher_graphdb/models.py` - Removed circular imports (QueryResult moved)
-- `server/src/cypher_graphdb_server/services/query_service.py` - Migrated to execute_with_stats()
-
-### Testing Status
-- ✅ All unit tests pass (311 passed, 53 deselected)
-- ✅ Lint checks pass with no new issues
-- ✅ Import validation successful
-- ✅ Method signatures correct
-- ✅ Error behavior validated
-
-## Alpha Stage Implementation Notes
-
-Given that CypherGraphDB is in alpha stage with no external users, this design was implemented directly without the complex migration strategy. The implementation followed the recommended approach:
-
-1. ✅ **Implemented `QueryResult` and `execute_with_stats()` immediately**
-2. ✅ **Made `exec_statistics()` and `last_parsed_query` raise errors immediately**  
-3. ✅ **Used error-driven discovery to find internal code needing updates**
-4. ✅ **No backward compatibility layer needed**
-
-This provides all architectural benefits without migration overhead.
+The durable point of this document is the *why*: results and their metadata
+travel together as one immutable value, instead of being read back from state
+hanging off the connection.
 
 ## Problem Statement
 

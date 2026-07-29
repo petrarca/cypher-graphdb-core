@@ -1,7 +1,17 @@
-# ModelProvider -- Label Collision in Multi-Graph Environments
+---
+type: Design
+title: ModelProvider — label collision in multi-graph environments
+description: Why using the graph label as the sole registration key let one graph's models silently overwrite another's, and how per-provider isolation resolved it.
+tags: [cypher-graphdb, model-provider, label-collision, multi-graph, bug]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-Status: resolved
-Date: 2026-05-29 (resolved 2026-07-28)
+# ModelProvider — label collision in multi-graph environments
+
+> **Resolved** (raised 2026-05-29, resolved 2026-07-28) by the per-provider
+> design in [model-provider-isolation.md](model-provider-isolation.md).
 
 ## Problem
 

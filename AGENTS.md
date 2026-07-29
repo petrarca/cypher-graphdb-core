@@ -233,7 +233,15 @@ Capabilities: `LABEL_FUNCTION`, `SUPPORT_MULTIPLE_LABELS`, `STREAMING_SUPPORT`, 
 ### AGE Backend Specifics
 
 - AGE stores properties in a single `agtype` JSON column per label table
-- GIN indexes cover all properties (property_names parameter is ignored)
+- `create_property_index` creates **two** kinds of index, and `property_names` is
+  **not** ignored: a GIN index on the whole `properties` column (covers the `@>`
+  containment operator), **plus a btree expression index per named property**.
+  Cypher `WHERE n.prop = ...` compiles to `agtype_access_operator`, which the GIN
+  index does not serve — without the per-property btree indexes every lookup is a
+  sequential scan. Always pass property names.
+- `list_indexes()` parses `pg_indexes`; AGE property indexes are *expression*
+  indexes, so property names come from the `'"name"'::agtype` literal, not from a
+  column list
 - UNWIND requires inline Cypher literals (no `$params`), handled by `ageserializer.py`
 - Label tables are created lazily on first node insert
 - Graph = PostgreSQL schema; label = table within that schema
@@ -261,13 +269,33 @@ McCabe max-complexity = 10. Refactor complex functions into helpers.
 
 ## Documentation
 
-Docs use mkdocs with the Material theme. `docs/reference/` is auto-generated from
-docstrings via `scripts/gen_ref_nav.py` + `mkdocstrings`. Manual pages live under
-`docs/usage/` (plain markdown). To add a new usage guide:
+Docs are plain markdown with [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+frontmatter. **There is no doc build** — no mkdocs, no generated API reference,
+no site. Entry point: `docs/README.md`.
 
-1. Create `docs/usage/my-guide.md`
-2. Add it to `nav:` in `mkdocs.yml` under the `Usage:` section
-3. Preview with `task docs:serve` (if configured) or `mkdocs serve`
+| Directory | Contents |
+|---|---|
+| `docs/usage/` | Task-oriented guides for consumers |
+| `docs/design/` | Architecture and the *why*, one doc per concept |
+| `docs/adr/` | Decision records (`NNNN-title.md`) |
+| `docs/records/` | *(optional, absent today)* point-in-time artifacts; not maintained |
+
+To add a guide: create `docs/usage/my-guide.md` with OKF frontmatter and add a
+row to the table in `docs/usage/index.md`. Nothing else to register.
+
+Frontmatter carries **two independent lifecycle axes** — do not conflate them:
+
+- `status`: `draft` | `stable` | `deprecated` — is the *document* trustworthy?
+- `implementation`: `proposed` | `in-progress` | `implemented` | `superseded` |
+  `abandoned` — does the *thing* exist? (`design/` only.)
+
+A design doc that ships moves to `implementation: implemented` and sheds
+whatever the code now owns. **Verify a doc's claimed status against the code
+before trusting it** — several were stale by years.
+
+Because there is no generated reference, **docstrings are the API
+documentation**. See `CONTRIBUTING.md` for the docstring conventions, and the
+org standard in `../engineering-handbook/standards/sdlc/documentation.md`.
 
 ## Smoke Testing
 
