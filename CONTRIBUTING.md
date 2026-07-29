@@ -146,13 +146,20 @@ Pushing the tag triggers two GitHub Actions workflows automatically:
 
 ### Version numbering
 
-Follow [Semantic Versioning](https://semver.org/):
+`MAJOR.MINOR.PATCH`, but the major component is **not** strict SemVer:
 
 | Change | Bump | Example |
 |--------|------|---------|
-| Bug fixes, minor improvements, docs, tests | Patch | `v0.2.9` -> `v0.2.10` |
-| New features, backward-compatible additions | Minor | `v0.2.10` -> `v0.3.0` |
-| Breaking changes to API or schema | Major | `v0.3.0` -> `v1.0.0` |
+| Bug fixes, docs, tests, internal cleanups | Patch | `v0.5.0` -> `v0.5.1` |
+| Features, refactors, packaging and dependency changes -- **breaking changes included** | Minor | `v0.5.0` -> `v0.6.0` |
+| A new generation, or a substantial body of new capability | Major | `v0.6.0` -> `v1.0.0` |
+
+A breaking change does not force a major bump. **A patch release never breaks
+anything** -- that is the hard rule. Because a minor bump carries no warning of
+its own, breaking changes must be spelled out in the release notes with the
+migration a consumer needs.
+
+See the [org standard](../engineering-handbook/standards/sdlc/releases.md).
 
 ### Step-by-step release process
 
