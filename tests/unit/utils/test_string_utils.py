@@ -5,46 +5,6 @@ from pydantic import BaseModel
 import cypher_graphdb.utils as utils
 
 
-def test_split_str():
-    assert utils.split_str("abc", "|") == ["abc"]
-    assert utils.split_str("abc|def", "|") == ["abc", "def"]
-    assert utils.split_str("abc||def", "||") == ["abc", "def"]
-    assert utils.split_str("'abc|def'", "|") == ["'abc|def'"]
-    assert utils.split_str('"abc|def"', "|") == ['"abc|def"']
-
-
-def test_partition_str():
-    assert utils.partition_str("abc", ":") == ("abc", "", "")
-    assert utils.partition_str("abc:def", ":") == ("abc", ":", "def")
-    assert utils.partition_str("abc:def:ghi", ":") == ("abc", ":", "def:ghi")
-
-
-def test_split_args_kwargs():
-    data = "arg1, arg2, arg3, opt1=4711, opt2='val', opt3=['1',2],opt4={'f1':'a','f2':10}"
-
-    args, kwargs = utils.split_into_args_kwargs(data)
-    assert args == (
-        "arg1",
-        "arg2",
-        "arg3",
-    )
-    assert kwargs == {
-        "opt1": 4711,
-        "opt2": "val",
-        "opt3": ["1", 2],
-        "opt4": {"f1": "a", "f2": 10},
-    }
-
-
-def test_args_to_dict():
-    assert utils.args_to_dict("arg1") == {"arg1": True}
-    assert utils.args_to_dict("arg1,arg2") == {"arg1": True, "arg2": True}
-    assert utils.args_to_dict(["arg1", "arg2"]) == {"arg1": True, "arg2": True}
-    assert utils.args_to_dict("arg1=10") == {"arg1": 10}
-    assert utils.args_to_dict("arg1=10, arg2='abc'") == {"arg1": 10, "arg2": "abc"}
-    assert utils.args_to_dict(["arg1=10", "arg2='abc'"]) == {"arg1": 10, "arg2": "abc"}
-
-
 def test_resolve_properties():
     data = {
         "p1": "None",

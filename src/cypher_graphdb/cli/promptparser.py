@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from cypher_graphdb import utils
+from cypher_graphdb.cli import promptgrammar
 from cypher_graphdb.cli.commandposition import CommandPosition
 
 
@@ -151,13 +152,11 @@ class PromptParser:
         return self._default_action
 
     def parse_prompt(self, prompt_line) -> PromptParserResult:
-        # split internal and shell commands, sepated by double pipe, ignoring separators in quoted strings
-        internal_cmds, _, shell_cmd = utils.partition_str(prompt_line, "||")
+        # The grammar splits on "||" and "|" while respecting quoted sections,
+        # so a separator inside a value is not a split point.
+        commands, shell_cmd = promptgrammar.split_line(prompt_line)
 
-        parse_result = PromptParserResult(cmdline=prompt_line, shell_cmd=shell_cmd.strip())
-
-        # handle cmd | ..., ignoring separators in quoted strings
-        commands = utils.split_str(internal_cmds, "|")
+        parse_result = PromptParserResult(cmdline=prompt_line, shell_cmd=shell_cmd)
 
         pos = 0
         for command in commands:
@@ -284,7 +283,7 @@ class PromptParser:
 
                 # split into args and kwargs
                 if split_args:
-                    args, kwargs = utils.split_into_args_kwargs(options)
+                    args, kwargs = promptgrammar.parse_args(options)
                 else:
                     args, kwargs = [], {}
 
