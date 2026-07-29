@@ -18,7 +18,7 @@ class DumpIndexesCommand(BaseCommand):
 
     command_name = "dump_indexes"
 
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_indexes", tokens=["indexes"])
+    command_map_entry = BaseCommand.create_command_map_entry("dump_indexes", tokens=["indexes"])
     completion = ["all"]
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

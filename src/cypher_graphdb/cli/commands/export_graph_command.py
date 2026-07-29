@@ -1,5 +1,6 @@
 """Export graph command implementation for CLI."""
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.exporter import GraphExporter
 from cypher_graphdb.cli.promptparser import PromptParserCmd
@@ -16,7 +17,9 @@ class ExportGraphCommand(BaseCommand):
     command_name = "export_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="export_graph]]", tokens=["export", "export graph"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "export_graph", tokens=["export", "export graph"], position=CommandPosition.LAST
+    )
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the export graph command.

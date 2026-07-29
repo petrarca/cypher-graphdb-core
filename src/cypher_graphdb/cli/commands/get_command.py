@@ -17,7 +17,7 @@ class GetCommand(BaseCommand):
     command_name = "get"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[get_", tokens=["get", "$"])
+    command_map_entry = BaseCommand.create_command_map_entry("get", tokens=["get", "$"], requires_backend=False)
     completion = "variables"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

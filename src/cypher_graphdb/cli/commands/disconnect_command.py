@@ -14,7 +14,7 @@ class DisconnectCommand(BaseCommand):
     command_name = "disconnect"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[disconnect", tokens=["disconnect"])
+    command_map_entry = BaseCommand.create_command_map_entry("disconnect", tokens=["disconnect"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the disconnect command.

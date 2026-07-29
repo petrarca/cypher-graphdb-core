@@ -19,7 +19,7 @@ class DumpStatisticsCommand(BaseCommand):
     command_name = "stats"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[stats", tokens=["stats", "statistics"])
+    command_map_entry = BaseCommand.create_command_map_entry("stats", tokens=["stats", "statistics"])
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the dump statistics command.

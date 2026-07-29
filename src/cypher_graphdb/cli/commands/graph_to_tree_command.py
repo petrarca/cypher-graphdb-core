@@ -6,6 +6,7 @@ import rich
 
 import cypher_graphdb.config as config
 import cypher_graphdb.graphops as gops
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
 from cypher_graphdb.models import Graph
@@ -20,7 +21,9 @@ class GraphToTreeCommand(BaseCommand):
     command_name = "graph_to_tree"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="graph_to_tree_", tokens=["tree"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "graph_to_tree", tokens=["tree"], position=CommandPosition.ANY, requires_backend=False
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""

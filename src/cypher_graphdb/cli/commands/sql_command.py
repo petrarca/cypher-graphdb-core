@@ -17,7 +17,7 @@ class SqlCommand(BaseCommand):
     command_name = "sql"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[sql*", tokens=["sql"])
+    command_map_entry = BaseCommand.create_command_map_entry("sql", tokens=["sql"], splits_args=False)
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the SQL command.

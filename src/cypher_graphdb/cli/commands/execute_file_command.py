@@ -17,7 +17,7 @@ class ExecuteFileCommand(BaseCommand):
     command_name = "execute_file"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[execute_file", tokens=["execute", "exec"])
+    command_map_entry = BaseCommand.create_command_map_entry("execute_file", tokens=["execute", "exec"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the execute file command.

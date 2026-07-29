@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import rich
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -17,7 +18,9 @@ class ClearGraphCommand(BaseCommand):
     command_name = "clear_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[clear_graph]]_", tokens=["clear"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "clear_graph", tokens=["clear"], position=CommandPosition.FIRST_OR_LAST, requires_backend=False
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the clear graph command.

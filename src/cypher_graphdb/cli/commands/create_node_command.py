@@ -17,7 +17,7 @@ class CreateNodeCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(
-        pattern="[[create_node", tokens=["create node"], object_type=GraphObjectType.NODE
+        "create_node", tokens=["create node"], object_type=GraphObjectType.NODE
     )
     completion = {"type": "label_props", "complete_mandatory_props": True}
 

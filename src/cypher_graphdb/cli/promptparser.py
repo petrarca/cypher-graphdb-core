@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from cypher_graphdb import utils
+from cypher_graphdb.cli.commandposition import CommandPosition
 
 
 class PromptParserCmd(BaseModel):
@@ -17,7 +18,6 @@ class PromptParserCmd(BaseModel):
 
     options: str | None
     action: str
-    raw_action: str
     cmd: str | None
     args: list[str] | None
     kwargs: dict[str, Any] | None
@@ -144,8 +144,7 @@ class PromptParser:
     def __init__(self, cmd_map: dict[str, list[str]], default_action=None) -> None:
         self.cmd_map = self._prepare_cmd_map(cmd_map)
 
-        self._default_raw_action = default_action
-        self._default_action = self._raw_to_action(default_action)
+        self._default_action = default_action
 
     @property
     def default_action(self) -> str:
@@ -180,26 +179,21 @@ class PromptParser:
     def parse_cmd(self, text: str) -> PromptParserCmd:
         assert text is not None
 
-        raw_action, cmd, options, args, kwargs, mappings = self._parse_cmd_with_map(self.cmd_map, text.strip())
+        action, cmd, options, args, kwargs, mappings = self._parse_cmd_with_map(self.cmd_map, text.strip())
 
         if cmd:
             cmd = cmd.strip()
 
-        if not raw_action:
-            raw_action = self._default_raw_action
+        if not action:
+            action = self._default_action
 
-        if raw_action and raw_action.endswith("_"):
-            require_backend = False
-            raw_action = raw_action[:-1]
-        else:
-            require_backend = True
-
-        action = self._raw_to_action(raw_action)
+        # Behaviour comes from explicit flags on the map entry, not from
+        # punctuation around the action name.
+        require_backend = bool((mappings or {}).get("requires_backend", True))
 
         return PromptParserCmd(
             options=options,
             action=action,
-            raw_action=raw_action,
             cmd=cmd,
             args=args,
             kwargs=kwargs,
@@ -238,42 +232,43 @@ class PromptParser:
         return not (parse_result.has_shellcmd() and not pipe_to_shellcmd(parse_result))
 
     def _prepare_cmd_map(self, cmd_map):
-        result = dict(sorted(cmd_map.items(), key=lambda item: (-len(item[0]), item[0])))
+        """Order the map so that longest-prefix matching is correct.
 
-        for _, value in result.items():
+        Matching walks entries in order and takes the first whose token is a
+        prefix of the input, so "create linked node" must be tried before
+        "create node". The deciding length is the longest *token* of an entry,
+        not its action name -- those used to correlate only because the action
+        name mirrored the tokens.
+        """
+
+        def longest_token(entry) -> int:
+            return max((len(t) for t in entry.get("tokens", ()) if t), default=0)
+
+        result = dict(sorted(cmd_map.items(), key=lambda item: (-longest_token(item[1]), item[0])))
+
+        for value in result.values():
             tokens = value["tokens"]
-            sorted_tokens = sorted(tokens, key=lambda x: (x is None, -len(x) if x else 0, x if x else ""))
-            value["tokens"] = sorted_tokens
+            value["tokens"] = sorted(tokens, key=lambda x: (x is None, -len(x) if x else 0, x if x else ""))
 
         return result
 
-    def _raw_to_action(self, raw_action: str | None) -> str | None:
-        if raw_action:
-            return raw_action.replace("[", "").replace("]", "")
-
-        return None
-
     def _validate_sequence(self, parse_result: PromptParserResult) -> bool:
+        """Check every command sits at a position its declaration allows."""
         for cmd in parse_result.cmds:
-            require_singlecmd = False
+            position = (cmd.mappings or {}).get("position", CommandPosition.FIRST)
 
-            if (require_start := cmd.raw_action.startswith("[")) and cmd.raw_action.startswith("[["):
-                require_singlecmd = True
+            match CommandPosition(position):
+                case CommandPosition.ANY:
+                    allowed = True
+                case CommandPosition.FIRST:
+                    allowed = cmd.is_firstcmd()
+                case CommandPosition.LAST:
+                    allowed = cmd.is_lastcmd()
+                case CommandPosition.FIRST_OR_LAST:
+                    allowed = cmd.is_firstcmd() or cmd.is_lastcmd()
 
-            if (require_end := cmd.raw_action.endswith("]")) and cmd.raw_action.endswith("]]"):
-                require_singlecmd = True
-
-            # validate [command sequence condition
-            cond_start = cmd.is_firstcmd() if require_start else True
-            # validate command sequence condition]
-            cond_end = cmd.is_lastcmd() if require_end else True
-            # validate [] single command condition
-            cond_singlecmd = cmd.is_singlecmd() if require_singlecmd else True
-
-            # handle [command] or [[command]] -> command has to start either at beginning or at the end
-            cond_pos = cond_start or cond_end if require_start and require_end else cond_start and cond_end
-
-            if not (cond_pos or cond_singlecmd):
+            # A lone command is trivially at both ends.
+            if not (allowed or cmd.is_singlecmd()):
                 parse_result.failed_reason = f"Invalid command sequence: {cmd.cmd}"
                 return False
 
@@ -297,16 +292,12 @@ class PromptParser:
             else:
                 return None, None, None, None
 
-        for raw_action, mappings in cmd_map.items():
-            if raw_action.endswith("*"):
-                raw_action = raw_action[:-1]
-                split_args = False
-            else:
-                split_args = True
+        for action, mappings in cmd_map.items():
+            split_args = bool(mappings.get("splits_args", True))
 
             cmd, options, args, kwargs = match_cmd(mappings.get("tokens"), split_args)
 
             if cmd:
-                return raw_action, cmd, options, args, kwargs, mappings
+                return action, cmd, options, args, kwargs, mappings
 
         return self._default_action, command, options, None, None, None

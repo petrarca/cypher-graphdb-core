@@ -17,7 +17,7 @@ class FetchEdgesCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(
-        pattern="[[fetch_edges", tokens=["fetch edges"], object_type=GraphObjectType.EDGE
+        "fetch_edges", tokens=["fetch edges"], object_type=GraphObjectType.EDGE
     )
     completion = "label_props"
 

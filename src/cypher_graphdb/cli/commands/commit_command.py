@@ -14,7 +14,7 @@ class CommitCommand(BaseCommand):
     command_name = "commit"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[commit", tokens=["commit"])
+    command_map_entry = BaseCommand.create_command_map_entry("commit", tokens=["commit"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the commit command.

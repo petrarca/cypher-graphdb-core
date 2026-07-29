@@ -19,7 +19,7 @@ class DeleteGraphobjCommand(BaseCommand):
     command_name = "delete"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[delete", tokens=["delete"])
+    command_map_entry = BaseCommand.create_command_map_entry("delete", tokens=["delete"])
     completion = {"type": "label_props", "label_from_model": False, "resolve_model_props": False}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

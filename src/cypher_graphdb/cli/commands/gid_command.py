@@ -26,7 +26,7 @@ class GidCommand(BaseCommand):
     command_name = "gid"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[gid_", tokens={"gid"})
+    command_map_entry = BaseCommand.create_command_map_entry("gid", tokens={"gid"}, requires_backend=False)
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the gid command.

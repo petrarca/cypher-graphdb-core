@@ -19,7 +19,7 @@ class UpdateGraphobjCommand(BaseCommand):
     command_name = "update"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[update", tokens=["update"])
+    command_map_entry = BaseCommand.create_command_map_entry("update", tokens=["update"])
     completion = {"type": "label_props", "label_from_model": False, "default_from_values": True}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

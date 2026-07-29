@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import rich
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -17,7 +18,9 @@ class ResolveEdgesCommand(BaseCommand):
     command_name = "resolve_edges"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[resolve_edges]]", tokens=["resolve edges"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "resolve_edges", tokens=["resolve edges"], position=CommandPosition.FIRST_OR_LAST
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the resolve edges command.

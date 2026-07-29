@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
 
@@ -15,7 +16,9 @@ class LastResultOpCommand(BaseCommand):
     command_name = "last_result_op"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="last_result_op_", tokens=["."])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "last_result_op", tokens=["."], position=CommandPosition.ANY, requires_backend=False
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""

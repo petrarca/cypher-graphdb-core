@@ -21,7 +21,7 @@ class CreateLinkedNodeCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(
-        pattern="[[create_linked_node", tokens=["create linked node"], object_type=GraphObjectType.NODE
+        "create_linked_node", tokens=["create linked node"], object_type=GraphObjectType.NODE
     )
     completion = {"type": "label_props", "complete_mandatory_props": True, "extra_props": ["from_|to_", "edge_label_"]}
 

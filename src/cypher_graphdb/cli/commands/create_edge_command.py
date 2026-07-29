@@ -19,7 +19,7 @@ class CreateEdgeCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(
-        pattern="[[create_edge", tokens=["create edge"], object_type=GraphObjectType.EDGE
+        "create_edge", tokens=["create edge"], object_type=GraphObjectType.EDGE
     )
     completion = {"type": "label_props", "complete_mandatory_props": True}
 

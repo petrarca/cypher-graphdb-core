@@ -14,7 +14,7 @@ class ExitCommand(BaseCommand):
     command_name = "exit"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[exit_", tokens=["exit", "quit", "q", "bye"])
+    command_map_entry = BaseCommand.create_command_map_entry("exit", tokens=["exit", "quit", "q", "bye"], requires_backend=False)
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the exit command.

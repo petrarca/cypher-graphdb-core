@@ -17,7 +17,7 @@ class DumpBackendsCommand(BaseCommand):
     command_name = "dump_backends"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_backends", tokens=["backends"])
+    command_map_entry = BaseCommand.create_command_map_entry("dump_backends", tokens=["backends"])
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the dump backends command.

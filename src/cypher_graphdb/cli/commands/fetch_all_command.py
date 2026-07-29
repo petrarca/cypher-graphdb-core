@@ -15,7 +15,7 @@ class FetchAllCommand(BaseCommand):
     command_name = "fetch_all"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[fetch_all", tokens=["fetch", "fetch all"])
+    command_map_entry = BaseCommand.create_command_map_entry("fetch_all", tokens=["fetch", "fetch all"])
     completion = "label_props"
 
     def __init__(self, runtime: CLIRuntime):

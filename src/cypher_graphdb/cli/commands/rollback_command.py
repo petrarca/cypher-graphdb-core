@@ -14,7 +14,7 @@ class RollbackCommand(BaseCommand):
     command_name = "rollback"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[rollback", tokens=["rollback"])
+    command_map_entry = BaseCommand.create_command_map_entry("rollback", tokens=["rollback"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the rollback command.

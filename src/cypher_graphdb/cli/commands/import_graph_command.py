@@ -15,7 +15,7 @@ class ImportGraphCommand(BaseCommand):
     command_name = "import_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[import_graph", tokens=["import", "import graph"])
+    command_map_entry = BaseCommand.create_command_map_entry("import_graph", tokens=["import", "import graph"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the import graph command.

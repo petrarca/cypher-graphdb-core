@@ -14,7 +14,7 @@ class UseGraphCommand(BaseCommand):
     command_name = "use_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[use_graph", tokens=["use graph", "use"])
+    command_map_entry = BaseCommand.create_command_map_entry("use_graph", tokens=["use graph", "use"])
     completion = "graphs"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
