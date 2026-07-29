@@ -15,7 +15,7 @@ class DumpLabelsCommand(BaseCommand):
     command_name = "dump_labels"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_labels", tokens=["labels"])
+    command_map_entry = BaseCommand.create_command_map_entry("dump_labels", tokens=["labels"])
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the dump labels command.

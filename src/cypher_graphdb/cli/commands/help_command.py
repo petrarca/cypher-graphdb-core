@@ -14,7 +14,7 @@ class HelpCommand(BaseCommand):
     command_name = "help"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[help_", tokens=["help"])
+    command_map_entry = BaseCommand.create_command_map_entry("help", tokens=["help"], requires_backend=False)
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the help command.

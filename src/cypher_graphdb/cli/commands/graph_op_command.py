@@ -1,5 +1,6 @@
 """Graph operation command implementation for CLI."""
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 from cypher_graphdb.cli.promptparser import PromptParserCmd
 from cypher_graphdb.models import Graph
@@ -15,7 +16,9 @@ class GraphOpCommand(BaseCommand):
     command_name = "graph_op"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="graph_op_", tokens=["_"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "graph_op", tokens=["_"], position=CommandPosition.ANY, requires_backend=False
+    )
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the graph operation command.

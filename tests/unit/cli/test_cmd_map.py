@@ -6,6 +6,7 @@ from cypher_graphdb.cli.command_map import (
     get_cmd_map_info,
 )
 from cypher_graphdb.cli.command_registry import registry
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.models import GraphObjectType
 
 
@@ -18,15 +19,15 @@ def test_cmd_map_is_built():
 def test_cmd_map_has_expected_entries():
     """Test that CMD_MAP contains expected command patterns."""
     # Test some key command patterns that should exist
-    expected_patterns = [
-        "[[help_",
-        "[[exit_",
-        "[[gid_",
-        "[[create_node",
-        "[[create_edge",
+    expected_actions = [
+        "help",
+        "exit",
+        "gid",
+        "create_node",
+        "create_edge",
     ]
-    for pattern in expected_patterns:
-        assert pattern in CMD_MAP, f"Expected pattern '{pattern}' not found in CMD_MAP"
+    for action in expected_actions:
+        assert action in CMD_MAP, f"Expected action '{action}' not found in CMD_MAP"
 
 
 def test_cmd_map_structure():
@@ -87,14 +88,9 @@ def test_cmd_map_entries_have_valid_tokens():
 
 
 def test_cmd_map_specific_commands():
-    """Test specific command patterns."""
-    # Test help command
-    help_patterns = [p for p in CMD_MAP if p.startswith("[[help")]
-    assert len(help_patterns) > 0
-
-    # Test exit command
-    exit_patterns = [p for p in CMD_MAP if "exit" in p]
-    assert len(exit_patterns) > 0
+    """Test specific commands are present."""
+    assert "help" in CMD_MAP
+    assert "exit" in CMD_MAP
 
 
 def test_cmd_map_object_type_validation():
@@ -111,15 +107,22 @@ def test_cmd_map_object_type_validation():
             assert CMD_MAP[pattern].get("object_type") == GraphObjectType.EDGE
 
 
-def test_cmd_map_special_patterns():
-    """Test special pattern formats."""
-    # Test patterns with closing brackets
-    bracket_patterns = [p for p in CMD_MAP if "]]" in p]
-    assert len(bracket_patterns) > 0
+def test_cmd_map_declares_behaviour_explicitly():
+    """Every entry carries its behaviour as fields, not as punctuation."""
+    for action, entry in CMD_MAP.items():
+        assert "position" in entry, f"'{action}' has no position"
+        assert "requires_backend" in entry, f"'{action}' has no requires_backend"
+        assert "splits_args" in entry, f"'{action}' has no splits_args"
+        assert isinstance(entry["requires_backend"], bool)
+        assert isinstance(entry["splits_args"], bool)
+        assert CommandPosition(entry["position"]) in CommandPosition
 
-    # Test patterns with underscores
-    underscore_patterns = [p for p in CMD_MAP if "_" in p]
-    assert len(underscore_patterns) > 0
+
+def test_action_names_carry_no_metacharacters():
+    """The old encoding ([[cmd]], cmd_, cmd*) must not come back."""
+    for action in CMD_MAP:
+        assert not any(ch in action for ch in "[]*"), f"'{action}' still encodes flags in its name"
+        assert not action.endswith("_") or action == "_", f"'{action}' still encodes a trailing flag"
 
 
 def test_cmd_map_integration_with_registry():
@@ -134,26 +137,36 @@ def test_cmd_map_integration_with_registry():
             assert isinstance(entry["tokens"], list)
 
 
-def test_cmd_map_pattern_matching():
-    """Test that patterns follow expected formats."""
-    valid_pattern_starts = ["[[", "add_", "export_", "graph_", "last_", "set_"]
+def test_behaviour_flags_match_their_commands():
+    """Spot-check the flags that used to be punctuation."""
+    # 'sql' takes an opaque remainder rather than parsed args (was "*")
+    assert CMD_MAP["sql"]["splits_args"] is False
 
-    for pattern in CMD_MAP:
-        has_valid_start = any(pattern.startswith(start) for start in valid_pattern_starts)
-        assert has_valid_start, f"Pattern '{pattern}' has unexpected format"
+    # 'export_graph' consumes a pipeline, so it must come last (was "]]")
+    assert CMD_MAP["export_graph"]["position"] == CommandPosition.LAST
+
+    # 'format_output' works at either end (was "[[...]]")
+    assert CMD_MAP["format_output"]["position"] == CommandPosition.FIRST_OR_LAST
+
+    # 'help' needs no database connection (was trailing "_")
+    assert CMD_MAP["help"]["requires_backend"] is False
+
+    # 'fetch_nodes' is an ordinary first-position command needing a backend
+    assert CMD_MAP["fetch_nodes"]["position"] == CommandPosition.FIRST
+    assert CMD_MAP["fetch_nodes"]["requires_backend"] is True
 
 
 def test_cmd_map_categorization():
     """Test that commands can be categorized correctly."""
     categories = {
-        "help": ["[[help_"],
-        "create": ["[[create_node", "[[create_edge", "[[create_linked_node"],
-        "fetch": ["[[fetch_nodes", "[[fetch_edges", "[[fetch_all"],
-        "database": ["[[connect_", "[[disconnect", "[[commit", "[[rollback"],
-        "export": ["[[export_graph", "[[import_graph"],
-        "graph_ops": ["[[clear_graph]]_", "add_graph_", "[[resolve_edges]]"],
+        "help": ["help"],
+        "create": ["create_node", "create_edge", "create_linked_node"],
+        "fetch": ["fetch_nodes", "fetch_edges", "fetch_all"],
+        "database": ["connect", "disconnect", "commit", "rollback"],
+        "export": ["export_graph", "import_graph"],
+        "graph_ops": ["clear_graph", "add_graph", "resolve_edges"],
     }
 
-    for category, expected_patterns in categories.items():
-        found_patterns = [p for p in expected_patterns if p in CMD_MAP]
-        assert len(found_patterns) > 0, f"No patterns found for category '{category}'"
+    for category, expected_actions in categories.items():
+        found = [a for a in expected_actions if a in CMD_MAP]
+        assert len(found) > 0, f"No commands found for category '{category}'"

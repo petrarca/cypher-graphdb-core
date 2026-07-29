@@ -18,7 +18,7 @@ class DumpModelsCommand(BaseCommand):
     command_name = "dump_models"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[dump_models", tokens=["models"])
+    command_map_entry = BaseCommand.create_command_map_entry("dump_models", tokens=["models"])
     completion = "label_only"
 
     def __init__(self, runtime: CLIRuntime):

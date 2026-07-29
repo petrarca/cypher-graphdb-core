@@ -505,4 +505,4 @@ class CypherGraphCLI(CLIRuntime):
                 return False
 
     def _create_prompt_parser(self) -> PromptParser:
-        return PromptParser(command_map.CMD_MAP, "[[execute_cypher")
+        return PromptParser(command_map.CMD_MAP, "execute_cypher")

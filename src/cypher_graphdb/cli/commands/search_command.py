@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import rich
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ class SearchCommand(BaseCommand):
     command_name = "search"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[search]]", tokens=["search"])
+    command_map_entry = BaseCommand.create_command_map_entry("search", tokens=["search"], position=CommandPosition.FIRST_OR_LAST)
     completion = {"type": "props_only", "extra_props": ["language"]}
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

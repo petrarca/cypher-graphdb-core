@@ -15,7 +15,7 @@ class ApplyConfigCommand(BaseCommand):
     command_name = "config"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[config_", tokens=["config"])
+    command_map_entry = BaseCommand.create_command_map_entry("config", tokens=["config"], requires_backend=False)
     completion = "config"
 
     def __init__(self, runtime: CLIRuntime):

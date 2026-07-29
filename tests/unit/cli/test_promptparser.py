@@ -21,7 +21,7 @@ import pytest
 from cypher_graphdb.cli import command_map
 from cypher_graphdb.cli.promptparser import PromptParser
 
-DEFAULT_ACTION = "[[execute_cypher"
+DEFAULT_ACTION = "execute_cypher"
 
 
 @pytest.fixture

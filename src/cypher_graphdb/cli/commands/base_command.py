@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.runtime import CLIRuntime
 
 if TYPE_CHECKING:
@@ -57,24 +58,45 @@ class BaseCommand(ABC):
 
     @classmethod
     def create_command_map_entry(
-        cls, pattern: str, tokens: set[str | None], object_type: GraphObjectType | None = None, **kwargs: Any
+        cls,
+        action: str,
+        tokens: set[str | None],
+        object_type: GraphObjectType | None = None,
+        *,
+        position: CommandPosition = CommandPosition.FIRST,
+        requires_backend: bool = True,
+        splits_args: bool = True,
+        **kwargs: Any,
     ) -> dict[str, dict[str, Any]]:
         """Create a command map entry for this command.
 
+        The three behavioural flags used to be encoded as punctuation around the
+        action name (``"[[dump_labels_"`` meant first-position and no backend);
+        they are now explicit, and the key is the plain action name.
+
         Args:
-            pattern: The command pattern (e.g., "[[gid_")
-            tokens: Set of tokens that trigger this command
-            object_type: Optional GraphObjectType for the command
-            **kwargs: Additional parameters for the command map entry
+            action: The action name, e.g. ``"dump_labels"``.
+            tokens: Set of tokens that trigger this command.
+            object_type: Optional GraphObjectType for the command.
+            position: Where the command may sit in a pipeline.
+            requires_backend: Whether a database connection must exist first.
+            splits_args: Whether the remainder is parsed into args/kwargs.
+                False keeps it as one opaque string (e.g. raw SQL).
+            **kwargs: Additional parameters for the command map entry.
 
         Returns:
-            Dictionary representing the complete command map entry
+            Dictionary representing the complete command map entry.
         """
-        entry_value: dict[str, Any] = {"tokens": list(tokens)}
+        entry_value: dict[str, Any] = {
+            "tokens": list(tokens),
+            "position": CommandPosition(position),
+            "requires_backend": requires_backend,
+            "splits_args": splits_args,
+        }
         if object_type is not None:
             entry_value["object_type"] = object_type
         entry_value.update(kwargs)
-        return {pattern: entry_value}
+        return {action: entry_value}
 
     def __init__(self, cli_runtime: CLIRuntime | None = None) -> None:
         """Initialize the command with access to the CLI runtime.

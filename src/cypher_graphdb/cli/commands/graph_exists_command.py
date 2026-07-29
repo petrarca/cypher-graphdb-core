@@ -14,7 +14,7 @@ class GraphExistsCommand(BaseCommand):
     command_name = "graph_exists"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[graph_exists", tokens=["graph exists"])
+    command_map_entry = BaseCommand.create_command_map_entry("graph_exists", tokens=["graph exists"])
     completion = "graphs"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

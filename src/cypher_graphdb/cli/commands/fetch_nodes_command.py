@@ -17,7 +17,7 @@ class FetchNodesCommand(BaseCommand):
 
     # For command line parsing
     command_map_entry = BaseCommand.create_command_map_entry(
-        pattern="[[fetch_nodes", tokens=["fetch nodes"], object_type=GraphObjectType.NODE
+        "fetch_nodes", tokens=["fetch nodes"], object_type=GraphObjectType.NODE
     )
     completion = "label_props"
 

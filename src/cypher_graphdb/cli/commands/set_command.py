@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import rich
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -17,7 +18,9 @@ class SetCommand(BaseCommand):
     command_name = "set"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="set_", tokens=["set"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "set", tokens=["set"], position=CommandPosition.ANY, requires_backend=False
+    )
     completion = "variables"
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:

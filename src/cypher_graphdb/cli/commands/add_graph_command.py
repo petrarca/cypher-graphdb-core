@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -15,7 +16,9 @@ class AddGraphCommand(BaseCommand):
     command_name = "add_graph"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="add_graph_", tokens=["add"])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "add_graph", tokens=["add"], position=CommandPosition.ANY, requires_backend=False
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the add to graph command.

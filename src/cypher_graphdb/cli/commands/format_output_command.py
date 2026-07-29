@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import rich
 
+from cypher_graphdb.cli.commandposition import CommandPosition
 from cypher_graphdb.cli.commands.base_command import BaseCommand
 
 if TYPE_CHECKING:
@@ -17,7 +18,9 @@ class FormatOutputCommand(BaseCommand):
     command_name = "format_output"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[format_output]]_", tokens=["json", "table", "list", None])
+    command_map_entry = BaseCommand.create_command_map_entry(
+        "format_output", tokens=["json", "table", "list", None], position=CommandPosition.FIRST_OR_LAST, requires_backend=False
+    )
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize the format output command.

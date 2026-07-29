@@ -18,7 +18,7 @@ class LoadModelsCommand(BaseCommand):
     command_name = "load_models"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry(pattern="[[load_models", tokens=["load"])
+    command_map_entry = BaseCommand.create_command_map_entry("load_models", tokens=["load"])
 
     def __init__(self, runtime: CLIRuntime):
         """Initialize command with CLI runtime."""

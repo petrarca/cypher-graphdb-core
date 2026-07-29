@@ -43,6 +43,7 @@ excel = [
 cli = [
     "art",
     "cypher_graphdb[excel]",
+    "lark>=1.1",
     "prompt-toolkit",
     "rich",
     "typer",
