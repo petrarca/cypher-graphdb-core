@@ -30,7 +30,7 @@ The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
 |---|---|---|
 | *(none)* | core library, both backends | embedding the library in your own program |
 | `[excel]` | openpyxl | you need Excel import/export (CSV/JSON/YAML need nothing) |
-| `[cli]` | typer, rich, prompt_toolkit, art (+ `[excel]`) | you want [`cgdb-cli`](cli.md) |
+| `[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want [`cgdb-cli`](cli.md) |
 
 The CLI's dependencies are opt-in so that a service embedding the library does
 not drag a terminal UI stack into its image. The core install is 22 packages

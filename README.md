@@ -154,14 +154,14 @@ Requires **Python 3.14+**.
 
 **Lean core, optional CLI.** The default install carries only what the library
 needs — both backend drivers included, so there is no per-backend extra. The
-interactive CLI's dependencies (typer, rich, prompt_toolkit, art) and Excel
-support (openpyxl) are opt-in. The core has no numpy and no terminal-UI stack.
+interactive CLI's dependencies (typer, rich, prompt_toolkit, art, lark) and
+Excel support (openpyxl) are opt-in. The core has no numpy and no terminal-UI stack.
 
 | Install | Adds | Use when |
 |---|---|---|
 | `cypher-graphdb` | core library, both backends | embedding the library in your own program |
 | `cypher-graphdb[excel]` | openpyxl | you need Excel import/export |
-| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art (+ `[excel]`) | you want the `cgdb-cli` command |
+| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want the `cgdb-cli` command |
 | `cypher-graphdb[dev]` | cli + toolchain | development (implies `[cli]`) |
 
 ```bash

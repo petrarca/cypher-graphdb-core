@@ -169,6 +169,47 @@ completion = {"type": "label_props", "complete_mandatory_props": True}
 ```
 4. Update `cli/help/_overview.md` with the new command.
 
+### Declaring a command's behaviour
+
+Three flags on `create_command_map_entry`, all explicit — they used to be
+punctuation around the action name (`"[[format_output]]_"`), which nothing
+type-checked and four call sites had to decode:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `position` | `CommandPosition.FIRST` | Where it may sit in a `a \| b \| c` pipeline. `FIRST` produces data, `LAST` consumes it, `ANY` either, `FIRST_OR_LAST` both ends. A lone command satisfies all of them. |
+| `requires_backend` | `True` | Whether a connection must exist first. |
+| `splits_args` | `True` | `False` keeps the remainder as one opaque string (raw SQL). |
+
+`CommandPosition` lives in its own module (`cli/commandposition.py`) because
+`promptparser` enforces it and `commands/base_command` declares it — importing
+either from the other is circular.
+
+### How the prompt is parsed
+
+`cli/promptgrammar.py` holds two Lark grammars: one splits the line into
+pipeline segments plus a `||` shell command, the other parses a command's
+argument list. Quoting, escapes and nested collections are grammar rules, not
+scanner state.
+
+**Matching the leading command tokens stays hand-written** (`starts_with` +
+`_parse_cmd_with_map`). The completer parses half-typed input, where a grammar
+cannot yet lex a command name that is not finished.
+
+Two behaviours are load-bearing and easy to break — both were regressions during
+the Lark migration, and neither was caught by unit tests:
+
+- **Positional arguments stay raw strings.** `create edge WORKS_FOR, <id>, <id>`
+  passes internal ids positionally and `PromptParserCmd.args` is `list[str]`, so
+  literal-evaluating them fails the command. Only keyword values — and the
+  elements of a collection inside one — are evaluated.
+- **A kwarg with no value yet is dropped, not bound to `""`.** Otherwise
+  `fetch nodes Person, empty=` becomes a filter matching nothing while the user
+  is still typing.
+
+When changing this, diff the CLI's output against the previous build on a live
+graph. The unit tests did not catch either regression.
+
 ## Graph Models (`ModelProvider`)
 
 Typed models are registered on an **explicit** `ModelProvider`. There is no
@@ -249,8 +290,8 @@ Capabilities: `LABEL_FUNCTION`, `SUPPORT_MULTIPLE_LABELS`, `STREAMING_SUPPORT`, 
 ## Packaging: the core/CLI split
 
 The library core must stay free of the terminal-UI stack. `[excel]` carries
-`openpyxl`; `[cli]` carries `typer`, `rich`, `prompt_toolkit`, `art` and pulls
-in `[excel]`.
+`openpyxl`; `[cli]` carries `typer`, `rich`, `prompt_toolkit`, `art`, `lark` and
+pulls in `[excel]`.
 
 **Invariant: `import cypher_graphdb` must not import any of them.** A regression
 here is invisible locally (an editable dev install always has them) and only
