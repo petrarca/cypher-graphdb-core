@@ -2,18 +2,29 @@
 
 Provides ResultRenderer class for formatting and displaying query results
 in various formats including tables, JSON, trees, and ASCII art.
+
+This module needs only ``rich``, not the whole ``cli`` extra, and several
+downstream projects import ``ResultRenderer`` on its own. The guard below keeps
+the failure actionable for them, since the package ``__init__`` is lazy and no
+longer raises on their behalf.
 """
 
 import json
 from typing import Any
 
-import rich
 from pydantic import BaseModel
-from rich import box
-from rich.json import JSON, JSONHighlighter
-from rich.table import Table
-from rich.text import Text
-from rich.tree import Tree
+
+from cypher_graphdb._extras import require_extra
+
+try:
+    import rich
+    from rich import box
+    from rich.json import JSON, JSONHighlighter
+    from rich.table import Table
+    from rich.text import Text
+    from rich.tree import Tree
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on install shape
+    raise require_extra("cli", exc) from exc
 
 import cypher_graphdb.config as config
 import cypher_graphdb.options as options

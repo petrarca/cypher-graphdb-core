@@ -21,8 +21,6 @@ dynamic = ["version"]
 dependencies = [
     "python-dotenv",
     "antlr4-python3-runtime==4.11.1",
-    "openpyxl",
-    "numpy",
     "pydantic",
     "pydantic-settings>=2.13.1",
     "loguru",
@@ -39,6 +37,7 @@ dependencies = [
 # Everything needed by cgdb-cli. The library core never imports these.
 cli = [
     "art",
+    "openpyxl",
     "prompt-toolkit",
     "rich",
     "typer",

@@ -1,7 +1,5 @@
 """Tests for conversion utility functions."""
 
-import numpy as np
-
 import cypher_graphdb.utils as utils
 
 
@@ -20,8 +18,8 @@ def test_type_to_default_value():
 def test_isnan():
     """Test NaN checking function."""
     # Test with actual NaN
-    assert utils.isnan(np.nan)
     assert utils.isnan(float("nan"))
+    assert utils.isnan(float("-nan"))
 
     # Test with regular numbers
     assert not utils.isnan(42.0)

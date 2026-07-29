@@ -29,10 +29,11 @@ The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
 | Extra | Adds | Use when |
 |---|---|---|
 | *(none)* | core library, both backends | embedding the library in your own program |
-| `[cli]` | typer, rich, prompt_toolkit, art | you want [`cgdb-cli`](cli.md) |
+| `[cli]` | typer, rich, prompt_toolkit, art, openpyxl | you want [`cgdb-cli`](cli.md), or the tabular import/export tools |
 
 The CLI's dependencies are opt-in so that a service embedding the library does
-not drag a terminal UI stack into its image. Running `cgdb-cli` without the
+not drag a terminal UI stack into its image. The core install is 22 packages
+and carries no numpy. Running `cgdb-cli` without the
 extra tells you which install you need.
 
 > Working *on* the library rather than with it? Clone the repo and run

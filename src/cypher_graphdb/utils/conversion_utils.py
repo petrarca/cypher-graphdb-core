@@ -5,11 +5,11 @@ serializing objects to collections, and handling type-related operations.
 """
 
 import ast
+import math
 from collections.abc import Callable
 from enum import Enum
 from typing import Any
 
-import numpy as np
 from pydantic import BaseModel
 
 
@@ -112,7 +112,9 @@ def resolve_properties(properties: dict) -> dict:
 def isnan(value: Any) -> bool:
     """Check if value is a float NaN.
 
-    Uses numpy to check for NaN values, handling both float and non-float types safely.
+    The ``isinstance`` guard means only floats reach ``math.isnan``, so
+    non-numeric values are safely reported as not-NaN rather than raising.
+    ``numpy.float64`` subclasses ``float``, so numpy scalars are handled too.
 
     Args:
         value: Value to check.
@@ -121,8 +123,7 @@ def isnan(value: Any) -> bool:
         True if value is a float NaN, False otherwise.
 
     Examples:
-        >>> import numpy as np
-        >>> isnan(np.nan)
+        >>> isnan(float("nan"))
         True
 
         >>> isnan(42.0)
@@ -134,7 +135,7 @@ def isnan(value: Any) -> bool:
         >>> isnan(None)
         False
     """
-    return isinstance(value, float) and np.isnan(value)
+    return isinstance(value, float) and math.isnan(value)
 
 
 def _convert_rich_repr(items) -> dict:
