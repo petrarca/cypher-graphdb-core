@@ -11,7 +11,7 @@ from prompt_toolkit import prompt
 
 import cypher_graphdb.utils as utils
 from cypher_graphdb import CypherGraphDB
-from cypher_graphdb.tools import CsvImporter, ExcelImporter, JsonImporter, YamlImporter
+from cypher_graphdb.formatprovider import format_provider
 
 
 class GraphImporter:
@@ -90,17 +90,18 @@ class GraphImporter:
         return on_import_file
 
     def _create_importer_by_format(self, import_format):
-        """Create appropriate importer instance based on format."""
-        importers = {
-            "excel": ExcelImporter,
-            "csv": CsvImporter,
-            "json": JsonImporter,
-            "yaml": YamlImporter,
-        }
+        """Create the importer registered for this format."""
+        try:
+            spec = format_provider.resolve(import_format)
+        except ValueError:
+            rich.print(f"[red]Invalid or unsupported import format: '{import_format}'")
+            return None
+        except ModuleNotFoundError as exc:
+            rich.print(f"[red]{exc}")
+            return None
 
-        importer_class = importers.get(import_format)
-        if importer_class:
-            return importer_class(self.db)
+        if not spec.supports_import():
+            rich.print(f"[red]Format '{spec.name}' cannot be imported.")
+            return None
 
-        rich.print(f"[red]Invalid or unsupported import format: '{import_format}'")
-        return None
+        return spec.importer(self.db)

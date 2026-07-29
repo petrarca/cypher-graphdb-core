@@ -34,10 +34,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Excel import/export. CSV, JSON and YAML need nothing beyond the core.
+excel = [
+    "openpyxl",
+]
+
 # Everything needed by cgdb-cli. The library core never imports these.
 cli = [
     "art",
-    "openpyxl",
+    "cypher_graphdb[excel]",
     "prompt-toolkit",
     "rich",
     "typer",

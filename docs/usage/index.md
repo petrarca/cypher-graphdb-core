@@ -22,6 +22,7 @@ API, and how to drive it from the CLI. For *why* it is built this way, see the
 | [queries.md](queries.md) | Running Cypher and working with results; creating, fetching and deleting nodes and edges. |
 | [typed-models.md](typed-models.md) | Mapping labels onto your own Pydantic classes with a `ModelProvider`. |
 | [bulk-and-indexes.md](bulk-and-indexes.md) | Loading data at volume, and creating property indexes — including what your backend actually supports. |
+| [import-export.md](import-export.md) | Moving data in and out as CSV/Excel/JSON/YAML, and registering a format of your own. |
 | [cli.md](cli.md) | Using `cgdb-cli`, interactively or in a script. |
 
 ## Layering (high level → low level)
@@ -71,6 +72,7 @@ Some capabilities are orthogonal to the stack rather than a rung on it:
 | Schema introspection | `graphs()`, `labels()` — what exists, and how much of it. |
 | Full-text search | `search` over graph content, where the backend supports it. |
 | Indexing & bulk writes | `create_property_index()`, `bulk_create_nodes()` / `bulk_create_edges()` — see [bulk-and-indexes.md](bulk-and-indexes.md). |
+| Import / export | A format registry (CSV, JSON, YAML built in; Excel via `[excel]`), extensible with your own — see [import-export.md](import-export.md). |
 
 ## The 30-second example
 

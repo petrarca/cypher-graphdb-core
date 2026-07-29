@@ -10,8 +10,9 @@ import sys
 import rich
 
 from cypher_graphdb import CypherGraphDB, Graph, utils
+from cypher_graphdb.formatprovider import format_provider
 from cypher_graphdb.models import TreeResult
-from cypher_graphdb.tools import CsvExporter, ExcelExporter, FileExporterOptions, HierarchicalExporter
+from cypher_graphdb.tools import FileExporterOptions, HierarchicalExporter
 
 
 class GraphExporter:
@@ -90,17 +91,18 @@ class GraphExporter:
         self._run_export(lambda: exporter.export_tree_result(tree_result, filename), "Successfully exported tree.")
 
     def _resolve_exporter(self, export_format, args, kwargs):
-        match export_format:
-            case "excel":
-                exporter = ExcelExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
-            case "csv":
-                exporter = CsvExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
-            case "json":
-                exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
-            case "yaml":
-                exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))
-            case _:
-                rich.print(f"[red]Invalid or unsupported export format: '{export_format}'")
-                exporter = None
+        """Create the exporter registered for this format."""
+        try:
+            spec = format_provider.resolve(export_format)
+        except ValueError:
+            rich.print(f"[red]Invalid or unsupported export format: '{export_format}'")
+            return None
+        except ModuleNotFoundError as exc:
+            rich.print(f"[red]{exc}")
+            return None
 
-        return exporter
+        if not spec.supports_export():
+            rich.print(f"[red]Format '{spec.name}' cannot be exported.")
+            return None
+
+        return spec.exporter(self.db, FileExporterOptions.from_opts(args, kwargs))

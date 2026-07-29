@@ -27,6 +27,7 @@ from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
 from .exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
+from .formatprovider import FormatProvider, FormatSpec, data_format, format_provider
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, validate_node_properties
 from .modelrelations import RelationSpec
@@ -71,6 +72,10 @@ __all__ = [
     "backend",
     "BackendCapability",
     "backend_provider",
+    "FormatProvider",
+    "FormatSpec",
+    "data_format",
+    "format_provider",
     "Cardinality",
     "graphops",
     "backends",
