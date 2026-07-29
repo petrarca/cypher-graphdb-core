@@ -246,6 +246,35 @@ Capabilities: `LABEL_FUNCTION`, `SUPPORT_MULTIPLE_LABELS`, `STREAMING_SUPPORT`, 
 - Label tables are created lazily on first node insert
 - Graph = PostgreSQL schema; label = table within that schema
 
+## Packaging: the core/CLI split
+
+The library core must stay free of the terminal-UI stack. `[cli]` carries
+`typer`, `rich`, `prompt_toolkit`, `art` and `openpyxl`.
+
+**Invariant: `import cypher_graphdb` must not import any of them.** A regression
+here is invisible locally (an editable dev install always has them) and only
+breaks a published core-only install. Check with:
+
+```python
+import sys; before = set(sys.modules); import cypher_graphdb
+assert not {"rich", "typer", "prompt_toolkit", "art"} & {m.split(".")[0] for m in set(sys.modules) - before}
+```
+
+Rules:
+
+- `cli/` may import CLI packages freely; nothing outside `cli/` and `args.py` may.
+- `tools/` (tabular import/export) needs `openpyxl` and is used only by `cli/`.
+  It is not re-exported from the package root.
+- `cli/__init__.py` re-exports `CypherGraphCLI` **lazily** (PEP 562). Do not make
+  it eager: several downstream projects import `cypher_graphdb.cli.renderer`
+  alone, which needs only `rich`, and an eager re-export would drag the whole
+  app in.
+- Modules on the consumer-facing surface guard their imports with
+  `_extras.require_extra("cli", exc)` so the failure names the install rather
+  than a package the user never heard of.
+- Prefer the stdlib over a heavyweight dependency: `numpy` was removed when the
+  only use was one `math.isnan` equivalent.
+
 ## Code Quality
 
 ### SQL Safety

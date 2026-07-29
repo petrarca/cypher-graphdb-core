@@ -8,7 +8,12 @@ for the cypher-graphdb CLI application. CLI args are merged into CLISettings
 from importlib.metadata import version
 from typing import Annotated
 
-import typer
+from cypher_graphdb._extras import require_extra
+
+try:
+    import typer
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on install shape
+    raise require_extra("cli", exc) from exc
 
 
 def _apply_cli_overrides(

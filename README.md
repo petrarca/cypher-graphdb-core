@@ -59,7 +59,7 @@ do not exist**.
 - **Client-side analysis** — `graphops` over a materialized `Graph`:
   `root_nodes`, `incoming_nodes` / `outgoing_nodes`, `build_tree`, `has_cycles`,
   `density`.
-- **Import / export** — CSV, Excel, JSON and YAML, including a hierarchical
+- **Import / export** *(in `[cli]`)* — CSV, Excel, JSON and YAML, including a hierarchical
   round-trip format with `gid_` deduplication.
 - **Safety** — read-only mode, connection guards, credential-redacting settings.
 - **Pooling** — `CypherGraphDBPool` with a size bound and idle TTL.
@@ -151,14 +151,27 @@ and what each backend actually does with an index.
 
 Requires **Python 3.14+**.
 
+**Lean core, optional CLI.** The default install carries only what the library
+needs — both backend drivers included, so there is no per-backend extra. The
+interactive CLI's dependencies (typer, rich, prompt_toolkit, art, openpyxl) are
+opt-in. The core has no numpy and no terminal-UI stack.
+
+| Install | Adds | Use when |
+|---|---|---|
+| `cypher-graphdb` | core library, both backends | embedding the library in your own program |
+| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art, openpyxl | you want the `cgdb-cli` command, or the tabular import/export tools |
+| `cypher-graphdb[dev]` | cli + toolchain | development (implies `[cli]`) |
+
 ```bash
-pip install cypher-graphdb
+pip install cypher-graphdb          # library only
+pip install 'cypher-graphdb[cli]'   # + the cgdb-cli command
 # or
-uv add cypher-graphdb
+uv add 'cypher-graphdb[cli]'
 ```
 
 The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
-Installing it also puts **`cgdb-cli`** on your `PATH`.
+`cgdb-cli` appears on your `PATH` with the `[cli]` extra; invoking it without
+that extra reports which install you need rather than a bare import error.
 
 Connection details come from arguments, the environment, or a `.env` file:
 
@@ -212,7 +225,7 @@ src/cypher_graphdb/
   modelprovider.py      explicit model registries
   models.py             GraphNode / GraphEdge / GraphPath / Graph
   graphops.py           client-side analysis over a materialized Graph
-  tools/                import / export (CSV, Excel, JSON, YAML)
+  tools/                import / export (CSV, Excel, JSON, YAML) -- needs [cli]
   cli/                  cgdb-cli — REPL, commands, rendering
 docs/                   usage/, design/, adr/
 ```
