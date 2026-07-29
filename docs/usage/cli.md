@@ -9,8 +9,15 @@ generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 
 # The `cgdb-cli` command line
 
-Installing the library puts **`cgdb-cli`** on your `PATH`. It works identically
-across backends.
+**`cgdb-cli`** ships in the `cli` extra:
+
+```bash
+pip install 'cypher-graphdb[cli]'
+```
+
+It then works identically across backends. Without the extra the command reports
+which install you need rather than failing on a missing import — see
+[getting-started.md](getting-started.md).
 
 ## Three ways to run it
 

@@ -291,12 +291,10 @@ name = "cypher-graphdb"
 source = { editable = "." }
 dependencies = [
     { name = "antlr4-python3-runtime" },
-    { name = "art" },
     { name = "json-schema-to-pydantic" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "openpyxl" },
-    { name = "prompt-toolkit" },
     { name = "psycopg" },
     { name = "psycopg-binary" },
     { name = "pydantic" },
@@ -304,9 +302,7 @@ dependencies = [
     { name = "pymgclient" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "rich" },
     { name = "tenacity" },
-    { name = "typer" },
     { name = "typing-extensions" },
 ]
 
@@ -316,13 +312,23 @@ build = [
     { name = "pip-tools" },
     { name = "wheel" },
 ]
+cli = [
+    { name = "art" },
+    { name = "prompt-toolkit" },
+    { name = "rich" },
+    { name = "typer" },
+]
 dev = [
+    { name = "art" },
     { name = "pre-commit" },
+    { name = "prompt-toolkit" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "rich" },
     { name = "ruff" },
     { name = "setuptools-scm" },
     { name = "testcontainers" },
+    { name = "typer" },
 ]
 watch = [
     { name = "watchfiles" },
@@ -331,15 +337,16 @@ watch = [
 [package.metadata]
 requires-dist = [
     { name = "antlr4-python3-runtime", specifier = "==4.11.1" },
-    { name = "art" },
+    { name = "art", marker = "extra == 'cli'" },
     { name = "build", marker = "extra == 'build'" },
+    { name = "cypher-graphdb", extras = ["cli"], marker = "extra == 'dev'" },
     { name = "json-schema-to-pydantic", specifier = ">=0.4.11" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "openpyxl" },
     { name = "pip-tools", marker = "extra == 'build'" },
     { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "prompt-toolkit" },
+    { name = "prompt-toolkit", marker = "extra == 'cli'" },
     { name = "psycopg", specifier = ">=3.3.3" },
     { name = "psycopg-binary", specifier = ">=3.3.3" },
     { name = "pydantic" },
@@ -349,17 +356,17 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rich" },
+    { name = "rich", marker = "extra == 'cli'" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "setuptools-scm", marker = "extra == 'dev'" },
     { name = "tenacity" },
     { name = "testcontainers", marker = "extra == 'dev'" },
-    { name = "typer" },
+    { name = "typer", marker = "extra == 'cli'" },
     { name = "typing-extensions" },
     { name = "watchfiles", marker = "extra == 'watch'" },
     { name = "wheel", marker = "extra == 'build'" },
 ]
-provides-extras = ["watch", "build", "dev"]
+provides-extras = ["cli", "watch", "build", "dev"]
 
 [[package]]
 name = "distlib"

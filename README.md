@@ -151,14 +151,26 @@ and what each backend actually does with an index.
 
 Requires **Python 3.14+**.
 
+**Lean core, optional CLI.** The default install carries only what the library
+needs — both backend drivers included, so there is no per-backend extra. The
+interactive CLI's dependencies (typer, rich, prompt_toolkit, art) are opt-in.
+
+| Install | Adds | Use when |
+|---|---|---|
+| `cypher-graphdb` | core library, both backends | embedding the library in your own program |
+| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art | you want the `cgdb-cli` command |
+| `cypher-graphdb[dev]` | cli + toolchain | development (implies `[cli]`) |
+
 ```bash
-pip install cypher-graphdb
+pip install cypher-graphdb          # library only
+pip install 'cypher-graphdb[cli]'   # + the cgdb-cli command
 # or
-uv add cypher-graphdb
+uv add 'cypher-graphdb[cli]'
 ```
 
 The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
-Installing it also puts **`cgdb-cli`** on your `PATH`.
+`cgdb-cli` appears on your `PATH` with the `[cli]` extra; invoking it without
+that extra reports which install you need rather than a bare import error.
 
 Connection details come from arguments, the environment, or a `.env` file:
 

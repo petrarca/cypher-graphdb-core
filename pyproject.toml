@@ -19,10 +19,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "art",
     "python-dotenv",
-    "prompt-toolkit",
-    "rich",
     "antlr4-python3-runtime==4.11.1",
     "openpyxl",
     "numpy",
@@ -33,13 +30,20 @@ dependencies = [
     "psycopg-binary >= 3.3.3",
     "pymgclient",
     "typing-extensions",
-    "typer",
     "tenacity",
     "json-schema-to-pydantic>=0.4.11",
     "PyYAML>=6.0.3",
 ]
 
 [project.optional-dependencies]
+# Everything needed by cgdb-cli. The library core never imports these.
+cli = [
+    "art",
+    "prompt-toolkit",
+    "rich",
+    "typer",
+]
+
 watch = [
     "watchfiles",
 ]
@@ -51,6 +55,7 @@ build = [
 ]
 
 dev = [
+    "cypher_graphdb[cli]",
     "testcontainers",
     "ruff",
     "pytest",
