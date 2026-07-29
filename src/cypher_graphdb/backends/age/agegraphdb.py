@@ -11,6 +11,7 @@ Classes:
 import contextlib
 import hashlib
 import json
+import re
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -43,6 +44,10 @@ from .agesearch import convert_to_fts_query
 from .ageserializer import to_cypher_list
 from .agesqlbuilder import SQLBuilder
 from .agtype import AgTypeLoader
+
+# Property name inside an AGE btree expression index, e.g.
+#   agtype_access_operator(VARIADIC ARRAY[properties, '"qualified_name"'::agtype])
+_AGTYPE_PROPERTY_RE = re.compile(r"'\"(?P<prop>[^\"]+)\"'::agtype")
 
 
 class AGEExecutionError(Exception):
@@ -1094,13 +1099,19 @@ class AGEGraphDB(CypherBackend):
         # GIN on properties covers all props
         prop_names = None
         if "USING GIN" not in indexdef_upper:
-            # Try to extract column names from indexdef for non-GIN indexes
-            # Format: CREATE INDEX ... ON schema.table USING btree (col1, col2)
-            paren_start = indexdef.rfind("(")
-            paren_end = indexdef.rfind(")")
-            if paren_start != -1 and paren_end != -1:
-                cols = indexdef[paren_start + 1 : paren_end]
-                prop_names = [c.strip().strip('"') for c in cols.split(",")]
+            # AGE property indexes are btree EXPRESSION indexes of the form
+            #   ... USING btree (agtype_access_operator(VARIADIC ARRAY[properties, '"name"'::agtype]))
+            # so the property is the quoted agtype literal, not a column name.
+            # Splitting the parenthesised text on "," would yield fragments
+            # like `VARIADIC ARRAY[properties`, so match the literals instead.
+            prop_names = _AGTYPE_PROPERTY_RE.findall(indexdef) or None
+            if prop_names is None:
+                # Plain column index: CREATE INDEX ... USING btree (col1, col2)
+                paren_start = indexdef.rfind("(")
+                paren_end = indexdef.rfind(")")
+                if paren_start != -1 and paren_end != -1 and paren_start < paren_end:
+                    cols = indexdef[paren_start + 1 : paren_end]
+                    prop_names = [c.strip().strip('"') for c in cols.split(",") if c.strip()] or None
 
         return IndexInfo(
             label=tablename,
