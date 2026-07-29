@@ -369,7 +369,11 @@ def split_str(s: str, sep: str) -> list[str]:
             current.append(char)
             escaped = False
         elif char == "\\":
+            # Keep the backslash: splitting must be lossless, so that joining
+            # the parts back with the separator reproduces the input. Unescaping
+            # is the value parser's job, not the splitter's.
             escaped = True
+            current.append(char)
         elif char in ('"', "'"):
             if quote_char == char:
                 quote_char = None  # End of the quoted string
@@ -457,6 +461,34 @@ def _process_bracket(char: str, in_brackets: int) -> int:
     return in_brackets
 
 
+def _process_unquoted_char(char: str, current: str, in_brackets: int, is_kwarg: bool, key: str) -> tuple[str, int, bool, str]:
+    """Process a character outside any quoted section.
+
+    Handles bracket nesting (so separators inside ``[...]``/``{...}`` do not
+    split), the ``=`` that turns the accumulated text into a kwarg name, and
+    plain accumulation.
+
+    Args:
+        char: The current character being processed.
+        current: The accumulated argument text.
+        in_brackets: Current bracket nesting depth.
+        is_kwarg: Whether a kwarg name has already been seen.
+        key: The kwarg name captured so far.
+
+    Returns:
+        Tuple of (current, in_brackets, is_kwarg, key).
+    """
+    new_bracket_count = _process_bracket(char, in_brackets)
+    if new_bracket_count != in_brackets:
+        return current + char, new_bracket_count, is_kwarg, key
+
+    # First unbracketed '=' separates a kwarg name from its value
+    if char == "=" and in_brackets == 0 and not is_kwarg:
+        return "", in_brackets, True, current.strip()
+
+    return current + char, in_brackets, is_kwarg, key
+
+
 def _add_current_arg(current: str, is_kwarg: bool, key: str, args: list, kwargs: dict) -> tuple[str, bool]:
     """Add the current argument to either args or kwargs.
 
@@ -520,33 +552,29 @@ def split_into_args_kwargs(s: str) -> tuple[tuple[str, ...], dict[str, str]]:
             escaped = False
             continue
 
+        # An escape suppresses the special meaning of the next character, so a
+        # quote inside a quoted value cannot terminate it. Inside quotes the
+        # backslash is kept, letting ast.literal_eval do the unescaping
+        # (name='O\'Brien' -> O'Brien); outside quotes it is consumed.
+        if char == "\\":
+            escaped = True
+            if quote_char is not None:
+                current += char
+            continue
+
         # Handle characters inside or outside quotes
         if quote_char is not None:
             current, quote_char = _process_quoted_char(char, current, quote_char)
         else:
-            # Handle escape character
-            if char == "\\":
-                escaped = True
             # Handle quote characters
-            elif char in ('"', "'"):
+            if char in ('"', "'"):
                 current, quote_char = _process_quoted_char(char, current, quote_char)
             # Handle argument separator (comma)
             elif char == "," and in_brackets == 0:
                 current, is_kwarg = _add_current_arg(current, is_kwarg, key, args, kwargs)
             # Handle all other characters
             else:
-                # Update bracket counter
-                new_bracket_count = _process_bracket(char, in_brackets)
-                if new_bracket_count != in_brackets:
-                    in_brackets = new_bracket_count
-                # Handle key-value separator for kwargs
-                elif char == "=" and in_brackets == 0 and not is_kwarg:
-                    is_kwarg = True
-                    key = current.strip()
-                    current = ""
-                    continue
-                # Add character to current argument
-                current += char
+                current, in_brackets, is_kwarg, key = _process_unquoted_char(char, current, in_brackets, is_kwarg, key)
 
     # Handle the last argument if there is one
     if current:
