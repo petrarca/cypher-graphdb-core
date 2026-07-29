@@ -61,7 +61,7 @@ jobs:
         run: |
           uv venv
           uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
-          uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
+          uv pip install --no-build-isolation -e ".[dev,build,examples]"
 
       - name: Lint code
         run: .venv/bin/ruff check src tests
@@ -107,7 +107,7 @@ jobs:
         run: |
           uv venv
           uv pip install setuptools psycopg "antlr4-python3-runtime==4.11.1"
-          uv pip install --no-build-isolation -e ".[dev,build,examples,docs]"
+          uv pip install --no-build-isolation -e ".[dev,build,examples]"
 
       - name: Build package
         run: uv build

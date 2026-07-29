@@ -7,7 +7,6 @@
 .DS_Store
 dist/
 build/
-site/
 .venv/
 __pycache__/
 .tox/
@@ -16,7 +15,6 @@ __pycache__/
 .coverage
 .ruff_cache
 htmlcov/
-docs/coverage/
 tests/coverage.xml
 .cgdb_history
 .scannerwork
@@ -30,9 +28,7 @@ tests/coverage.xml
 # Ensure root CONTRIBUTING.md is not excluded
 !CONTRIBUTING.md
 
-# mkdocs build and cache ignores
-site/
-docs/coverage/
+# docs
 docs/__pycache__/
 docs/.DS_Store
 

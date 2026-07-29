@@ -1,1 +1,0 @@
-::: cypher_graphdb.cypher

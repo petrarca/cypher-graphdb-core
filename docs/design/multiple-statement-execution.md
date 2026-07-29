@@ -1,9 +1,18 @@
-# Multiple Statement Execution Design
+---
+type: Design
+title: Multiple statement execution
+description: Analysis of how a single execute() call could handle several semicolon-separated Cypher statements, and the trade-offs that kept it unbuilt.
+tags: [cypher-graphdb, multi-statement, semicolon, cypher-parser, proposal]
+status: stable
+implementation: proposed
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-**Status:** Analysis/Design - Implementation Not Yet Decided  
-**Created:** 2025-10-15  
-**Related Issues:** Semicolon handling in Cypher queries  
-**Purpose:** Analysis and design documentation for future reference
+# Multiple statement execution
+
+> **Not built.** `execute()` still takes one statement. Multi-statement input is
+> handled at the edges instead: the CLI splits on `;` for `-e`, and
+> `command_reader.py` reads statements from a file for `-f`.
 
 > **Note:** This document is for analysis purposes only. No decision has been made about whether 
 > to implement this feature. It serves as a reference for understanding the problem space, 

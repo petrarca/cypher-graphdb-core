@@ -1,12 +1,25 @@
-# Design Document: Parameterized Queries for Typed Models
+---
+type: Design
+title: Parameterized queries for typed models
+description: Why CRUD on typed models builds parameterized Cypher instead of embedding property values in query strings, and how the (query, params) contract works.
+tags: [cypher-graphdb, parameterized-queries, typed-models, cypherbuilder, escaping]
+status: stable
+implementation: implemented
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
 
-**Date:** 2026-02-03  
-**Status:** Proposal  
-**Author:** Auto-generated from apex-graph analysis  
+# Parameterized queries for typed models
+
+> **Built.** `src/cypher_graphdb/cypherbuilder.py` returns a `(query, params)`
+> tuple from every method that would otherwise inline property values.
+>
+> One backend caveat outlives the change: Apache AGE cannot bind parameters
+> inside `UNWIND`, so that path serializes inline Cypher literals via
+> `backends/age/ageserializer.py`. That is the reason the bulk helpers exist.
 
 ## Executive Summary
 
-This document proposes changes to the cypher-graphdb library to use parameterized queries for all CRUD operations on typed models. Currently, the library builds Cypher queries by embedding property values directly into query strings, which fails when values contain special characters like quotes (`"`, `'`), newlines (`\n`), or backslashes (`\`).
+The library uses parameterized queries for CRUD operations on typed models. Building Cypher by embedding property values directly into query strings fails when values contain special characters like quotes (`"`, `'`), newlines (`\n`), or backslashes (`\`).
 
 ## Problem Statement
 

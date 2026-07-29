@@ -1,4 +1,26 @@
-# DuckDB Migration: Replacing pandas Import/Export
+---
+type: Design
+title: DuckDB migration — replacing pandas import/export
+description: A proposal to rebuild tabular import/export on DuckDB + Arrow. The goal (dropping pandas) was met by a lighter row-streaming design instead.
+tags: [cypher-graphdb, duckdb, pandas, import-export, tabular, superseded]
+status: deprecated
+implementation: superseded
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
+
+# DuckDB migration — replacing pandas import/export
+
+> **Superseded — kept for the rationale, not the plan.**
+>
+> The *goal* was achieved: pandas is gone, and `DataFrameBuilder` /
+> `DataFrameImporter` no longer exist. The *means* was not. Rather than adopting
+> DuckDB + Arrow, tabular I/O was rebuilt on a lightweight row-streaming design —
+> `tools/row_collector.py` (`RowCollector`), `tools/tabular_importer.py`, and
+> openpyxl row streaming in `tools/excel_row_source.py`. Neither `duckdb` nor
+> `pyarrow` is a dependency.
+>
+> Read this for *why* pandas had to go; do not read it as a description of what
+> the code does.
 
 ## Goal
 Single implementation for all tabular import/export using DuckDB + Arrow (and openpyxl for Excel I/O only). We REMOVE pandas completely (including previous `DataFrameBuilder` / `DataFrameImporter`) in one step since there are no external users depending on them. Gains: lower memory, faster CSV parsing, unified batching, simpler maintenance, foundation for Parquet + bulk UNWIND.

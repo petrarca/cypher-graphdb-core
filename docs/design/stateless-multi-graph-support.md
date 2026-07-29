@@ -1,4 +1,24 @@
-# Analysis: Stateless Multi-Graph Support
+---
+type: Design
+title: Stateless multi-graph support
+description: Analysis of the graph name held as backend state, and a proposed stateless design passing the graph per call. Multi-graph is served differently today.
+tags: [cypher-graphdb, multi-graph, stateless, backend, graph-name, proposal]
+status: stable
+implementation: proposed
+generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
+---
+
+# Stateless multi-graph support
+
+> **Not built.** `CypherBackend` still holds `_graph_name`, bound at
+> `connect()`; there is no per-call graph argument and no `use_graph()` on
+> `CypherGraphDB`.
+>
+> Multi-graph use is served by a different approach that arrived later: one
+> connection per graph, configured by `Settings.with_prefix("CGDB_XX_")` and
+> paired with its own `ModelProvider` (see
+> [model-provider-isolation.md](model-provider-isolation.md)). Read this for the
+> analysis of the stateful design, not as a roadmap.
 
 This document analyzes the current stateful graph handling in `cypher-graphdb` and proposes a stateless design.
 
