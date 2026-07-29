@@ -31,13 +31,13 @@ by `gid_` so an export can be re-imported without creating duplicates.
 
 ```bash
 # import reads straight into the graph
-cgdb-cli --graph mygraph --yes -e "import data.csv"
+cypher-graphdb --graph mygraph --yes -e "import data.csv"
 
 # export writes the IN-MEMORY graph, so populate it first with `add`
-cgdb-cli --graph mygraph --yes -e "MATCH (n:Person) RETURN n | add; export data.xlsx"
+cypher-graphdb --graph mygraph --yes -e "MATCH (n:Person) RETURN n | add; export data.xlsx"
 
 # a tree export feeds the pipeline directly
-cgdb-cli --graph mygraph --yes -e "MATCH p=(:Person)-[:WORKS_FOR]->(:Company) RETURN p | tree | export tree.json"
+cypher-graphdb --graph mygraph --yes -e "MATCH p=(:Person)-[:WORKS_FOR]->(:Company) RETURN p | tree | export tree.json"
 ```
 
 The format is taken from the file extension. Exporting without populating the

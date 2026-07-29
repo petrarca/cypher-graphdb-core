@@ -14,7 +14,7 @@ cypher-graphdb-core is the backend-agnostic Python library for working with Cyph
 
 - **CypherGraphDB**: Facade class composing multiple mixins for graph operations
 - **Backend abstraction**: `CypherBackend` ABC with pluggable backends (AGE, Memgraph)
-- **cgdb-cli**: Interactive REPL and non-interactive CLI for graph database operations
+- **cypher-graphdb**: Interactive REPL and non-interactive CLI for graph database operations
 - **Bulk operations**: `bulk_create_nodes`, `bulk_create_edges` for high-throughput writes
 - **Index management**: `create_property_index`, `drop_index`, `list_indexes` with backend capability detection
 
@@ -58,7 +58,7 @@ src/cypher_graphdb/
       agtype.py              # agtype data type loader
     memgraph/               # Memgraph backend
 
-  cli/                      # cgdb-cli interactive REPL and command system
+  cli/                      # cypher-graphdb interactive REPL and command system
     app.py                   # CypherGraphCLI main application
     graphdb.py               # CLIGraphDB wrapper (connect, create/drop/use graph)
     commands/                # Command implementations (one file per command)
@@ -89,21 +89,21 @@ task check        # ruff check --fix
 task test         # pytest
 ```
 
-## CLI Commands (cgdb-cli)
+## CLI Commands (cypher-graphdb)
 
 ### Running the CLI
 
 ```bash
 # Interactive REPL
-cgdb-cli --graph my_graph
+cypher-graphdb --graph my_graph
 
 # Non-interactive (execute and exit)
-cgdb-cli --graph my_graph -e "labels"
-cgdb-cli --graph my_graph --table -e "graphs"
-cgdb-cli --graph my_graph --json -e "indexes"
+cypher-graphdb --graph my_graph -e "labels"
+cypher-graphdb --graph my_graph --table -e "graphs"
+cypher-graphdb --graph my_graph --json -e "indexes"
 
 # With explicit connection
-CGDB_CINFO=postgresql://user:pass@localhost:5432/db CGDB_BACKEND=age cgdb-cli --graph my_graph
+CGDB_CINFO=postgresql://user:pass@localhost:5432/db CGDB_BACKEND=age cypher-graphdb --graph my_graph
 ```
 
 ### Available CLI Commands
@@ -378,7 +378,7 @@ org standard in `../engineering-handbook/standards/sdlc/documentation.md`.
 ```bash
 # Test CLI against live AGE
 CGDB_CINFO=postgresql://postgres:postgres@localhost:8432/graphdb CGDB_BACKEND=age \
-  cgdb-cli --graph my_graph --table -e "labels"
+  cypher-graphdb --graph my_graph --table -e "labels"
 
 # Test bulk operations via Python
 from cypher_graphdb import CypherGraphDB

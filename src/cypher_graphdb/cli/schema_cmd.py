@@ -1,4 +1,4 @@
-"""Schema management commands for cgdb-cli."""
+"""Schema management commands for cypher-graphdb."""
 
 from pathlib import Path
 from typing import Annotated
@@ -123,19 +123,19 @@ def generate(
 
     Examples:
         # Generate from a single Python file
-        cgdb-cli schema generate --models ./models.py --output ./schemas/
+        cypher-graphdb schema generate --models ./models.py --output ./schemas/
 
         # Generate from a directory (loads all .py files)
-        cgdb-cli schema generate -m ./models/ -o ./schemas/
+        cypher-graphdb schema generate -m ./models/ -o ./schemas/
 
         # Specify output filename
-        cgdb-cli schema generate -m ./models.py -o ./my-schema.json
+        cypher-graphdb schema generate -m ./models.py -o ./my-schema.json
 
         # With verbose output
-        cgdb-cli schema generate -m ./models.py -o ./schemas/ --verbose
+        cypher-graphdb schema generate -m ./models.py -o ./schemas/ --verbose
 
         # Skip confirmation prompt
-        cgdb-cli schema generate -m ./models.py -o ./schemas/ --yes
+        cypher-graphdb schema generate -m ./models.py -o ./schemas/ --yes
     """
     # Validate models path exists
     if not models.exists():

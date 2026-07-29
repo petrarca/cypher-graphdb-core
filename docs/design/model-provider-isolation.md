@@ -62,7 +62,7 @@ or from how many threads.
 
 ## Loading models from a path: provider discovery
 
-Loading models from a file, package, or directory (`cgdb-cli --model-path`,
+Loading models from a file, package, or directory (`cypher-graphdb --model-path`,
 `SchemaGenerator`, `ModelProvider.generate_schemas_from_path`) cannot rely on
 decorators firing, because the module may already be imported. Instead, loading
 **discovers** the providers declared in the loaded modules and adopts their
