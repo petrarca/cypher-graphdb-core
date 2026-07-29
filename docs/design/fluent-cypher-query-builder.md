@@ -175,7 +175,7 @@ pattern-object layer in v2c (`node()` / `rel()` constructors, as cypher-dsl and
 cymple offer) **without** breaking v1 string-based call sites — they would be
 an additional input type to `match()`, not a replacement.
 
-## Proposed Solution (v1)
+## The v1 surface
 
 ### Overview
 
@@ -413,12 +413,13 @@ used when `**binds` are supplied for that fragment.
   `cypherbuilder.py`; the builder reuses the same approach under its reserved
   `$_pN` auto-name prefix.
 
-## Detailed Changes (v1)
+## How v1 is built
 
-### 1. New module `cypherquery.py`
+### 1. New module `cypherquery`
 
-Add `src/cypher_graphdb/cypherquery.py` containing the `CypherQuery` class and
-the module-level `param()` helper. The class holds ordered clause buffers
+Built as a package rather than the single module first sketched here:
+`src/cypher_graphdb/cypherquery/` — `builder.py` (the `CypherQuery` class),
+`params.py` (the `param()` helper and binding), `patterns.py` (predicates). The class holds ordered clause buffers
 (`matches`, `wheres`, `withs`, `returns`, `order_bys`, `skip_val`,
 `limit_val`) and a params dict. `build()` joins clauses in canonical Cypher
 order and returns `(text, params)`. Each mutating operation returns a new
@@ -452,6 +453,18 @@ Backends already accept `(query_string, params)`; the builder produces nothing
 new at that layer.
 
 ## v2: Write Clauses, Typed Patterns, Backend Dialects
+
+> **Partly built.** Write clauses and typed patterns shipped; backend dialects
+> did not.
+>
+> | v2 item | State |
+> |---|---|
+> | Write clauses — `create`, `merge`, `set`, `delete(detach=…)`, `remove`, `on_create_set`, `on_match_set` | built |
+> | Other clauses — `unwind`, `with_`, `optional_match`, `raw`, `cypher`, `to_parsed` | built |
+> | Typed patterns — `node()`, `rel()`, `NodePattern`, `RelPattern`, `PathPattern`, `Predicate`, `PropertyRef` | built (module-level, not builder methods) |
+> | Backend dialects | **not built** — no dialect hook exists |
+>
+> Note `delete(*vars, detach=False)` rather than a separate `detach_delete()`.
 
 v2a (write clauses) and v2c (typed patterns) are **implemented**; v2b
 (backend-aware dialect emission) is **deferred future work**. The v1 internals
@@ -638,7 +651,7 @@ Concrete invariants the v2 implementation must preserve:
 A focused regression test locks invariant (3): build a representative set of v1
 read queries, snapshot their `build()` output, and assert the snapshots are
 unchanged after v2 methods are added (and that `execute()` against both backends
-still produces them). See Testing Strategy.
+still produces them).
 
 ## Migration / Compatibility
 
@@ -646,137 +659,6 @@ still produces them). See Testing Strategy.
   `create_or_merge`, `CypherBuilder`) are untouched.
 - Adoption is per-call-site and entirely optional.
 - A minor version bump suffices (additive feature, new public export).
-
-## Testing Strategy
-
-### Unit tests (no backend required)
-
-`CypherQuery` is deterministic text + params generation, so most tests assert on
-`build()` output:
-
-```python
-def test_where_id_binds_parameter():
-    q = CypherQuery().match("(n)").where_id("n", 42).return_("n")
-    cypher, params = q.build()
-    assert "id(n) = $" in cypher
-    assert 42 in params.values()
-    assert "42" not in cypher           # value is bound, not interpolated
-
-def test_where_in_no_manual_escaping():
-    q = CypherQuery().match("(n)-[e]-()").where_in("type(e)", ["A", "B'C"]).return_("e")
-    cypher, params = q.build()
-    assert "IN $" in cypher
-    assert ["A", "B'C"] in params.values()  # awkward quote handled by binding
-
-def test_multiple_match_clauses_accumulate():
-    q = CypherQuery().match("(a)").match("(b)").return_("a", "b")
-    cypher, _ = q.build()
-    assert cypher.count("MATCH") == 2
-
-def test_clause_order_is_canonical():
-    q = (CypherQuery().match("(n)").where_eq("n.x", 1)
-         .return_("n").order_by("n.y").limit(10))
-    cypher, _ = q.build()
-    assert cypher.index("MATCH") < cypher.index("WHERE") < cypher.index("RETURN") \
-        < cypher.index("ORDER BY") < cypher.index("LIMIT")
-
-def test_immutability_base_query_unchanged():
-    base = CypherQuery().match("(p)").where_eq("p.active", True)
-    q1 = base.return_("p").limit(10)
-    q2 = base.return_("count(p)")
-    assert "LIMIT" not in base.build()[0]   # base is untouched
-    assert "LIMIT" in q1.build()[0]
-    assert "count" in q2.build()[0]
-
-def test_str_shows_placeholders_not_values():
-    q = CypherQuery().match("(n)").where_eq("n.x", 99).return_("n")
-    assert "99" not in str(q)
-    assert "$" in str(q)
-
-def test_literal_binds_inlines_values():
-    q = CypherQuery().match("(n)").where_eq("n.x", 99).return_("n")
-    debug = q.build(literal_binds=True)
-    assert "99" in debug
-
-def test_where_raw_with_named_binds():
-    q = CypherQuery().match("(p)").where("p.name STARTS WITH $pfx", pfx="Al").return_("p")
-    cypher, params = q.build()
-    assert "$pfx" in cypher
-    assert params["pfx"] == "Al"
-
-def test_param_helper_named_and_deferred():
-    p = param("threshold")   # no value — deferred to execute time
-    q = CypherQuery().match("(n)").where("n.v > $threshold", threshold=p).return_("n")
-    cypher, params = q.build()
-    assert "threshold" not in params   # value not yet bound
-    # execute with: cdb.execute(q, params={"threshold": 50})
-
-def test_to_parsed_roundtrips_through_parser():
-    q = CypherQuery().match("(n)").return_("n")
-    parsed = q.to_parsed()
-    assert parsed.submitted_query == str(q)
-```
-
-### Integration tests (against real backends)
-
-- Execute builder-produced queries via `cdb.execute(q)` against AGE and
-  Memgraph; assert results match the equivalent hand-written query.
-- Verify `execute_cypher_page(q, ...)` and `execute_cypher_stream(q, ...)`
-  accept a builder.
-- Verify param-name collision behaviour when caller also passes `params=`.
-- Snapshot v1 read-query `build()` outputs before v2 is added; assert they are
-  byte-identical after v2 ships (regression lock on invariant 3).
-
-### Edge cases
-
-| Input | Expected behaviour |
-|-------|--------------------|
-| Empty builder (no `match`) | Raise a clear `CypherQueryError` on `build()` |
-| Multiple `where()` calls | All joined with `AND` in call order |
-| Multiple `match()` calls | Each emits a separate `MATCH` clause in call order |
-| Value containing quotes via `where_eq` | Bound as param, never interpolated |
-| List value via `where_in` | Bound as a single list param |
-| `raw()` fragment with `**binds` | Fragment inserted verbatim, binds added to params |
-| `param(name)` with no value, not supplied at execute | Backend raises a missing-param error (expected) |
-| `param(name)` key collides with auto-generated `_pN` | Reserved `_p` prefix ensures no collision |
-| Caller `params=` key collides with builder param name | Caller wins; log a warning |
-| `build(literal_binds=True)` result passed to `execute()` | Not auto-detectable (it is a plain `str`); documented as debug-only. Mitigation: `literal_binds=True` is only reachable via `build()`, never via `str(q)`, and the docstring warns against executing it |
-
-## Implementation Plan
-
-### Phase 1 — v1 core (1–2 days)
-
-1. Add `cypherquery.py` with `CypherQuery` (immutable clause buffers, param
-   binder, `build()`, `str()`, `params` property).
-2. Implement all v1 methods: `match`, `optional_match`, `where`, `where_id`,
-   `where_in`, `where_eq`, `with_`, `return_`, `return_distinct`, `order_by`,
-   `skip`, `limit`, `raw`.
-3. Add module-level `param(name, value=UNSET)` helper.
-4. Add `to_parsed()` (lazy import of `parse_cypher_query`).
-
-### Phase 2 — Facade integration (0.5 day)
-
-1. Add `cdb.query()` factory.
-2. Widen `execute()`, `execute_with_stats()`, `execute_cypher_stream()`, and
-   `execute_cypher_page()` type unions to accept `CypherQuery`; merge params
-   (caller wins on name conflict).
-3. Export `CypherQuery` and `param` from `__init__.py`.
-
-### Phase 3 — Tests & docs (1 day)
-
-1. Unit tests (build-output assertions, immutability, edge cases).
-2. Integration tests on AGE and Memgraph.
-3. Snapshot tests for v1→v2 regression lock.
-4. Update `CHANGELOG.md` and add a `docs/usage/` guide showing the builder.
-
-### Phase 4 — v2 (separate, future)
-
-1. Write clauses (`unwind`, `create`, `merge`, `set`, `delete`,
-   `on_create_set`, `on_match_set`).
-2. Backend-aware dialect emission via `BackendCapability` + existing serializer
-   (`build_for(backend)`).
-3. Optional typed pattern objects (`node()`, `rel()`) as additional input type
-   to `match()`.
 
 ## Design Decisions & Open Questions
 

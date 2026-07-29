@@ -195,10 +195,12 @@ No additional parsing, string manipulation, or network overhead.
 ## References
 
 **Core Files:**
-- `src/cypher_graphdb/backend.py` - Base validation logic
-- `src/cypher_graphdb/cyphergraphdb.py` - Main API
+- `src/cypher_graphdb/backend.py` - the `read_only` flag on the backend
+- `src/cypher_graphdb/cyphergraphdb/connection.py` - enforcement on execute
+- `src/cypher_graphdb/cyphergraphdb/cyphergraphdb.py` - main API
+- `src/cypher_graphdb/cyphergraphdb/schema.py`, `batch.py` - guarded write paths
 - `src/cypher_graphdb/exceptions.py` - ReadOnlyModeError
-- `src/cypher_graphdb/settings.py` - Environment variable support
+- `src/cypher_graphdb/settings.py` - environment variable support
 - `src/cypher_graphdb/args.py` - CLI flag definition
 
 **Backend Implementations:**

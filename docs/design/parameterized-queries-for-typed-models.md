@@ -58,7 +58,7 @@ This is **invalid Cypher syntax** and causes a `DatabaseError`.
 - Affects all typed model operations: `_create_node()`, `_merge_node()`, `_create_edge()`, `_merge_edge()`
 - Users must work around this by using raw `execute()` with manual parameterized queries
 
-## Proposed Solution
+## Solution
 
 ### Approach: Parameterized Queries
 
@@ -71,7 +71,7 @@ Instead of embedding values in query strings, use Cypher's native parameter bind
 3. **Performance**: Database can cache and reuse query plans
 4. **Backward Compatibility**: Minimize breaking changes to public API
 
-## Detailed Changes
+## The design
 
 ### 1. CypherBuilder (`cypherbuilder.py`)
 
@@ -225,145 +225,10 @@ def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False, params=N
 
 **No changes needed to backends.**
 
-## Migration Strategy
 
-### Option A: Breaking Change (Recommended)
+## Where it does not apply
 
-Change return types directly. This is cleaner but requires a major version bump.
-
-```
-Version: 2.0.0
-```
-
-**Pros:**
-- Clean API
-- No legacy code to maintain
-
-**Cons:**
-- Breaking change for anyone calling `CypherBuilder` directly
-
-### Option B: Backward Compatible
-
-Add new methods with `_parameterized` suffix, deprecate old methods.
-
-```python
-# New method
-@classmethod
-def merge_node_by_id_parameterized(cls, node_id, properties) -> tuple[str, dict]:
-    ...
-
-# Old method (deprecated)
-@classmethod
-def merge_node_by_id(cls, node_id, properties) -> str:
-    warnings.warn("Use merge_node_by_id_parameterized instead", DeprecationWarning)
-    ...
-```
-
-**Pros:**
-- No breaking changes
-- Gradual migration path
-
-**Cons:**
-- API bloat
-- Maintenance burden
-
-### Recommendation
-
-**Option A** is recommended because:
-1. `CypherBuilder` is an internal class, not part of the public API
-2. The fix is critical for correctness
-3. Clean break is better than carrying technical debt
-
-## Testing Strategy
-
-### Unit Tests
-
-```python
-def test_merge_node_with_special_characters():
-    """Test that special characters in string fields are handled correctly."""
-    node = TestNode(
-        name="Test",
-        description='Contains "quotes" and \'apostrophes\'',
-        notes="Has\nnewlines\nand\ttabs"
-    )
-    
-    # Should not raise DatabaseError
-    result = cdb.create_or_merge(node)
-    
-    # Verify data integrity
-    fetched = cdb.fetch_nodes({"label_": TestNode, "id_": result.id_})
-    assert fetched.description == node.description
-    assert fetched.notes == node.notes
-```
-
-### Integration Tests
-
-Test with real database backends:
-- Memgraph
-- PostgreSQL/AGE
-
-### Edge Cases to Test
-
-| Input | Expected Behavior |
-|-------|-------------------|
-| `"double quotes"` | Stored correctly |
-| `'single quotes'` | Stored correctly |
-| `line1\nline2` | Stored with newline |
-| `path\\to\\file` | Stored with backslashes |
-| `emoji 🎉` | Stored correctly (UTF-8) |
-| `NULL` (string) | Stored as string "NULL" |
-| `$param` (string) | Stored as string "$param" |
-| Empty string `""` | Stored as empty string |
-
-## Implementation Plan
-
-### Phase 1: Core Changes (1-2 days)
-
-1. Update `CypherBuilder` methods to return `tuple[str, dict]`
-2. Update `_parse_and_execute()` to accept `params`
-3. Update `_create_node()`, `_merge_node()`, `_create_edge()`, `_merge_edge()`
-
-### Phase 2: Testing (1 day)
-
-1. Add unit tests for special character handling
-2. Run integration tests against Memgraph and AGE
-3. Test backward compatibility of `execute()` method
-
-### Phase 3: Documentation & Release (0.5 days)
-
-1. Update CHANGELOG.md
-2. Update README with migration notes
-3. Tag release as 2.0.0
-
-## Appendix
-
-### A. Affected Files
-
-| File | Changes |
-|------|---------|
-| `cypherbuilder.py` | Return type changes for 4 methods |
-| `cyphergraphdb/cyphergraphdb.py` | Update 4 internal methods + `_parse_and_execute` |
-| `utils/string_utils.py` | No changes (kept for other uses) |
-| `backends/*` | No changes (already support params) |
-
-### B. Current Workaround
-
-Until this is implemented, users can work around the issue by using parameterized queries directly:
-
-```python
-# Instead of:
-profile.description = "Text with \"quotes\""
-cdb.create_or_merge(profile)  # FAILS
-
-# Use:
-cdb.execute(
-    "MATCH (p:ProductProfile {key: $key}) SET p.description = $description",
-    params={"key": profile.key, "description": "Text with \"quotes\""}
-)  # WORKS
-```
-
-### C. References
-
-- [Cypher Parameters Documentation](https://neo4j.com/docs/cypher-manual/current/syntax/parameters/)
-- [Memgraph Parameters](https://memgraph.com/docs/fundamentals/query-modules)
-- [PostgreSQL Prepared Statements](https://www.postgresql.org/docs/current/sql-prepare.html)
+Apache AGE cannot bind parameters inside `UNWIND`, so that path serializes
+inline Cypher literals through `backends/age/ageserializer.py`, which owns the
+escaping. This is why the bulk helpers exist rather than callers writing their
+own `UNWIND $rows`; see [the usage guide](../usage/bulk-and-indexes.md).
