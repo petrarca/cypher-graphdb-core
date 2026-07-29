@@ -121,14 +121,17 @@ def test_base_capability_not_implemented():
 
 
 def test_backend_has_capability():
-    """Test has_capability method."""
+    """has_capability reflects the VALUE of get_capability, not merely that it returned."""
     backend = MockBackendForTesting()
 
-    # Should return True for supported capabilities
+    # Supported -> get_capability returns a truthy value
     assert backend.has_capability(BackendCapability.LABEL_FUNCTION) is True
-    assert backend.has_capability(BackendCapability.SUPPORT_MULTIPLE_LABELS) is True
 
-    # Should return False for unsupported capabilities
+    # Explicitly unsupported -> get_capability returns False. Returning a value
+    # (rather than raising) must NOT be mistaken for support.
+    assert backend.has_capability(BackendCapability.SUPPORT_MULTIPLE_LABELS) is False
+
+    # Unknown capability -> get_capability raises NotImplementedError
     class MockCapability:
         value = "unsupported_capability"
 

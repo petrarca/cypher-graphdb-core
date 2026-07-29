@@ -151,6 +151,15 @@ class CypherBackend(abc.ABC):
     def has_capability(self, capability: BackendCapability) -> bool:
         """Check if the backend supports a specific capability.
 
+        A backend declares a capability unsupported in either of two ways:
+        by raising ``NotImplementedError`` (it knows nothing about it), or by
+        returning a falsy value from :meth:`get_capability` (it knows the
+        capability and does not support it). Both mean "not supported".
+
+        Capabilities whose value is a payload rather than a flag (e.g.
+        ``LABEL_FUNCTION`` returns a Cypher pattern) are supported whenever
+        that payload is non-empty.
+
         Args:
             capability: The capability to check.
 
@@ -158,8 +167,7 @@ class CypherBackend(abc.ABC):
             True if the capability is supported, False otherwise.
         """
         try:
-            self.get_capability(capability)
-            return True
+            return bool(self.get_capability(capability))
         except NotImplementedError:
             return False
 
