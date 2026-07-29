@@ -111,11 +111,15 @@ def test_empty_argument_list(text):
 # ── Partial input (the completer parses half-typed lines) ─────────────────────
 
 
-def test_half_typed_kwarg_does_not_raise():
-    """`fetch nodes label=` reaches here while the user is still typing."""
-    args, kwargs = parse_args("label=")
-    assert kwargs == {"label": ""}
-    assert args == ()
+def test_half_typed_kwarg_is_dropped_not_bound_to_empty():
+    """`fetch nodes label=` reaches here while the user is still typing.
+
+    Binding it to "" would turn a half-typed filter into one that matches
+    nothing, so the incomplete pair is dropped instead.
+    """
+    assert parse_args("label=") == ((), {})
+    assert parse_args("Person, empty=") == (("Person",), {})
+    assert parse_args("a=1, b=") == ((), {"a": 1})
 
 
 def test_trailing_separator_does_not_raise():

@@ -242,9 +242,12 @@ def _best_effort_args(text: str) -> tuple[tuple[Any, ...], dict[str, Any]]:
             continue
         if "=" in part:
             key, _, value = part.partition("=")
-            key = key.strip()
-            if key:
-                kwargs[key] = _literal(value.strip()) if value.strip() else ""
+            key, value = key.strip(), value.strip()
+            # A kwarg with no value yet -- the user is mid-keystroke -- is
+            # dropped rather than bound to "", so it does not silently become a
+            # filter that matches nothing.
+            if key and value:
+                kwargs[key] = _literal(value)
         else:
             args.append(_literal(part))
     return tuple(args), kwargs
