@@ -372,15 +372,20 @@ class CypherBackend(abc.ABC):
     def create_property_index(self, label: str, *property_names: str) -> None:
         """Create a property index on the given label.
 
-        For backends like AGE where a single GIN index covers all properties,
-        the property_names parameter may be ignored. For backends like Neo4j,
-        Memgraph, and FalkorDB, each property gets its own index.
+        Always pass ``property_names`` -- no backend treats them as optional
+        decoration:
 
-        Consumers should always pass property_names for portability.
+        - **AGE** creates a GIN index on the whole ``properties`` column *and*
+          a btree expression index per named property. The GIN index does not
+          serve a Cypher ``WHERE n.prop = ...`` lookup, which compiles to
+          ``agtype_access_operator``; without the per-property btree indexes
+          every such lookup is a sequential scan.
+        - **Neo4j, Memgraph, FalkorDB** create one index per property.
 
         Args:
             label: Node label to index (e.g. "Method").
-            *property_names: Property names to index. Ignored by some backends.
+            *property_names: Property names to index. Omitting them yields at
+                best a partial index and at worst none.
 
         Raises:
             NotImplementedError: If the backend does not support property indexes.
@@ -390,9 +395,13 @@ class CypherBackend(abc.ABC):
     def drop_index(self, label: str, *property_names: str) -> None:
         """Drop a property index on the given label.
 
+        Mirror the call that created the index: on AGE this drops the GIN index
+        on ``properties`` plus the btree expression index of each named
+        property, so an unnamed property keeps its index behind.
+
         Args:
             label: Node label whose index to drop.
-            *property_names: Property names of the index. Ignored by some backends.
+            *property_names: Property names whose indexes to drop.
 
         Raises:
             NotImplementedError: If the backend does not support drop_index.

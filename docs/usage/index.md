@@ -106,6 +106,12 @@ See [bulk-and-indexes.md](bulk-and-indexes.md) for the full list.
 ## What is not here
 
 There is no generated API reference. The guides above cover the surface you use;
-the code carries the detail in docstrings, and that is the source of truth. When
-you need the exact signature of `fetch_nodes`, read the docstring — it cannot go
-stale the way a rendered page would.
+for the exact signature and behaviour of something like `fetch_nodes`, read its
+docstring.
+
+Generating a reference site from those same docstrings would add a build step
+and a publishing surface without adding information — your editor already shows
+you the docstring at the call site. That is the whole argument. Docstrings are
+**not** immune to drifting from the code; they are simply the closest place to
+it, and the place a reader is most likely to fix. If you find one that lies,
+correct it in the same commit as the code.

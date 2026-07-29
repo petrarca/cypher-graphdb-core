@@ -27,16 +27,20 @@ class IndexingMixin:
     def create_property_index(self, label: str, *property_names: str) -> None:
         """Create a property index on the given label.
 
-        For backends like AGE where a single GIN index covers all properties,
-        the property_names parameter may be ignored. For backends like Neo4j,
-        Memgraph, and FalkorDB, each property gets its own index.
+        Always pass ``property_names`` -- no backend treats them as optional
+        decoration:
 
-        Consumers should always pass property_names for portability across
-        backends.
+        - **AGE** creates a GIN index on the whole ``properties`` column *and*
+          a btree expression index per named property. The GIN index does not
+          serve a Cypher ``WHERE n.prop = ...`` lookup, which compiles to
+          ``agtype_access_operator``; without the per-property btree indexes
+          every such lookup is a sequential scan.
+        - **Neo4j, Memgraph, FalkorDB** create one index per property.
 
         Args:
             label: Node label to index (e.g. "Method").
-            *property_names: Property names to index.
+            *property_names: Property names to index. Omitting them yields at
+                best a partial index and at worst none.
 
         Examples:
             ```python
