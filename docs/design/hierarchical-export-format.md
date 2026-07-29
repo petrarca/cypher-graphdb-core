@@ -12,6 +12,10 @@ generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 
 > **Built.** `tools/hierarchical_row_source.py`, with `tools/data_flattener.py`
 > and `tools/yaml_importer.py`.
+>
+> This document describes the *shape of the data*. How a format is selected and
+> dispatched — and how to add one — is the
+> [format registry](format-registry.md).
 
 ## Goal
 

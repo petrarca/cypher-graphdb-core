@@ -74,6 +74,9 @@ a materialized `Graph`.
 | Fluent builder | [fluent-cypher-query-builder.md](fluent-cypher-query-builder.md) | The opt-in `cypherquery` builder terminating in `(cypher, params)` | implemented |
 | Read-only mode | [read-only-mode.md](read-only-mode.md) | Blocking write clauses in the parser, before the backend | implemented |
 | Export format | [hierarchical-export-format.md](hierarchical-export-format.md) | JSON/YAML round-trip with `gid_` deduplication | implemented |
+| Format registry | [format-registry.md](format-registry.md) | Formats resolved through a registry; metadata / probe / resolve separated; consumers can register their own | implemented |
+| Packaging | [packaging-and-extras.md](packaging-and-extras.md) | Lean core, `[cli]` and `[excel]` extras, and the invariant that importing the library pulls in neither | implemented |
+| CLI prompt parsing | [cli-prompt-parsing.md](cli-prompt-parsing.md) | Grammar-based line and argument parsing; why token matching stays hand-written; the pipeline position rules | implemented |
 
 ### Designs not built
 
