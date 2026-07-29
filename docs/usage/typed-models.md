@@ -146,7 +146,7 @@ recursively, so `__init__.py` re-exports cannot shadow anything. Discovery is
 import-order independent and immune to the module cache.
 
 ```bash
-cgdb-cli --model-path ./graph_models/ --graph mygraph
+cypher-graphdb --model-path ./graph_models/ --graph mygraph
 ```
 
 A directory with an `__init__.py` is loaded as a package, so relative imports
@@ -157,7 +157,7 @@ between model files work.
 Model definitions can be exported as JSON schema without a database connection:
 
 ```bash
-cgdb-cli schema generate -m ./graph_models/ -o ./schemas/
+cypher-graphdb schema generate -m ./graph_models/ -o ./schemas/
 ```
 
 | Option | Meaning |

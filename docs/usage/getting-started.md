@@ -19,7 +19,7 @@ to install per backend.
 
 ```bash
 pip install cypher-graphdb          # the library
-pip install 'cypher-graphdb[cli]'   # + the cgdb-cli command
+pip install 'cypher-graphdb[cli]'   # + the cypher-graphdb command
 # or
 uv add 'cypher-graphdb[cli]'
 ```
@@ -30,11 +30,11 @@ The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
 |---|---|---|
 | *(none)* | core library, both backends | embedding the library in your own program |
 | `[excel]` | openpyxl | you need Excel import/export (CSV/JSON/YAML need nothing) |
-| `[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want [`cgdb-cli`](cli.md) |
+| `[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want [`cypher-graphdb`](cli.md) |
 
 The CLI's dependencies are opt-in so that a service embedding the library does
 not drag a terminal UI stack into its image. The core install is 22 packages
-and carries no numpy. Running `cgdb-cli` without the
+and carries no numpy. Running `cypher-graphdb` without the
 extra tells you which install you need.
 
 > Working *on* the library rather than with it? Clone the repo and run

@@ -64,7 +64,7 @@ do not exist**.
   round-trip format with `gid_` deduplication.
 - **Safety** — read-only mode, connection guards, credential-redacting settings.
 - **Pooling** — `CypherGraphDBPool` with a size bound and idle TTL.
-- **CLI** — `cgdb-cli`, interactive or scripted, over every backend.
+- **CLI** — `cypher-graphdb`, interactive or scripted, over every backend.
 
 ## Levels of abstraction
 
@@ -161,18 +161,18 @@ Excel support (openpyxl) are opt-in. The core has no numpy and no terminal-UI st
 |---|---|---|
 | `cypher-graphdb` | core library, both backends | embedding the library in your own program |
 | `cypher-graphdb[excel]` | openpyxl | you need Excel import/export |
-| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want the `cgdb-cli` command |
+| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art, lark (+ `[excel]`) | you want the `cypher-graphdb` command |
 | `cypher-graphdb[dev]` | cli + toolchain | development (implies `[cli]`) |
 
 ```bash
 pip install cypher-graphdb          # library only
-pip install 'cypher-graphdb[cli]'   # + the cgdb-cli command
+pip install 'cypher-graphdb[cli]'   # + the cypher-graphdb command
 # or
 uv add 'cypher-graphdb[cli]'
 ```
 
 The distribution is `cypher-graphdb`; the import name is `cypher_graphdb`.
-`cgdb-cli` appears on your `PATH` with the `[cli]` extra; invoking it without
+`cypher-graphdb` appears on your `PATH` with the `[cli]` extra; invoking it without
 that extra reports which install you need rather than a bare import error.
 
 Connection details come from arguments, the environment, or a `.env` file:
@@ -188,10 +188,10 @@ Then start with [`docs/usage/getting-started.md`](docs/usage/getting-started.md)
 ## The CLI
 
 ```bash
-cgdb-cli --graph my_graph                    # interactive REPL
-cgdb-cli --graph my_graph -e "labels"        # execute and exit
-cgdb-cli --graph my_graph --json -e "indexes"
-cgdb-cli schema generate -m ./graph_models/ -o ./schemas/   # no database needed
+cypher-graphdb --graph my_graph                    # interactive REPL
+cypher-graphdb --graph my_graph -e "labels"        # execute and exit
+cypher-graphdb --graph my_graph --json -e "indexes"
+cypher-graphdb schema generate -m ./graph_models/ -o ./schemas/   # no database needed
 ```
 
 Anything that is not a recognised command runs as Cypher. Output is a table
@@ -207,7 +207,7 @@ integration tests need Docker.
 task install           # venv + editable install
 task fct               # format + check + unit tests — the local loop
 task test:all          # unit + integration
-task run:cli           # run cgdb-cli from the venv
+task run:cli           # run cypher-graphdb from the venv
 ```
 
 Conventions and the release flow are in
@@ -228,7 +228,7 @@ src/cypher_graphdb/
   models.py             GraphNode / GraphEdge / GraphPath / Graph
   graphops.py           client-side analysis over a materialized Graph
   tools/                import / export (CSV, Excel, JSON, YAML) -- needs [cli]
-  cli/                  cgdb-cli — REPL, commands, rendering
+  cli/                  cypher-graphdb — REPL, commands, rendering
 docs/                   usage/, design/, adr/
 ```
 

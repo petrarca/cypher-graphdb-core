@@ -23,7 +23,7 @@ API, and how to drive it from the CLI. For *why* it is built this way, see the
 | [typed-models.md](typed-models.md) | Mapping labels onto your own Pydantic classes with a `ModelProvider`. |
 | [bulk-and-indexes.md](bulk-and-indexes.md) | Loading data at volume, and creating property indexes — including what your backend actually supports. |
 | [import-export.md](import-export.md) | Moving data in and out as CSV/Excel/JSON/YAML, and registering a format of your own. |
-| [cli.md](cli.md) | Using `cgdb-cli`, interactively or in a script. |
+| [cli.md](cli.md) | Using `cypher-graphdb`, interactively or in a script. |
 
 ## Layering (high level → low level)
 

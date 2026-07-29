@@ -39,7 +39,7 @@ excel = [
     "openpyxl",
 ]
 
-# Everything needed by cgdb-cli. The library core never imports these.
+# Everything needed by the cypher-graphdb CLI. The core never imports these.
 cli = [
     "art",
     "cypher_graphdb[excel]",
@@ -75,7 +75,7 @@ dev = [
 
 
 [project.scripts]
-cgdb-cli = "cypher_graphdb.args:typer_main"
+cypher-graphdb = "cypher_graphdb.args:typer_main"
 
 [tool.setuptools_scm]
 tag_regex = "^v(?P<version>\\d+(?:\\.\\d+)*)"

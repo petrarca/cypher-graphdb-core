@@ -31,7 +31,7 @@ library's `math.isnan` computes identically, given the `isinstance` guard.
 |---|---|---|
 | `cypher-graphdb` | core + both backend drivers | embedding the library |
 | `cypher-graphdb[excel]` | `openpyxl` | Excel import/export |
-| `cypher-graphdb[cli]` | `typer`, `rich`, `prompt_toolkit`, `art`, `lark` (+ `[excel]`) | `cgdb-cli` |
+| `cypher-graphdb[cli]` | `typer`, `rich`, `prompt_toolkit`, `art`, `lark` (+ `[excel]`) | `cypher-graphdb` |
 
 Both backend drivers stay in core: there is no per-backend extra, because a
 backend is the reason to install the library at all. `[cli]` depends on
@@ -91,4 +91,4 @@ four — to every install. If a headless renderer is ever wanted, the answer is 
 `rich`-free formatting layer underneath it, not relocating the Rich one.
 
 This is a breaking change for anyone who installed `cypher-graphdb` and expected
-`cgdb-cli`.
+`cypher-graphdb`.

@@ -1,15 +1,15 @@
 ---
 type: Guide
-title: The cgdb-cli command line
-description: Running the interactive REPL and non-interactive scripts with cgdb-cli — flags, output formats, the command set, and standalone schema generation.
-tags: [cypher-graphdb, cli, cgdb-cli, repl, interactive, scripting]
+title: The cypher-graphdb command line
+description: Running the interactive REPL and non-interactive scripts with cypher-graphdb — flags, output formats, the command set, and standalone schema generation.
+tags: [cypher-graphdb, cli, cypher-graphdb, repl, interactive, scripting]
 status: stable
 generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
-# The `cgdb-cli` command line
+# The `cypher-graphdb` command line
 
-**`cgdb-cli`** ships in the `cli` extra:
+**`cypher-graphdb`** ships in the `cli` extra:
 
 ```bash
 pip install 'cypher-graphdb[cli]'
@@ -23,13 +23,13 @@ which install you need rather than failing on a missing import — see
 
 ```bash
 # 1. Interactive REPL
-cgdb-cli --graph my_graph
+cypher-graphdb --graph my_graph
 
 # 2. Execute and exit — multiple commands separated by ';'
-cgdb-cli --graph my_graph -e "labels"
+cypher-graphdb --graph my_graph -e "labels"
 
 # 3. Run a file of commands
-cgdb-cli --graph my_graph -f setup.cgdb --verbose
+cypher-graphdb --graph my_graph -f setup.cgdb --verbose
 ```
 
 Connection details come from the environment, a `.env` file, or flags:
@@ -37,7 +37,7 @@ Connection details come from the environment, a `.env` file, or flags:
 ```bash
 CGDB_CINFO=postgresql://postgres:postgres@localhost:8432/graphdb \
 CGDB_BACKEND=age \
-  cgdb-cli --graph my_graph --table -e "labels"
+  cypher-graphdb --graph my_graph --table -e "labels"
 ```
 
 ## Flags
@@ -105,7 +105,7 @@ declare what they complete, so completion covers new commands automatically.
 Point the CLI at your models and results hydrate into them:
 
 ```bash
-cgdb-cli --model-path ./graph_models/ --graph mygraph
+cypher-graphdb --model-path ./graph_models/ --graph mygraph
 ```
 
 The path is a Python file or a package directory; providers declared in the
@@ -118,7 +118,7 @@ loaded modules are discovered and adopted. `CGDB_MODEL_PATH` does the same, and
 `schema generate` is a subcommand, not a REPL command, and needs no connection:
 
 ```bash
-cgdb-cli schema generate -m ./graph_models/ -o ./schemas/
+cypher-graphdb schema generate -m ./graph_models/ -o ./schemas/
 ```
 
 See [typed-models.md](typed-models.md) for the options.
@@ -128,8 +128,8 @@ See [typed-models.md](typed-models.md) for the options.
 Non-interactive mode makes the CLI usable from shell scripts and CI:
 
 ```bash
-cgdb-cli --graph my_graph --json -e "indexes" | jq '.[].label'
-cgdb-cli --graph my_graph -e "create graph staging" --yes
+cypher-graphdb --graph my_graph --json -e "indexes" | jq '.[].label'
+cypher-graphdb --graph my_graph -e "create graph staging" --yes
 ```
 
 Prefer `--json` when the output is being parsed — table output is for humans and
