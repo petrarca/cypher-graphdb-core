@@ -30,11 +30,19 @@ by `gid_` so an export can be re-imported without creating duplicates.
 ## From the CLI
 
 ```bash
-cgdb-cli --graph mygraph -e "export graph data.xlsx"
-cgdb-cli --graph mygraph -e "import graph data.csv"
+# import reads straight into the graph
+cgdb-cli --graph mygraph --yes -e "import data.csv"
+
+# export writes the IN-MEMORY graph, so populate it first with `add`
+cgdb-cli --graph mygraph --yes -e "MATCH (n:Person) RETURN n | add; export data.xlsx"
+
+# a tree export feeds the pipeline directly
+cgdb-cli --graph mygraph --yes -e "MATCH p=(:Person)-[:WORKS_FOR]->(:Company) RETURN p | tree | export tree.json"
 ```
 
-The format is taken from the file extension. See [cli.md](cli.md).
+The format is taken from the file extension. Exporting without populating the
+in-memory graph reports `Empty graph could not be exported` — that is the
+missing `add`, not a broken format. See [cli.md](cli.md).
 
 ## Asking what this install supports
 

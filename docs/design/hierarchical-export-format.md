@@ -23,12 +23,17 @@ Define JSON/YAML export formats for graph data that support round-trip import/ex
 
 ## Overview
 
-Two export formats are supported:
+Two export formats are supported. Both write the **in-memory graph**, not the
+database directly, so a flat export needs `add` to populate it first; `tree`
+feeds the pipeline itself:
 
 | Format | Use Case | Trigger |
 |--------|----------|---------|
-| Flat | Standard graph queries | `export <file>` |
-| Tree | Hierarchical tree data | `| tree | export <file>` |
+| Flat | Standard graph queries | `<query> \| add; export <file>` |
+| Tree | Hierarchical tree data | `<query> \| tree \| export <file>` |
+
+Exporting without populating the graph reports
+`Empty graph could not be exported`.
 
 ---
 
