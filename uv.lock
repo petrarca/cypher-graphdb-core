@@ -330,6 +330,9 @@ dev = [
     { name = "testcontainers" },
     { name = "typer" },
 ]
+excel = [
+    { name = "openpyxl" },
+]
 watch = [
     { name = "watchfiles" },
 ]
@@ -340,9 +343,10 @@ requires-dist = [
     { name = "art", marker = "extra == 'cli'" },
     { name = "build", marker = "extra == 'build'" },
     { name = "cypher-graphdb", extras = ["cli"], marker = "extra == 'dev'" },
+    { name = "cypher-graphdb", extras = ["excel"], marker = "extra == 'cli'" },
     { name = "json-schema-to-pydantic", specifier = ">=0.4.11" },
     { name = "loguru" },
-    { name = "openpyxl", marker = "extra == 'cli'" },
+    { name = "openpyxl", marker = "extra == 'excel'" },
     { name = "pip-tools", marker = "extra == 'build'" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "prompt-toolkit", marker = "extra == 'cli'" },
@@ -365,7 +369,7 @@ requires-dist = [
     { name = "watchfiles", marker = "extra == 'watch'" },
     { name = "wheel", marker = "extra == 'build'" },
 ]
-provides-extras = ["cli", "watch", "build", "dev"]
+provides-extras = ["excel", "cli", "watch", "build", "dev"]
 
 [[package]]
 name = "distlib"

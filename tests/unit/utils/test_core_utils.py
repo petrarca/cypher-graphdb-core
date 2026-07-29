@@ -15,7 +15,8 @@ def test_resolve_fileformat():
     assert utils.resolve_fileformat(".xlsx") == "excel"
     assert utils.resolve_fileformat(".csv") == "csv"
     assert utils.resolve_fileformat(".json") == "json"
-    assert utils.resolve_fileformat(".xml") == "xml"
+    # .xml has no importer or exporter, so it resolves to no format
+    assert utils.resolve_fileformat(".xml") is None
     assert utils.resolve_fileformat(".yaml") == "yaml"
     assert utils.resolve_fileformat(".undefined") is None
     assert utils.resolve_fileformat("") is None

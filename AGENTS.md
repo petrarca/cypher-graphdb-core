@@ -248,8 +248,9 @@ Capabilities: `LABEL_FUNCTION`, `SUPPORT_MULTIPLE_LABELS`, `STREAMING_SUPPORT`, 
 
 ## Packaging: the core/CLI split
 
-The library core must stay free of the terminal-UI stack. `[cli]` carries
-`typer`, `rich`, `prompt_toolkit`, `art` and `openpyxl`.
+The library core must stay free of the terminal-UI stack. `[excel]` carries
+`openpyxl`; `[cli]` carries `typer`, `rich`, `prompt_toolkit`, `art` and pulls
+in `[excel]`.
 
 **Invariant: `import cypher_graphdb` must not import any of them.** A regression
 here is invisible locally (an editable dev install always has them) and only
@@ -263,8 +264,13 @@ assert not {"rich", "typer", "prompt_toolkit", "art"} & {m.split(".")[0] for m i
 Rules:
 
 - `cli/` may import CLI packages freely; nothing outside `cli/` and `args.py` may.
-- `tools/` (tabular import/export) needs `openpyxl` and is used only by `cli/`.
-  It is not re-exported from the package root.
+- `tools/` (tabular import/export) re-exports the openpyxl-backed symbols
+  lazily, so CSV/JSON/YAML work without `[excel]`. Resolve formats through
+  `format_provider` rather than importing importer/exporter classes directly.
+- Formats register on the global `format_provider` (like backends, unlike
+  models, which are per-graph). `format_name_for_file()` is metadata and must
+  never import or raise; `probe()` reports availability without raising;
+  `resolve()` is the throwing counterpart.
 - `cli/__init__.py` re-exports `CypherGraphCLI` **lazily** (PEP 562). Do not make
   it eager: several downstream projects import `cypher_graphdb.cli.renderer`
   alone, which needs only `rich`, and an eager re-export would drag the whole

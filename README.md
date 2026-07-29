@@ -59,7 +59,8 @@ do not exist**.
 - **Client-side analysis** — `graphops` over a materialized `Graph`:
   `root_nodes`, `incoming_nodes` / `outgoing_nodes`, `build_tree`, `has_cycles`,
   `density`.
-- **Import / export** *(in `[cli]`)* — CSV, Excel, JSON and YAML, including a hierarchical
+- **Import / export** — a format registry: CSV, JSON and YAML built in, Excel via
+  `[excel]`, and your own formats registrable with `@data_format`. Includes a hierarchical
   round-trip format with `gid_` deduplication.
 - **Safety** — read-only mode, connection guards, credential-redacting settings.
 - **Pooling** — `CypherGraphDBPool` with a size bound and idle TTL.
@@ -153,13 +154,14 @@ Requires **Python 3.14+**.
 
 **Lean core, optional CLI.** The default install carries only what the library
 needs — both backend drivers included, so there is no per-backend extra. The
-interactive CLI's dependencies (typer, rich, prompt_toolkit, art, openpyxl) are
-opt-in. The core has no numpy and no terminal-UI stack.
+interactive CLI's dependencies (typer, rich, prompt_toolkit, art) and Excel
+support (openpyxl) are opt-in. The core has no numpy and no terminal-UI stack.
 
 | Install | Adds | Use when |
 |---|---|---|
 | `cypher-graphdb` | core library, both backends | embedding the library in your own program |
-| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art, openpyxl | you want the `cgdb-cli` command, or the tabular import/export tools |
+| `cypher-graphdb[excel]` | openpyxl | you need Excel import/export |
+| `cypher-graphdb[cli]` | typer, rich, prompt_toolkit, art (+ `[excel]`) | you want the `cgdb-cli` command |
 | `cypher-graphdb[dev]` | cli + toolchain | development (implies `[cli]`) |
 
 ```bash

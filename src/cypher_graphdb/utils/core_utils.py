@@ -89,14 +89,16 @@ def generate_unique_string_id(length: int = 16) -> str:
 def resolve_fileformat(file_or_dirname: str) -> str | None:
     """Resolve file format from file extension.
 
-    Determines the file format based on file extension, supporting common
-    formats like Excel, CSV, JSON, XML, and YAML. Also handles glob patterns.
+    Delegates to the global ``format_provider``, so the answer reflects the
+    formats actually registered -- including any a consumer registered itself.
+    Also handles glob patterns.
 
     Args:
         file_or_dirname: File path, directory name, or glob pattern.
 
     Returns:
-        File format string (excel, csv, json, xml, yaml) or None if unknown.
+        Format name (e.g. excel, csv, json, yaml) or None if the extension
+        maps to no registered format.
 
     Examples:
         >>> resolve_fileformat("data.xlsx")
@@ -120,15 +122,10 @@ def resolve_fileformat(file_or_dirname: str) -> str | None:
         >>> resolve_fileformat("")
         None
     """
-    ext_to_format = {
-        ".xlsx": "excel",
-        ".xls": "excel",
-        ".csv": "csv",
-        ".json": "json",
-        ".xml": "xml",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-    }
+    from cypher_graphdb.formatprovider import format_provider
+
+    def ext_to_format_get(ext: str) -> str | None:
+        return format_provider.format_name_for_file(f"x{ext}")
 
     if not file_or_dirname:
         return None
@@ -142,16 +139,16 @@ def resolve_fileformat(file_or_dirname: str) -> str | None:
         pattern_match = re.search(r"\*\.([a-zA-Z0-9]+)$", file_or_dirname)
         if pattern_match:
             ext = "." + pattern_match.group(1)
-            return ext_to_format.get(ext)
+            return ext_to_format_get(ext)
         return None
 
     # Handle direct extension input like ".csv" (not paths like "./file.csv")
     if file_or_dirname.startswith(".") and "/" not in file_or_dirname:
-        return ext_to_format.get(file_or_dirname)
+        return ext_to_format_get(file_or_dirname)
 
     # Handle full file path - extract extension
     _, ext = os.path.splitext(file_or_dirname)
-    return ext_to_format.get(ext)
+    return ext_to_format_get(ext)
 
 
 def split_path(path: str) -> tuple[str, str, str]:
