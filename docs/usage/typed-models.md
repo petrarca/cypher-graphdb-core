@@ -4,7 +4,6 @@ title: Typed models with a ModelProvider
 description: Register Pydantic node and edge classes on an explicit ModelProvider so query results hydrate into your own types, and keep two graphs from colliding on a label.
 tags: [cypher-graphdb, model-provider, typed-models, pydantic, relations, schema]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Typed models

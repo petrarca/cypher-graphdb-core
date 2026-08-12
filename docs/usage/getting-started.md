@@ -4,7 +4,6 @@ title: Getting started with cypher-graphdb
 description: Install the library, start a backend, connect, and run your first queries against Apache AGE or Memgraph.
 tags: [cypher-graphdb, getting-started, tutorial, install, connect]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Getting started

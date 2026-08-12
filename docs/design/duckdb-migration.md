@@ -5,12 +5,11 @@ description: A proposal to rebuild tabular import/export on DuckDB + Arrow. The 
 tags: [cypher-graphdb, duckdb, pandas, import-export, tabular, superseded]
 status: deprecated
 implementation: superseded
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # DuckDB migration — replacing pandas import/export
 
-> **Superseded — kept for the rationale, not the plan.**
+> **Superseded.** Kept for the rationale, not the plan.
 >
 > The *goal* was achieved: pandas is gone, and `DataFrameBuilder` /
 > `DataFrameImporter` no longer exist. The *means* was not. Rather than adopting
@@ -25,7 +24,7 @@ generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ## Goal
 Single implementation for all tabular import/export using DuckDB + Arrow (and openpyxl for Excel I/O only). We REMOVE pandas completely (including previous `DataFrameBuilder` / `DataFrameImporter`) in one step since there are no external users depending on them. Gains: lower memory, faster CSV parsing, unified batching, simpler maintenance, foundation for Parquet + bulk UNWIND.
 
-## Scope (Phase 1 – Single Cutover)
+## Scope (Phase 1 – single cutover)
 - Remove pandas dependency entirely.
 - Delete `DataFrameBuilder` and `DataFrameImporter` modules.
 - Introduce unified tabular abstraction (`RowSource`, `DuckDBSource`, `ExcelRowSource`).
@@ -49,7 +48,7 @@ Single implementation for all tabular import/export using DuckDB + Arrow (and op
 | Properties Parsing | `ast.literal_eval` + NaN checks | Valid JSON + `json.loads` | 
 | Future Parquet | Extra lib setup | Native COPY TO parquet | 
 
-## High-Level Architecture
+## High-level architecture
 ```
 CsvImporter / ExcelImporter
   ↓ (RowSource: DuckDBSource | ExcelRowSource)
@@ -61,7 +60,7 @@ TabularImporter
   - commit_every N
 ```
 
-### New Components
+### New components
 - `RowSource` (protocol / ABC)
   - `columns() -> list[str]`
   - `iter_batches(batch_size:int) -> Iterator[list[dict]]`
@@ -75,7 +74,7 @@ TabularImporter
   - Lightweight object passed to exporter callbacks (len + columns)
   - Avoids materializing large datasets as DataFrame
 
-### Import Flow (CSV & Excel)
+### Import flow (CSV & Excel)
 1. Importer validates extension and builds appropriate RowSource.
 2. RowSource exposes column names; TabularImporter analyzes (labels, gid, edge refs).
 3. Pre-resolve edge references (BY_GID / BY_KEY) via distinct queries (DuckDB or in-memory for Excel) + single Cypher lookup.
@@ -83,19 +82,19 @@ TabularImporter
 5. Commit every `COMMIT_EVERY` entities.
 6. Collate errors into list (not DataFrame).
 
-### Edge Reference Pre-Resolution
+### Edge reference pre-resolution
 - BY_GID: DuckDB query: `SELECT DISTINCT start_gid_ FROM rel UNION SELECT DISTINCT end_gid_ FROM rel`.
 - Fetch all gids in one Cypher query (UNWIND) to id map.
 - BY_KEY: JSON parse key columns; build set of (label, key_props) combinations; resolve via batched Cypher.
 
-### Export Flow (CSV & Excel)
+### Export flow (CSV & Excel)
 1. Group entities by label.
 2. Convert each group to list[dict] (RowCollector).
 3. CSV: Register Arrow table or in-memory data as DuckDB relation and `COPY TO` CSV.
 4. Excel: Create workbook (openpyxl); write header + rows streaming; edges prefixed/suffixed per config.
 5. Invoke callback with `RowSet(count, columns)` for status reporting.
 
-## Data Schema Adjustments
+## Data schema adjustments
 - `properties_` serialized as valid JSON string.
 - Importer parses JSON only. (Legacy python-dict string format removed.)
 
@@ -105,11 +104,11 @@ Constants (add to `config.py`):
 - `COMMIT_EVERY = 5000` (defaults to `IMPORT_BATCH_SIZE` if None)
 - (No feature flag needed: DuckDB path is default.)
 
-## Error Handling
+## Error handling
 - Maintain `import_errors: list[dict]` with original row + `error_` message.
 - Optional helper to expose errors as DuckDB relation (future).
 
-## Step-by-Step Implementation Plan
+## Step-by-step implementation plan
 1. Add dependencies: `duckdb`, `pyarrow` (optional but recommended), `openpyxl`.
 2. Create `row_source.py` (RowSource, DuckDBSource, ExcelRowSource, RowSet, RowCollector).
 3. Implement `tabular_importer.py` (replaces DataFrameImporter) using RowSource.
@@ -123,13 +122,13 @@ Constants (add to `config.py`):
 11. Write tests: column analysis, JSON conversion, gid batching, round-trip graph equivalence.
 12. Update docs (this file, changelog, README) to reflect new design.
 
-## Future Work (Phase 2+)
+## Future work (Phase 2+)
 - Parquet export/import (`COPY TO 'file.parquet' FORMAT PARQUET`).
 - Bulk UNWIND insertion for batch creates/merges.
 - Parallel label group export/import.
 - Expose pre-import SQL filtering capability.
 
-## Risks & Mitigations
+## Risks & mitigations
 | Risk | Mitigation |
 |------|------------|
 | Ordering differences vs prior DataFrame order | Treat ordering as undefined; compare sets in tests. |
@@ -137,7 +136,7 @@ Constants (add to `config.py`):
 | Large JSON properties performance | Consider Arrow struct columns / partial projection later. |
 | Added dependencies | Keep list minimal; pyarrow optional. |
 
-## Acceptance Criteria
+## Acceptance criteria
 - No pandas dependency in the project (confirmed; legacy pandas modules deleted).
 - CSV & Excel import/export function via new pipeline.
 - Round-trip (export→import→export) preserves graph semantics (labels, properties, edges).
@@ -145,12 +144,12 @@ Constants (add to `config.py`):
 - JSON properties present & parsed (no `ast.literal_eval`).
 - Edge reference pre-resolution reduces per-edge lookups (validated in test or benchmark log).
 
-## Open Questions
+## Open questions
 - Pre-import SQL filtering exposure timing?
 - When to introduce Parquet as default for large exports?
 - Bulk UNWIND insertion priority vs Parquet?
 
-## Migration Notes
+## Migration notes
 No external users: internal refactor only. Old pandas-specific modules removed; callbacks now receive `RowSet`.
 
 ---

@@ -73,7 +73,7 @@ Because there is no generated reference, **docstrings are the API
 documentation**. Treat them accordingly.
 
 New files need OKF frontmatter; see the
-[documentation standard](../engineering-handbook/standards/sdlc/documentation.md).
+[documentation standard](https://github.com/petrarca/engineering-handbook/blob/main/standards/sdlc/documentation.md).
 
 #### Docstrings
 
@@ -159,7 +159,7 @@ anything** -- that is the hard rule. Because a minor bump carries no warning of
 its own, breaking changes must be spelled out in the release notes with the
 migration a consumer needs.
 
-See the [org standard](../engineering-handbook/standards/sdlc/releases.md).
+See the [org standard](https://github.com/petrarca/engineering-handbook/blob/main/standards/sdlc/releases.md).
 
 ### Step-by-step release process
 

@@ -5,14 +5,13 @@ description: Analysis of how a single execute() call could handle several semico
 tags: [cypher-graphdb, multi-statement, semicolon, cypher-parser, proposal]
 status: stable
 implementation: proposed
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Multiple statement execution
 
-> **Not built.** `execute()` still takes one statement. Multi-statement input is
-> handled at the edges instead: the CLI splits on `;` for `-e`, and
-> `command_reader.py` reads statements from a file for `-f`.
+> **Proposed — not built.** `execute()` still takes one statement.
+> Multi-statement input is handled at the edges instead: the CLI splits on `;`
+> for `-e`, and `command_reader.py` reads statements from a file for `-f`.
 
 > **Note:** This document is for analysis purposes only. No decision has been made about whether 
 > to implement this feature. It serves as a reference for understanding the problem space, 
@@ -24,7 +23,7 @@ This document describes the design for supporting multiple Cypher statements in 
 
 ## Background
 
-### Current Implementation
+### Current implementation
 
 The `execute()` method handles single Cypher statements:
 
@@ -42,7 +41,7 @@ db.execute("MATCH (p:Person) RETURN p;")
 - **Apache AGE (SQL wrapper):** Semicolons cause SQL syntax errors in `cypher()` function
   - Current fix: Strip trailing semicolon before embedding into SQL (implemented 2025-10-15)
 
-### OpenCypher Specification
+### OpenCypher specification
 
 According to the openCypher grammar (`Cypher.g4`):
 
@@ -53,7 +52,7 @@ oC_Cypher
 
 Semicolons are **optional** statement terminators for single statements.
 
-### Backend Capabilities
+### Backend capabilities
 
 Based on research (Perplexity, 2025-10-15):
 
@@ -63,7 +62,7 @@ Based on research (Perplexity, 2025-10-15):
 | **Apache AGE** | ❌ No | Manual | Each statement must be executed separately |
 | **Neo4j** | ⚠️ Conditional | APOC required | Requires `apoc.cypher.runMany` procedure |
 
-## Problem Statement
+## Problem statement
 
 Users may want to execute multiple statements in a single call for:
 
@@ -84,7 +83,7 @@ db.execute_multiple("""
 
 ## Requirements
 
-### Functional Requirements
+### Functional requirements
 
 1. **FR-1:** Support executing multiple semicolon-separated Cypher statements
 2. **FR-2:** Work consistently across all supported backends (Memgraph, AGE)
@@ -93,18 +92,18 @@ db.execute_multiple("""
 5. **FR-5:** Provide clear error messages indicating which statement failed
 6. **FR-6:** Support mixed statement types (CREATE, MATCH, DELETE, etc.)
 
-### Non-Functional Requirements
+### Non-functional requirements
 
 1. **NFR-1:** Performance should be optimized per backend capabilities
 2. **NFR-2:** API should be intuitive and follow Python conventions
 3. **NFR-3:** Error handling must be robust and informative
 4. **NFR-4:** Documentation must clearly explain differences from `execute()`
 
-## Proposed Solution
+## Proposed solution
 
-### API Design
+### API design
 
-#### New Method: `execute_multiple()`
+#### New method: `execute_multiple()`
 
 ```python
 def execute_multiple(
@@ -143,9 +142,9 @@ def execute_multiple(
     """
 ```
 
-### Implementation Strategy
+### Implementation strategy
 
-#### 1. Statement Parsing
+#### Statement parsing
 
 ```python
 def _split_statements(cypher_str: str) -> list[str]:
@@ -165,9 +164,9 @@ def _split_statements(cypher_str: str) -> list[str]:
     return statements
 ```
 
-#### 2. Backend-Specific Execution
+#### Backend-specific execution
 
-##### Memgraph Implementation (Optimized)
+##### Memgraph implementation (optimized)
 
 ```python
 def _execute_multiple_memgraph(statements: list[str]) -> list[TabularResult]:
@@ -179,7 +178,7 @@ def _execute_multiple_memgraph(statements: list[str]) -> list[TabularResult]:
     return results
 ```
 
-##### AGE Implementation (Sequential)
+##### AGE implementation (sequential)
 
 ```python
 def _execute_multiple_age(statements: list[str]) -> list[TabularResult]:
@@ -201,7 +200,7 @@ def _execute_multiple_age(statements: list[str]) -> list[TabularResult]:
     return results
 ```
 
-#### 3. Error Handling
+#### Error handling
 
 ```python
 class MultipleStatementExecutionError(CypherGraphDBError):
@@ -220,7 +219,7 @@ class MultipleStatementExecutionError(CypherGraphDBError):
         self.original_error = original_error
 ```
 
-### Execution Flow
+### Execution flow
 
 ```mermaid
 graph TD
@@ -239,12 +238,12 @@ graph TD
     J -->|False| L[Return last result only]
 ```
 
-## Implementation Phases
+## Implementation phases
 
 > **Important:** These phases are proposed for analysis purposes only. Implementation is 
 > subject to future decision based on user demand, priority, and resource availability.
 
-### Phase 1: Core Functionality (MVP)
+### Phase 1: core functionality (MVP)
 
 - [ ] Implement statement splitting logic
 - [ ] Add `execute_multiple()` method to `CypherGraphDB`
@@ -253,20 +252,20 @@ graph TD
 - [ ] Write unit tests for statement parsing
 - [ ] Write integration tests for both backends
 
-### Phase 2: Optimization
+### Phase 2: optimization
 
 - [ ] Implement optimized Memgraph execution (single query)
 - [ ] Add result caching/buffering for large result sets
 - [ ] Performance benchmarking and optimization
 
-### Phase 3: Advanced Features
+### Phase 3: advanced features
 
 - [ ] Add `fail_fast` parameter for error handling strategy
 - [ ] Support transaction control (BEGIN/COMMIT/ROLLBACK)
 - [ ] Add progress callbacks for long-running scripts
 - [ ] Support for parameter passing to multiple statements
 
-## Decision Criteria
+## Decision criteria
 
 Before implementing this feature, consider:
 
@@ -276,9 +275,9 @@ Before implementing this feature, consider:
 4. **Backend Support:** Will all target backends support this adequately?
 5. **Priority:** Are there higher-priority features or fixes needed first?
 
-## Alternatives Considered
+## Alternatives considered
 
-### Alternative 1: Client-Side Splitting
+### Alternative 1: client-side splitting
 
 **Approach:** User splits statements manually and calls `execute()` multiple times.
 
@@ -293,7 +292,7 @@ Before implementing this feature, consider:
 
 **Decision:** Rejected - library should provide convenience methods
 
-### Alternative 2: Batch Execution Only
+### Alternative 2: batch execution only
 
 **Approach:** Only optimize for backends that support it natively (Memgraph).
 
@@ -307,7 +306,7 @@ Before implementing this feature, consider:
 
 **Decision:** Rejected - consistent API is priority
 
-### Alternative 3: Separate execute_script() Method
+### Alternative 3: separate execute_script() method
 
 **Approach:** Different method name to indicate script execution.
 
@@ -321,16 +320,16 @@ Before implementing this feature, consider:
 
 **Decision:** Under consideration - may be better name than `execute_multiple()`
 
-## Testing Strategy
+## Testing strategy
 
-### Unit Tests
+### Unit tests
 
 1. Statement splitting with various semicolon placements
 2. String literal handling (semicolons in strings)
 3. Empty statement filtering
 4. Error message formatting
 
-### Integration Tests
+### Integration tests
 
 1. Multiple CREATE statements on both backends
 2. Mixed statement types (CREATE, MATCH, DELETE)
@@ -339,47 +338,47 @@ Before implementing this feature, consider:
 5. Statements with RETURN clauses
 6. Statements without RETURN clauses
 
-### Performance Tests
+### Performance tests
 
 1. Compare single combined query vs. sequential (Memgraph)
 2. Measure overhead of splitting logic
 3. Large script execution (100+ statements)
 
-## Documentation Requirements
+## Documentation requirements
 
-### User Documentation
+### User documentation
 
 1. **Usage Guide:** When to use `execute()` vs `execute_multiple()`
 2. **Examples:** Common use cases with code samples
 3. **Limitations:** Backend-specific behavior differences
 4. **Migration Guide:** How to update existing scripts
 
-### Developer Documentation
+### Developer documentation
 
 1. **Architecture:** How statement splitting works
 2. **Backend Implementation:** How each backend handles multiple statements
 3. **Error Handling:** Exception hierarchy and handling strategy
 
-## Security Considerations
+## Security considerations
 
 1. **SQL Injection:** Ensure statement splitting doesn't introduce vulnerabilities
 2. **Resource Limits:** Prevent DOS via extremely long statement lists
 3. **Transaction Safety:** Document atomicity guarantees (or lack thereof)
 
-## Performance Considerations
+## Performance considerations
 
-### Memgraph Optimization
+### Memgraph optimization
 
 - **Single Query:** Combine statements and send as one Bolt protocol message
 - **Expected Speedup:** Significant (eliminate network round-trips)
 
-### AGE Sequential Execution
+### AGE sequential execution
 
 - **Current Approach:** One SQL query per statement
 - **Limitation:** Inherent to AGE's `cypher()` function design
 - **Mitigation:** Connection pooling, prepared statements
 
-## Open Questions
+## Open questions
 
 1. Should we support prepared statements with multiple executions?
 2. How to handle different result types from different statements?
@@ -395,7 +394,7 @@ Before implementing this feature, consider:
 - [Apache AGE Documentation](https://age.apache.org/age-manual/master/intro/overview.html)
 - Perplexity Research: Multiple statement handling (2025-10-15)
 
-## Revision History
+## Revision history
 
 | Date | Version | Author | Changes |
 |------|---------|--------|---------|

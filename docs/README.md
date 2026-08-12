@@ -1,4 +1,6 @@
+---
 okf_version: "0.2"
+---
 
 # cypher-graphdb-core documentation
 

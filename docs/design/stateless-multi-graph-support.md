@@ -5,12 +5,11 @@ description: Analysis of the graph name held as backend state, and a proposed st
 tags: [cypher-graphdb, multi-graph, stateless, backend, graph-name, proposal]
 status: stable
 implementation: proposed
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Stateless multi-graph support
 
-> **Not built.** `CypherBackend` still holds `_graph_name`, bound at
+> **Proposed — not built.** `CypherBackend` still holds `_graph_name`, bound at
 > `connect()`; there is no per-call graph argument and no `use_graph()` on
 > `CypherGraphDB`.
 >
@@ -22,7 +21,7 @@ generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 
 This document analyzes the current stateful graph handling in `cypher-graphdb` and proposes a stateless design.
 
-## 1. Current Statefulness
+## Current statefulness
 
 Currently, the `CypherBackend` class holds the `_graph_name` state:
 
@@ -38,11 +37,11 @@ class CypherBackend(abc.ABC):
 
 This means a `CypherGraphDB` instance is tied to a specific graph. To switch graphs, you must call `change_graph_name()`, which mutates the state of the connection. This is problematic for concurrent usage in a multi-tenant environment (e.g., a shared connection pool).
 
-## 2. Proposed Stateless Design
+## Proposed stateless design
 
 We should allow passing `graph` (or `graph_name`) as an argument to execution methods. The backend should use this argument for the specific operation without mutating its internal state.
 
-### API Changes
+### API changes
 
 #### `CypherGraphDB`
 
@@ -70,7 +69,7 @@ class CypherBackend(abc.ABC):
         pass
 ```
 
-### Backend Implementation (FalkorDB Example)
+### Backend implementation (FalkorDB example)
 
 For FalkorDB, which supports stateless graph selection per query (conceptually), we can implement it like this:
 
@@ -85,7 +84,7 @@ class FalkorDBBackend(CypherBackend):
 
 **Note**: For FalkorDB, the `select_graph` call is lightweight (it just creates a proxy object), so this is efficient.
 
-### Backend Implementation (Memgraph Example)
+### Backend implementation (Memgraph example)
 
 For Memgraph (Enterprise), which supports `USE DATABASE`, we can inject the `USE` clause or switch the session.
 
@@ -98,23 +97,23 @@ class MemgraphDB(CypherBackend):
         ...
 ```
 
-## 3. Benefits
+## Benefits
 
 1.  **Thread Safety**: A single `CypherGraphDB` instance (or pool) can handle requests for multiple apps concurrently without race conditions on `change_graph_name`.
 2.  **Simplicity**: The API becomes explicit: `db.execute(..., graph="app1")`.
 3.  **Flexibility**: Easy to support the "Graph per App" strategy.
 
-## 4. Migration Path
+## Migration path
 
 1.  Keep `_graph_name` as a default.
 2.  Add `graph` argument to all `execute*` and `fetch*` methods.
 3.  Update backends to respect the argument.
 
-## 5. Impact on High-Level Methods
+## Impact on high-level methods
 
 To fully support stateless operations, the `graph` argument must be propagated through all high-level methods in `CypherGraphDB`.
 
-### Method Chain Updates
+### Method chain updates
 
 The following methods need to accept `graph: str = None` and pass it down:
 
@@ -125,7 +124,7 @@ The following methods need to accept `graph: str = None` and pass it down:
 5.  **`create_or_merge(..., graph=None)`** -> calls internal create/merge methods -> `_parse_and_execute`
 6.  **`delete(..., graph=None)`** -> calls internal delete methods -> `_parse_and_execute`
 
-### Internal Helper Updates
+### Internal helper updates
 
 The `_parse_and_execute` method is the central bottleneck. It must be updated:
 
@@ -149,7 +148,7 @@ def _parse_and_execute(
 
 This ensures that *any* operation can be targeted to a specific graph without changing the global connection state.
 
-## 6. Driver Compatibility Verification
+## Driver compatibility verification
 
 I have verified that this design is compatible with the underlying drivers/databases:
 

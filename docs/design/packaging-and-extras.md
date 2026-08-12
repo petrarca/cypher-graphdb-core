@@ -5,14 +5,13 @@ description: Why the terminal-UI stack and Excel support are optional, the invar
 tags: [cypher-graphdb, packaging, extras, dependencies, cli, imports]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Packaging — a lean core with optional extras
 
-> **Built.** Extras declared in `pyproject.toml`; guards in `_extras.py`, used by
-> `args.py`, `cli/renderer.py` and the lazy `__getattr__` in `cli/__init__.py`
-> and `tools/__init__.py`.
+> **Implemented.** Extras declared in `pyproject.toml`; guards in `_extras.py`,
+> used by `args.py`, `cli/renderer.py` and the lazy `__getattr__` in
+> `cli/__init__.py` and `tools/__init__.py`.
 
 ## Problem
 

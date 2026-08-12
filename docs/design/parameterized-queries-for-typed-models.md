@@ -5,25 +5,25 @@ description: Why CRUD on typed models builds parameterized Cypher instead of emb
 tags: [cypher-graphdb, parameterized-queries, typed-models, cypherbuilder, escaping]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Parameterized queries for typed models
 
-> **Built.** `src/cypher_graphdb/cypherbuilder.py` returns a `(query, params)`
-> tuple from every method that would otherwise inline property values.
+> **Implemented.** `src/cypher_graphdb/cypherbuilder.py` returns a
+> `(query, params)` tuple from every method that would otherwise inline
+> property values.
 >
 > One backend caveat outlives the change: Apache AGE cannot bind parameters
 > inside `UNWIND`, so that path serializes inline Cypher literals via
 > `backends/age/ageserializer.py`. That is the reason the bulk helpers exist.
 
-## Executive Summary
+## Executive summary
 
 The library uses parameterized queries for CRUD operations on typed models. Building Cypher by embedding property values directly into query strings fails when values contain special characters like quotes (`"`, `'`), newlines (`\n`), or backslashes (`\`).
 
-## Problem Statement
+## Problem statement
 
-### Current Behavior
+### Current behavior
 
 When using `create_or_merge()` with a typed model, the library:
 
@@ -38,7 +38,7 @@ if isinstance(value, str):
     return f'"{value}"'  # No escaping!
 ```
 
-### Failure Example
+### Failure example
 
 Given a ProductProfile with:
 ```python
@@ -60,11 +60,11 @@ This is **invalid Cypher syntax** and causes a `DatabaseError`.
 
 ## Solution
 
-### Approach: Parameterized Queries
+### Approach: parameterized queries
 
 Instead of embedding values in query strings, use Cypher's native parameter binding (`$param` syntax). The backends already support this via the `params` argument to `execute_cypher()`.
 
-### Design Principles
+### Design principles
 
 1. **Security**: Parameterized queries prevent Cypher injection attacks
 2. **Correctness**: All characters are handled correctly by the database driver
@@ -73,11 +73,11 @@ Instead of embedding values in query strings, use Cypher's native parameter bind
 
 ## The design
 
-### 1. CypherBuilder (`cypherbuilder.py`)
+### CypherBuilder (`cypherbuilder.py`)
 
 Change CRUD methods to return `tuple[str, dict]` instead of `str`.
 
-#### Current Implementation
+#### Current implementation
 
 ```python
 @classmethod
@@ -91,7 +91,7 @@ def merge_node_by_id(cls, node_id, properties) -> str:
     """
 ```
 
-#### Proposed Implementation
+#### Proposed implementation
 
 ```python
 @classmethod
@@ -121,7 +121,7 @@ def merge_node_by_id(cls, node_id, properties) -> tuple[str, dict]:
     return query, params
 ```
 
-#### Methods to Update
+#### Methods to update
 
 | Method | Current Return | New Return |
 |--------|---------------|------------|
@@ -130,11 +130,11 @@ def merge_node_by_id(cls, node_id, properties) -> tuple[str, dict]:
 | `create_edge()` | `str` | `tuple[str, dict]` |
 | `merge_edge_by_id()` | `str` | `tuple[str, dict]` |
 
-### 2. CypherGraphDB (`cyphergraphdb/cyphergraphdb.py`)
+### CypherGraphDB (`cyphergraphdb/cyphergraphdb.py`)
 
 Update internal methods to unpack the tuple and pass params.
 
-#### Current Implementation
+#### Current implementation
 
 ```python
 def _merge_node(self, obj) -> GraphNode:
@@ -143,7 +143,7 @@ def _merge_node(self, obj) -> GraphNode:
     # ...
 ```
 
-#### Proposed Implementation
+#### Proposed implementation
 
 ```python
 def _merge_node(self, obj) -> GraphNode:
@@ -152,7 +152,7 @@ def _merge_node(self, obj) -> GraphNode:
     # ...
 ```
 
-#### Methods to Update
+#### Methods to update
 
 | Method | Change |
 |--------|--------|
@@ -161,17 +161,17 @@ def _merge_node(self, obj) -> GraphNode:
 | `_create_edge()` | Unpack tuple, pass `params` |
 | `_merge_edge()` | Unpack tuple, pass `params` |
 
-### 3. `_parse_and_execute()` Method
+### `_parse_and_execute()` method
 
 Ensure params are forwarded to the backend.
 
-#### Current Signature
+#### Current signature
 
 ```python
 def _parse_and_execute(self, cypher_cmd, fetch_one=False, raw_data=False):
 ```
 
-#### Proposed Signature
+#### Proposed signature
 
 ```python
 def _parse_and_execute(self, cypher_cmd, fetch_one=False, raw_data=False, params=None):
@@ -202,11 +202,11 @@ def _parse_and_execute(self, cypher_cmd, fetch_one=False, raw_data=False, params
     return result
 ```
 
-### 4. Backend Support (Already Implemented)
+### Backend support (already implemented)
 
 Both backends already support parameterized queries:
 
-#### Memgraph Backend (`backends/memgraph/memgraphdb.py`)
+#### Memgraph backend (`backends/memgraph/memgraphdb.py`)
 
 ```python
 def _execute_query(self, query, fetch_one=False, raw_data=False, params=None):
@@ -214,7 +214,7 @@ def _execute_query(self, query, fetch_one=False, raw_data=False, params=None):
     cursor.execute(query, params or {})  # Line 493
 ```
 
-#### AGE Backend (`backends/age/agegraphdb.py`)
+#### AGE backend (`backends/age/agegraphdb.py`)
 
 ```python
 def execute_cypher(self, cypher_query, fetch_one=False, raw_data=False, params=None):

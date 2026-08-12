@@ -5,13 +5,12 @@ description: JSON/YAML export formats for graph data supporting round-trip impor
 tags: [cypher-graphdb, export, import, json, yaml, round-trip, gid]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Hierarchical export format
 
-> **Built.** `tools/hierarchical_row_source.py`, with `tools/data_flattener.py`
-> and `tools/yaml_importer.py`.
+> **Implemented.** `tools/hierarchical_row_source.py`, with
+> `tools/data_flattener.py` and `tools/yaml_importer.py`.
 >
 > This document describes the *shape of the data*. How a format is selected and
 > dispatched — and how to add one — is the
@@ -37,7 +36,7 @@ Exporting without populating the graph reports
 
 ---
 
-## Flat Format
+## Flat format
 
 Nodes grouped by label, edges reference targets by `gid_`.
 
@@ -69,7 +68,7 @@ node:ArchitectureRoot:
   name: Architecture
 ```
 
-### Key Points
+### Key points
 
 - **Nodes**: Grouped under `node:<Label>` keys
 - **Edges**: Nested under source nodes with `edge:<RELATION>` keys
@@ -78,7 +77,7 @@ node:ArchitectureRoot:
 
 ---
 
-## Edge Direction
+## Edge direction
 
 Edge direction is specified via suffix on the edge key:
 
@@ -88,7 +87,7 @@ Edge direction is specified via suffix on the edge key:
 | `:forward` | forward | source → target |
 | `:reverse` | reverse | source ← target |
 
-### Forward Direction (default)
+### Forward direction (default)
 
 ```yaml
 node:Child:
@@ -99,7 +98,7 @@ node:Child:
 
 Creates: `(Child)-[:BELONGS_TO]->(Parent)`
 
-### Reverse Direction
+### Reverse direction
 
 ```yaml
 node:Parent:
@@ -115,7 +114,7 @@ Used in tree exports where we traverse from root down but edges point upward (ch
 
 ---
 
-## Tree Format
+## Tree format
 
 Hierarchical nested structure preserving parent-child relationships inline.
 
@@ -154,7 +153,7 @@ node:ArchitectureRoot:
           name: Cross-Cutting Characteristics
 ```
 
-### Key Points
+### Key points
 
 - **Root nodes**: Listed under `node:<Label>` at top level
 - **Edges**: Array of edge entries, each containing edge `gid_` and nested child node
@@ -175,7 +174,7 @@ Both formats use `gid_` for deduplication during import:
 
 This enables idempotent imports - running the same import multiple times produces identical results.
 
-### GID Generation
+### GID generation
 
 `gid_` is **optional** in input files:
 
@@ -192,7 +191,7 @@ For idempotent imports, always include `gid_` in your input files.
 
 ---
 
-## Format Detection
+## Format detection
 
 The importer auto-detects format based on structure:
 
@@ -203,11 +202,11 @@ The importer auto-detects format based on structure:
 
 ---
 
-## Internal Fields
+## Internal fields
 
 Defined in `config.py`:
 
-### Node Fields (`NODE_FIELDS`)
+### Node fields (`NODE_FIELDS`)
 
 | Field | Purpose | Export Handling |
 |-------|---------|-----------------|
@@ -215,7 +214,7 @@ Defined in `config.py`:
 | `label_` | Node label | In key `node:<LABEL>` |
 | `properties_` | Property container | Flattened |
 
-### Edge Fields (`EDGE_FIELDS`)
+### Edge fields (`EDGE_FIELDS`)
 
 Includes all node fields plus:
 
@@ -224,7 +223,7 @@ Includes all node fields plus:
 | `start_id_` | Start node internal ID | Excluded |
 | `end_id_` | End node internal ID | Excluded |
 
-### Additional Edge Fields (excluded from edge properties)
+### Additional edge fields (excluded from edge properties)
 
 | Field | Purpose |
 |-------|---------|
@@ -233,7 +232,7 @@ Includes all node fields plus:
 
 ---
 
-## File Formats
+## File formats
 
 Both JSON and YAML are supported with identical data structure. Format is determined by file extension.
 
@@ -242,7 +241,7 @@ Both JSON and YAML are supported with identical data structure. Format is determ
 | `.json` | JSON |
 | `.yaml`, `.yml` | YAML |
 
-### JSON Example
+### JSON example
 
 ```json
 {
@@ -262,7 +261,7 @@ Both JSON and YAML are supported with identical data structure. Format is determ
 }
 ```
 
-### YAML Example
+### YAML example
 
 ```yaml
 node:Category:
@@ -274,7 +273,7 @@ node:Category:
     target_label: Root
 ```
 
-### Why Edges Use Arrays
+### Why edges use arrays
 
 YAML/JSON do not allow duplicate keys at the same level. When a node has multiple edges of the same type, they must be grouped under a single `edge:<RELATION>` key as an array:
 

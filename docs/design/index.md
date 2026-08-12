@@ -4,7 +4,6 @@ title: cypher-graphdb — backend-agnostic access to Cypher graph databases
 description: Overview and concept map for the cypher-graphdb library design — the backend seam, the layer stack, typed models, and the documents describing each concept.
 tags: [cypher-graphdb, design, overview, backend, architecture, layering]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # cypher-graphdb — design overview

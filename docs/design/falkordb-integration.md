@@ -5,27 +5,27 @@ description: Technical design for adding FalkorDB as a third Cypher backend — 
 tags: [cypher-graphdb, falkordb, backend, integration, proposal]
 status: stable
 implementation: proposed
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # FalkorDB integration
 
-> **Not built.** `backends/` contains `age` and `memgraph` only. FalkorDB
-> appears in a few docstrings as a comparison point, not as an implementation.
+> **Proposed — not built.** `backends/` contains `age` and `memgraph` only.
+> FalkorDB appears in a few docstrings as a comparison point, not as an
+> implementation.
 
 This document outlines the technical design for integrating FalkorDB as a supported backend in the `cypher-graphdb` library.
 
-## 1. Library Dependencies
+## Library dependencies
 
 *   **Package**: `falkordb` (PyPI: `FalkorDB`)
 *   **Version**: Latest stable.
 *   **License**: BSD-3-Clause (Client is open source).
 
-## 2. Backend Implementation
+## Backend implementation
 
 We will create a new backend module: `lib/src/cypher_graphdb/backends/falkordb/falkordb.py`.
 
-### Class Structure
+### Class structure
 
 ```python
 from cypher_graphdb.backend import CypherBackend
@@ -41,7 +41,7 @@ class FalkorDBBackend(CypherBackend):
         self._driver = self._client.select_graph(graph_name)
 ```
 
-### Multi-Graph Support
+### Multi-graph support
 
 FalkorDB supports multiple graphs natively.
 
@@ -49,7 +49,7 @@ FalkorDB supports multiple graphs natively.
 *   **`delete_graph(name)`**: `self._client.select_graph(name).delete()`
 *   **`graph_exists(name)`**: Check keys in Redis matching the graph name.
 
-### Query Execution
+### Query execution
 
 FalkorDB's `query` method returns a `ResultSet`. We need to map this to `TabularResult`.
 
@@ -60,7 +60,7 @@ def execute_cypher(self, query, ...):
     # Map Node/Edge objects to GraphObject
 ```
 
-### Type Mapping
+### Type mapping
 
 We need a `FalkorDBRowFactory` to convert FalkorDB types to `cypher-graphdb` types.
 
@@ -68,7 +68,7 @@ We need a `FalkorDBRowFactory` to convert FalkorDB types to `cypher-graphdb` typ
 *   **Edges**: FalkorDB Edge -> `GraphObject(type=EDGE)`
 *   **Scalars**: Direct mapping (int, float, string, bool).
 
-## 3. Integration Steps
+## Integration steps
 
 1.  **Add Dependency**: Add `falkordb` to `pyproject.toml`.
 2.  **Create Backend**: Implement `FalkorDBBackend` class.
@@ -76,7 +76,7 @@ We need a `FalkorDBRowFactory` to convert FalkorDB types to `cypher-graphdb` typ
 4.  **Register Backend**: Add to `cypher_graphdb.backends` registry.
 5.  **Tests**: Add integration tests using `FalkorDBLite` or a Docker container.
 
-## 4. Access from Python
+## Access from Python
 
 Once integrated, usage would be:
 
@@ -97,6 +97,6 @@ with get_graph() as db:
     db.execute_cypher("MATCH (n) RETURN n")
 ```
 
-## 5. Feasibility
+## Feasibility
 
 The integration is **highly feasible**. The `falkordb` python client is mature and follows a similar pattern to `neo4j` and `mgclient`. The mapping of types will be the main implementation effort.

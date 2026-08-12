@@ -5,12 +5,11 @@ description: Why import/export formats are resolved through a global registry, h
 tags: [cypher-graphdb, formats, registry, import, export, extensibility, extras]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # The format registry
 
-> **Built.** `formatprovider.py` (`FormatProvider`, `FormatSpec`,
+> **Implemented.** `formatprovider.py` (`FormatProvider`, `FormatSpec`,
 > `FormatAvailability`, `data_format`); built-in formats register from
 > `tools/formats/<name>.py`.
 

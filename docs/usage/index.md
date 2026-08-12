@@ -4,7 +4,6 @@ title: Using cypher-graphdb — for consumers of the library
 description: Task-oriented documentation for working with Cypher graph databases through cypher-graphdb, across its four layers from typed objects down to backend SQL.
 tags: [cypher-graphdb, usage, guide, getting-started, layering, consumer-documentation]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Using cypher-graphdb

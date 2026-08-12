@@ -5,12 +5,11 @@ description: How read-only mode blocks writing Cypher clauses before they reach 
 tags: [cypher-graphdb, read-only, safety, parser, settings]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Read-only mode
 
-> **Built.** `read_only` on `Settings` (env `CGDB_READ_ONLY`, CLI `-r`),
+> **Implemented.** `read_only` on `Settings` (env `CGDB_READ_ONLY`, CLI `-r`),
 > enforced in `cyphergraphdb/connection.py` via `cypherparser`, raising
 > `ReadOnlyModeError`.
 
@@ -18,7 +17,7 @@ generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 
 Read-only mode prevents write operations (CREATE, DELETE, SET, MERGE, REMOVE) from being executed against the graph database. This provides a safe way to connect to production databases for querying without risk of data modification.
 
-## Design Goals
+## Design goals
 
 - **Secure**: Cannot be bypassed by user code or callbacks
 - **Simple**: Single boolean flag with clear semantics
@@ -26,9 +25,9 @@ Read-only mode prevents write operations (CREATE, DELETE, SET, MERGE, REMOVE) fr
 - **Performant**: Zero overhead when disabled, minimal when enabled
 - **Universal**: Works across all backends (AGE, Memgraph, future)
 
-## Core Architecture
+## Core architecture
 
-### Validation Strategy
+### Validation strategy
 
 Read-only validation occurs at the **lowest level** - in the backend's `execute_cypher()` method, before any user hooks or database communication.
 
@@ -46,14 +45,14 @@ User Query → Parse → Backend Validation → [If valid] → User Hooks → Da
 - Fails fast before database communication
 - Consistent behavior across the library
 
-### Detection Mechanism
+### Detection mechanism
 
 Uses existing ANTLR parser's `ParsedCypherQuery.has_updating_clause()`:
 - Detects: CREATE, DELETE, SET, MERGE, REMOVE
 - Already computed during query parsing
 - Zero additional parsing overhead
 
-### State Management
+### State management
 
 The `read_only` flag is stored at the backend level:
 - Set via `connect(read_only=True)` or `db.read_only = True`
@@ -61,15 +60,15 @@ The `read_only` flag is stored at the backend level:
 - Merges with environment variable (`CGDB_READ_ONLY`)
 - Explicit parameters override environment variables
 
-## Usage Patterns
+## Usage patterns
 
-### 1. Connection Time
+### Connection time
 ```python
 db = CypherGraphDB()
 db.connect(read_only=True)
 ```
 
-### 2. Runtime Toggle
+### Runtime toggle
 ```python
 db = CypherGraphDB()
 db.connect()
@@ -78,18 +77,18 @@ db.read_only = True   # Enable read-only
 db.read_only = False  # Disable read-only
 ```
 
-### 3. Environment Variable
+### Environment variable
 ```bash
 export CGDB_READ_ONLY=true
 ```
 
-### 4. CLI
+### CLI
 ```bash
 cypher-graphdb --read-only
 cypher-graphdb -r  # short form
 ```
 
-## Component Responsibilities
+## Component responsibilities
 
 ### Backend (`backend.py`)
 - Stores `_read_only` flag
@@ -114,27 +113,27 @@ cypher-graphdb -r  # short form
 - Defines `ReadOnlyModeError` exception
 - Raised when write operations attempted in read-only mode
 
-## Security Model
+## Security model
 
-### Protected Operations
+### Protected operations
 - `execute()` with write queries
 - `create_or_merge()` method
 - `delete()` method  
 - `execute_sql()` (all SQL blocked)
 
-### Allowed Operations
+### Allowed operations
 - `execute()` with read-only queries (MATCH, RETURN, WITH)
 - `fetch()`, `fetch_nodes()`, `fetch_edges()`
 - All metadata queries
 
-### Defense Layers
+### Defense layers
 1. **Primary**: Backend validation in `execute_cypher()`
 2. **Secondary**: Explicit checks in high-level methods
 3. **Conservative**: Blanket SQL blocking (hard to parse for writes)
 
-## Design Decisions
+## Design decisions
 
-### Why Runtime Toggle?
+### Why runtime toggle?
 
 **Decision**: Allow `db.read_only = True/False` at runtime
 
@@ -144,7 +143,7 @@ cypher-graphdb -r  # short form
 - No security compromise (validation still enforced)
 - Common pattern in database drivers
 
-### Why Block All SQL?
+### Why block all SQL?
 
 **Decision**: Block all `execute_sql()` in read-only mode
 
@@ -154,7 +153,7 @@ cypher-graphdb -r  # short form
 - Users can use Cypher for queries instead
 - Avoids maintaining SQL parser
 
-### Why Connection-Level Parameter?
+### Why a connection-level parameter?
 
 **Decision**: Accept `read_only` as parameter to `connect()`
 
@@ -173,9 +172,9 @@ cypher-graphdb -r  # short form
 
 No additional parsing, string manipulation, or network overhead.
 
-## Future Enhancements
+## Future enhancements
 
-### Potential Additions
+### Potential additions
 - Backend-native read-only connections (PostgreSQL, Memgraph replicas)
 - Audit logging of blocked operations
 - Granular operation control (allow some writes, block others)

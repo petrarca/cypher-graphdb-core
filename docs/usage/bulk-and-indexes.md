@@ -4,7 +4,6 @@ title: Bulk writes, indexes and backend capabilities
 description: Loading data at volume with bulk_create_nodes/bulk_create_edges, creating property indexes, and checking what a backend actually supports.
 tags: [cypher-graphdb, bulk, indexes, capabilities, performance, age, memgraph]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Bulk writes, indexes and capabilities

@@ -4,7 +4,6 @@ title: Architecture Decision Records
 description: Index of decision records for cypher-graphdb-core — the why behind direction changes.
 tags: [cypher-graphdb, adr, decisions, index]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Architecture Decision Records
@@ -18,8 +17,8 @@ is; the ADR says *why* it changed.
 - A superseded ADR keeps its file and names its replacement in `superseded_by`.
 
 Org-wide decisions that govern every repo live in the
-[engineering handbook](../../../engineering-handbook/adrs/README.md); this
-directory is for decisions local to `cypher-graphdb-core`.
+[engineering handbook](https://github.com/petrarca/engineering-handbook/blob/main/adrs/README.md)
+(internal); this directory is for decisions local to `cypher-graphdb-core`.
 
 ## Index
 

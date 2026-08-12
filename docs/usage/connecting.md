@@ -4,7 +4,6 @@ title: Connecting and configuring
 description: Connection methods for Apache AGE and Memgraph, settings precedence and env vars, prefixed settings for multiple graphs, pooling, and read-only mode.
 tags: [cypher-graphdb, connection, settings, configuration, pool, read-only]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Connecting and configuring

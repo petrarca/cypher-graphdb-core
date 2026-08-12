@@ -5,10 +5,13 @@ description: How cypher-graphdb keeps the graph models of different graphs separ
 tags: [cypher-graphdb, model-provider, isolation, multi-graph, registry]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # ModelProvider isolation — per-graph model separation
+
+> **Implemented.** `modelprovider.py` (`ModelProvider`), wired to a connection
+> through the `model_provider` argument; discovery of declared providers in
+> `schema/generator.py`.
 
 This document describes how `cypher-graphdb` keeps the graph models of different
 graphs separated within a single process.

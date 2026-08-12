@@ -7,7 +7,6 @@ status: stable
 decision: accepted
 supersedes: []
 superseded_by: []
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Explicit ModelProvider instances instead of a global model registry

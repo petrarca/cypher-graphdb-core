@@ -4,7 +4,6 @@ title: The cypher-graphdb command line
 description: Running the interactive REPL and non-interactive scripts with cypher-graphdb — flags, output formats, the command set, and standalone schema generation.
 tags: [cypher-graphdb, cli, cypher-graphdb, repl, interactive, scripting]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # The `cypher-graphdb` command line

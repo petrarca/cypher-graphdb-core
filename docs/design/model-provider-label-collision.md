@@ -5,12 +5,11 @@ description: Why using the graph label as the sole registration key let one grap
 tags: [cypher-graphdb, model-provider, label-collision, multi-graph, bug]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # ModelProvider — label collision in multi-graph environments
 
-> **Resolved** (raised 2026-05-29, resolved 2026-07-28) by the per-provider
+> **Implemented.** Raised 2026-05-29, resolved 2026-07-28 by the per-provider
 > design in [model-provider-isolation.md](model-provider-isolation.md).
 
 ## Problem
@@ -89,7 +88,7 @@ resolver has no basis for choosing between them.
 
 ## Potential solutions
 
-### Option 1: Qualified class name as registration key
+### Option 1: qualified class name as registration key
 
 Register under the fully qualified Python class name
 (`module.ClassName`), keeping label as a searchable attribute:
@@ -129,7 +128,7 @@ ambiguous when multiple `Technology` classes exist. Resolve by:
 This is the correct long-term fix but requires significant refactoring
 across the decorator stack, schema utilities, and result parsers.
 
-### Option 2: Label namespacing convention
+### Option 2: label namespacing convention
 
 Require plugins/domains to prefix their labels:
 `ta_Product` (tech_assessment), `ts_Product` (tech_stack). Enforced
@@ -139,7 +138,7 @@ by convention, not by the provider.
 **Con:** Ugly graph labels. Breaks with third-party schemas that use
 natural labels. Pushes the problem to the caller.
 
-### Option 3: Explicit pool isolation (current partial mitigation)
+### Option 3: explicit pool isolation (current partial mitigation)
 
 Each named pool has its own `ModelProvider`. Callers load only the
 models relevant to that pool. Two pools can each have a `Product`
@@ -158,7 +157,7 @@ incomplete without solving the global provider pollution problem.
 **Con:** Relies on import discipline that module-level imports make hard
 to enforce. The global provider remains vulnerable.
 
-### Option 4: Lazy registration via graph name annotation
+### Option 4: lazy registration via graph name annotation
 
 Annotate the `@node` decorator with an explicit graph affinity:
 

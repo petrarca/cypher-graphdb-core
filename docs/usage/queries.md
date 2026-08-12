@@ -4,7 +4,6 @@ title: Queries, results and graph objects
 description: Running Cypher with parameters, shaping results, creating/fetching/deleting nodes and edges, transactions, and error handling.
 tags: [cypher-graphdb, queries, results, nodes, edges, transactions]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Queries, results and graph objects

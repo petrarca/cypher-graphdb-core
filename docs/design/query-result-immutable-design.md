@@ -5,12 +5,11 @@ description: Why query results and their statistics are returned as one immutabl
 tags: [cypher-graphdb, query-result, immutability, thread-safety, statistics, pooling]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Immutable QueryResult and dual execute methods
 
-> **Built.** `QueryResult` lives in `cyphergraphdb/result.py`;
+> **Implemented.** `QueryResult` lives in `cyphergraphdb/result.py`;
 > `execute_with_stats()` and `execute_sql_with_stats()` return it. The mutable
 > connection state this replaced — `_exec_statistics`, `_sql_statistics`,
 > `_last_parsed_query`, and the `exec_statistics()` / `last_parsed_query` /
@@ -21,9 +20,9 @@ The durable point of this document is the *why*: results and their metadata
 travel together as one immutable value, instead of being read back from state
 hanging off the connection.
 
-## Problem Statement
+## Problem statement
 
-### Current State Management Issues
+### Current state management issues
 
 The `CypherGraphDatabase` class maintains mutable instance state for query execution:
 
@@ -35,7 +34,7 @@ class CypherGraphDB:
         self._last_parsed_query = None
 ```
 
-### Race Conditions
+### Race conditions
 
 Parallel queries using the same `CypherGraphDB` instance cause state corruption:
 
@@ -46,13 +45,13 @@ result = cdb.execute("MATCH (n) RETURN n")
 stats = cdb.exec_statistics()  # Gets Thread B's statistics, not A's
 ```
 
-### Pool Limitations
+### Pool limitations
 
 While `CypherGraphDBPool` isolates state between different instances, it doesn't solve:
 - Concurrent access to the same pooled instance
 - State corruption within a single instance during parallel operations
 
-## Solution Design
+## Solution design
 
 ### Immutable QueryResult
 
@@ -79,9 +78,9 @@ class QueryResult:
         return self.exec_statistics.has_tabular_data()
 ```
 
-### Dual Execute Methods
+### Dual execute methods
 
-#### Method 1: `execute()` - Current Behavior (Data Only)
+#### Method 1: `execute()` — current behavior (data only)
 
 ```python
 def execute(
@@ -118,7 +117,7 @@ def execute(
     return utils.unnest_result(result, unnest_result)
 ```
 
-#### Method 2: `execute_with_stats()` - New Behavior (Full Result)
+#### Method 2: `execute_with_stats()` — new behavior (full result)
 
 ```python
 def execute_with_stats(
@@ -165,7 +164,7 @@ def execute_with_stats(
     )
 ```
 
-### Error Messages for Migration Detection
+### Error messages for migration detection
 
 ```python
 def exec_statistics(self) -> ExecStatistics:
@@ -196,19 +195,19 @@ def last_parsed_query(self) -> ParsedCypherQuery:
     )
 ```
 
-## Alternatives Considered
+## Alternatives considered
 
-### Session-Based Approach
+### Session-based approach
 - **Pros**: Clean state isolation
 - **Cons**: More complex API, context management overhead
 - **Rejected**: Higher complexity for similar benefits
 
-### Thread-Local Storage
+### Thread-local storage
 - **Pros**: Transparent to existing code
 - **Cons**: Hidden state management, debugging complexity
 - **Rejected**: Obscures state ownership patterns
 
-### Full Immutable Migration
+### Full immutable migration
 - **Pros**: Cleanest architecture
 - **Cons**: Major breaking changes
 - **Rejected**: Too disruptive for existing codebases

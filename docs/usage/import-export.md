@@ -4,7 +4,6 @@ title: Import, export and custom formats
 description: Moving graph data in and out as CSV, Excel, JSON or YAML, checking what your install supports, and registering a format of your own.
 tags: [cypher-graphdb, import, export, formats, registry, excel, csv]
 status: stable
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Import, export and custom formats

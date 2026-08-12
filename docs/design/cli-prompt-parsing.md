@@ -5,13 +5,13 @@ description: How the prompt line and argument list are parsed by grammar, why co
 tags: [cypher-graphdb, cli, parser, lark, grammar, completion, pipeline]
 status: stable
 implementation: implemented
-generated: { by: opencode/claude-opus-5, at: 2026-07-29T00:00:00Z }
 ---
 
 # Parsing the CLI prompt
 
-> **Built.** `cli/promptgrammar.py` (two Lark grammars), `cli/promptparser.py`
-> (token matching, sequence validation), `cli/commandposition.py`.
+> **Implemented.** `cli/promptgrammar.py` (two Lark grammars),
+> `cli/promptparser.py` (token matching, sequence validation),
+> `cli/commandposition.py`.
 
 ## The language
 
