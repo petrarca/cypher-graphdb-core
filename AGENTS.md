@@ -343,6 +343,11 @@ McCabe max-complexity = 10. Refactor complex functions into helpers.
 - Commit prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`
 - Short commit messages, max two sentences
 
+Keep messages compact and focused: state what changed and why, nothing
+more. No lengthy explanations, no restating the design, no repetition, no
+bullet-by-bullet change logs. If the reasoning is long, it belongs in a
+design doc or PR description, not the commit message.
+
 ## Documentation
 
 Docs are plain markdown with [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
