@@ -1,6 +1,6 @@
 """Dump models command implementation."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import rich
 
@@ -40,6 +40,7 @@ class DumpModelsCommand(BaseCommand):
         Returns:
             bool: True if command executed successfully
         """
+        render_kwargs: dict[str, Any] | None
         if not parsed_cmd.args:
             # List all models
             result = vars(self.graphdb.db.model_provider)

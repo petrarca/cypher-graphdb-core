@@ -66,6 +66,9 @@ jobs:
       - name: Lint code
         run: .venv/bin/ruff check src tests
 
+      - name: Type check
+        run: .venv/bin/mypy src
+
       - name: Run unit tests
         run: .venv/bin/pytest -m unit -x
 

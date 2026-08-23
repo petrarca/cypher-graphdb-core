@@ -14,7 +14,7 @@ class CLIConfig(ConfigProvider):
 
         self.on_property_change: Callable[[str, Any], bool] = lambda name, value: True
 
-    def get_props(self) -> dict[str, Any]:
+    def get_props(self) -> tuple[str, ...]:
         return tuple(self._properties.keys())
 
     def apply_config(self, args: list[str], kwargs: dict[str, Any]) -> dict[str, Any]:

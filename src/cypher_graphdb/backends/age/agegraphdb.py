@@ -20,7 +20,7 @@ import psycopg
 import psycopg.conninfo as conninfo
 from loguru import logger
 from psycopg.client_cursor import ClientCursor
-from psycopg.sql import SQL, Identifier
+from psycopg.sql import SQL, Composed, Identifier
 from psycopg.types import TypeInfo
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -34,7 +34,7 @@ from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatist
 from cypher_graphdb.cyphergraphdb.pagination import Page  # noqa: E402
 from cypher_graphdb.cyphergraphdb.pagination_mixin import _resolve_col_names  # noqa: E402
 from cypher_graphdb.cypherparser import ParsedCypherQuery
-from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
+from cypher_graphdb.models import GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
 from cypher_graphdb.utils import chunk_list, sanitize_connection_params_for_logging, sanitize_connection_string_for_logging
 
@@ -87,14 +87,18 @@ class AGEGraphDB(CypherBackend):
         """
         super().__init__(args, **kwargs)
 
+        # Narrow the base class's generic `Any` connection to the concrete
+        # psycopg type this backend actually uses.
+        self._connection: psycopg.Connection[tuple[Any, ...]] | None = None
+
         # required for reconnect
-        self._cinfo = None
-        self._ckwargs = None
+        self._cinfo: str | None = None
+        self._ckwargs: dict[str, Any] | None = None
         self._cursor_factory = None
         self._set_graph_if_not_exists = True
 
         # prepared statement cache for parameterized queries
-        self._prepared_statements = {}  # query_hash -> stmt_name
+        self._prepared_statements: dict[str, str] = {}  # query_hash -> stmt_name
         self._max_cached_statements = 10
 
         # When True, bulk_create_nodes and bulk_create_edges use direct SQL
@@ -210,6 +214,7 @@ class AGEGraphDB(CypherBackend):
                 read-only mode.
         """
         assert isinstance(cypher_query, ParsedCypherQuery)
+        assert self._graph_name is not None, "Graph name is required"
 
         # Validate read-only mode FIRST
         self._validate_read_only(cypher_query)
@@ -253,6 +258,7 @@ class AGEGraphDB(CypherBackend):
         ``is_safe_to_window()`` (explicit RETURN, no SKIP/LIMIT/UNION).
         """
         self._validate_read_only(cypher_query)
+        assert self._graph_name is not None, "Graph name is required"
 
         # Use the base query text as the cache key prefix so that
         # execute_cypher / execute_cypher_page share a consistent key space
@@ -278,9 +284,12 @@ class AGEGraphDB(CypherBackend):
             if want_total:
                 try:
                     with self._fetch_cursor(row_factory=None) as cursor:
-                        total = cursor.execute(count_pair.count).fetchone()[0]
+                        count_row = cursor.execute(count_pair.count).fetchone()
+                    if count_row is None:
+                        raise AGEExecutionError("AGE count query returned no rows")
+                    total = count_row[0]
                     if self.autocommit:
-                        self._connection.commit()
+                        self._conn.commit()
                 except (psycopg.errors.ProgrammingError, psycopg.errors.DataError) as e:
                     raise AGEExecutionError(f"AGE count query failed: {e}") from e
                 except psycopg.Error as e:
@@ -332,7 +341,7 @@ class AGEGraphDB(CypherBackend):
         ) as cursor:
             rows = cursor.execute(execute_sql, (params_json,)).fetchall()
         if self.autocommit:
-            self._connection.commit()
+            self._conn.commit()
         return rows
 
     def _recover_and_rerun_page(
@@ -342,10 +351,10 @@ class AGEGraphDB(CypherBackend):
         logger.debug("Page prepared statement gone from server, re-preparing (key={})", cache_key)
         self._prepared_statements.clear()
         try:
-            self._connection.rollback()
+            self._conn.rollback()
         except Exception:
             with contextlib.suppress(Exception):
-                self._connection.close()
+                self._conn.close()
             self._connection = None
         self._require_connection()
         try:
@@ -368,9 +377,12 @@ class AGEGraphDB(CypherBackend):
         execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
         try:
             with self._fetch_cursor(row_factory=None) as cursor:
-                total = cursor.execute(execute_sql, (params_json,)).fetchone()[0]
+                count_row = cursor.execute(execute_sql, (params_json,)).fetchone()
+            if count_row is None:
+                raise AGEExecutionError("AGE count query returned no rows")
+            total = count_row[0]
             if self.autocommit:
-                self._connection.commit()
+                self._conn.commit()
             return total
         except psycopg.errors.InvalidSqlStatementName:
             return self._recover_and_rerun_count(count_sql, cache_key, params_json)
@@ -384,19 +396,22 @@ class AGEGraphDB(CypherBackend):
         logger.debug("Count prepared statement gone from server, re-preparing (key={})", cache_key)
         self._prepared_statements.clear()
         try:
-            self._connection.rollback()
+            self._conn.rollback()
         except Exception:
             with contextlib.suppress(Exception):
-                self._connection.close()
+                self._conn.close()
             self._connection = None
         self._require_connection()
         try:
             stmt_name = self._get_or_prepare_statement(count_sql, cache_key)
             execute_sql = SQL("EXECUTE {} (%s)").format(Identifier(stmt_name))
             with self._fetch_cursor(row_factory=None) as cursor:
-                total = cursor.execute(execute_sql, (params_json,)).fetchone()[0]
+                count_row = cursor.execute(execute_sql, (params_json,)).fetchone()
+            if count_row is None:
+                raise AGEExecutionError("AGE count query returned no rows")
+            total = count_row[0]
             if self.autocommit:
-                self._connection.commit()
+                self._conn.commit()
             return total
         except Exception as e:
             self._prepared_statements.clear()
@@ -433,7 +448,7 @@ class AGEGraphDB(CypherBackend):
                     # Statement may already be gone (server recycled). Roll back
                     # to clear the INERROR state, then continue with PREPARE.
                     with contextlib.suppress(Exception):
-                        self._connection.rollback()
+                        self._conn.rollback()
 
             # Create new prepared statement
             stmt_name = f"cypher_stmt_{query_hash}"
@@ -448,7 +463,7 @@ class AGEGraphDB(CypherBackend):
                 # INERROR state. The connection is still usable; only this
                 # particular PREPARE was rejected (e.g. syntax error in query).
                 with contextlib.suppress(Exception):
-                    self._connection.rollback()
+                    self._conn.rollback()
                 raise
 
             self._prepared_statements[query_hash] = stmt_name
@@ -461,8 +476,9 @@ class AGEGraphDB(CypherBackend):
 
     def _execute_prepared(
         self, cypher_query: ParsedCypherQuery, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
-    ) -> tuple[list[tuple[GraphObject]], ExecStatistics, SqlStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics, SqlStatistics]:
         """Execute a parameterized Cypher query using PostgreSQL prepared statements."""
+        assert self._graph_name is not None, "Graph name is required"
         start_time = time.perf_counter()
         logger.debug("AGE execute prepared with params: {}", params)
 
@@ -499,12 +515,12 @@ class AGEGraphDB(CypherBackend):
             logger.debug("Prepared statement {} gone from server, re-preparing", stmt_name)
             self._prepared_statements.clear()
             try:
-                self._connection.rollback()
+                self._conn.rollback()
             except Exception:
                 # Rollback failed -- connection is dead (sub-case B).
                 # Close the broken connection so _require_connection() reconnects.
                 with contextlib.suppress(Exception):
-                    self._connection.close()
+                    self._conn.close()
                 self._connection = None
             self._require_connection()
             try:
@@ -544,7 +560,7 @@ class AGEGraphDB(CypherBackend):
             sql_stats = SqlStatistics(sql_stmt=cypher_sql.as_string(), col_names=col_names)
 
         if self.autocommit:
-            self._connection.commit()
+            self._conn.commit()
 
         return result, sql_stats
 
@@ -587,7 +603,7 @@ class AGEGraphDB(CypherBackend):
         raise NotImplementedError("AGE backend does not support native streaming. Use StreamMixin for fallback.")
 
     def fulltext_search(
-        self, cypher_query: ParsedCypherQuery, fts_query: str, language: str = None
+        self, cypher_query: ParsedCypherQuery, fts_query: str, language: str | None = None
     ) -> tuple[TabularResult, ExecStatistics]:
         """Perform full-text search on graph data.
 
@@ -600,6 +616,7 @@ class AGEGraphDB(CypherBackend):
             Tuple of (search results, execution statistics).
 
         """
+        assert self._graph_name is not None, "Graph name is required"
         fts_cypher_query = convert_to_fts_query(cypher_query)
 
         # use default language if not overridden
@@ -651,6 +668,7 @@ class AGEGraphDB(CypherBackend):
             List of label statistics including counts and types.
 
         """
+        assert self._graph_name is not None, "Graph name is required"
         sql = SQLBuilder.resolve_labels(self._graph_name)
         labels = []
 
@@ -678,7 +696,7 @@ class AGEGraphDB(CypherBackend):
         if self._connection:
             # Deallocate all cached prepared statements
             self._cleanup_prepared_statements()
-            self._connection.close()
+            self._conn.close()
             self._connection = None
         self._cinfo = None
         self._ckwargs = None
@@ -697,7 +715,7 @@ class AGEGraphDB(CypherBackend):
         self._prepared_statements.clear()
         if self._connection is not None:
             with contextlib.suppress(Exception):
-                self._connection.close()
+                self._conn.close()
             self._connection = None
         self._bulk_writer = None
         self.connect_to_db()
@@ -705,12 +723,12 @@ class AGEGraphDB(CypherBackend):
     def commit(self):
         """Commit the current transaction."""
         self._require_connection()
-        self._connection.commit()
+        self._conn.commit()
 
     def rollback(self):
         """Rollback the current transaction."""
         self._require_connection()
-        self._connection.rollback()
+        self._conn.rollback()
 
     def create_graph(self, graph_name: str | None = None) -> None:
         """Create a new graph in the database.
@@ -727,7 +745,7 @@ class AGEGraphDB(CypherBackend):
 
         with self._fetch_cursor() as cursor:
             cursor.execute(SQLBuilder.create_graph(graph_name))
-            self._connection.commit()
+            self._conn.commit()
 
     def drop_graph(self, graph_name: str | None = None) -> None:
         """Drop a graph from the database.
@@ -744,13 +762,13 @@ class AGEGraphDB(CypherBackend):
 
         with self._fetch_cursor() as cursor:
             cursor.execute(SQLBuilder.drop_graph(graph_name))
-            self._connection.commit()
+            self._conn.commit()
 
         # when drop current graph
         if graph_name == self._graph_name and not self._set_graph_if_not_exists:
             self._graph_name = None
 
-    def graph_exists(self, graph_name: str = None) -> bool:
+    def graph_exists(self, graph_name: str | None = None) -> bool:
         """Check if a graph exists in the database.
 
         Args:
@@ -763,10 +781,12 @@ class AGEGraphDB(CypherBackend):
         self._require_connection()
 
         graph_name = graph_name or self._graph_name
+        assert graph_name is not None, "Graph name is required"
 
         with self._fetch_cursor() as cursor:
             cursor.execute(SQLBuilder.graph_exists(graph_name))
-            return cursor.fetchone()[0] == 1
+            row = cursor.fetchone()
+            return row is not None and row[0] == 1
 
     def get_capability(self, capability: BackendCapability) -> Any:
         """Get the value of a backend capability.
@@ -820,14 +840,15 @@ class AGEGraphDB(CypherBackend):
         """
         self._require_connection()
 
-        graph_name = graph_name or self._graph_name
+        resolved_graph_name = graph_name or self._graph_name
+        assert resolved_graph_name is not None, "Graph name is required"
 
         vlabels = tuple(vlabel) if isinstance(vlabel, str) else vlabel
 
         with self._fetch_cursor() as cursor:
             for val in vlabels:
-                cursor.execute(SQLBuilder.create_vlabel(graph_name, val))
-            self._connection.commit()
+                cursor.execute(SQLBuilder.create_vlabel(resolved_graph_name, val))
+            self._conn.commit()
 
     def create_elabel(self, graph_name: str, elabel: str):
         """Create edge label(s) in the graph.
@@ -839,14 +860,15 @@ class AGEGraphDB(CypherBackend):
         """
         self._require_connection()
 
-        graph_name = graph_name or self._graph_name
+        resolved_graph_name = graph_name or self._graph_name
+        assert resolved_graph_name is not None, "Graph name is required"
 
         elabels = tuple(elabel) if isinstance(elabel, str) else elabel
 
         with self._fetch_cursor() as cursor:
             for val in elabels:
-                cursor.execute(SQLBuilder.create_elabel(graph_name, val))
-            self._connection.commit()
+                cursor.execute(SQLBuilder.create_elabel(resolved_graph_name, val))
+            self._conn.commit()
 
     # ── Index management ────────────────────────────────────────────────
 
@@ -884,7 +906,7 @@ class AGEGraphDB(CypherBackend):
             # Btree expression index per property (covers agtype_access_operator in WHERE)
             for prop in property_names:
                 cursor.execute(SQLBuilder.create_expression_index(graph_name, label, prop))
-            self._connection.commit()
+            self._conn.commit()
 
         logger.debug("Property indexes created for label '{}': GIN + {} expression indexes", label, len(property_names))
 
@@ -906,7 +928,7 @@ class AGEGraphDB(CypherBackend):
             cursor.execute(SQLBuilder.drop_gin_index(graph_name, label))
             for prop in property_names:
                 cursor.execute(SQLBuilder.drop_expression_index(graph_name, label, prop))
-            self._connection.commit()
+            self._conn.commit()
 
         logger.debug("Property indexes dropped for label '{}': GIN + {} expression indexes", label, len(property_names))
 
@@ -1052,8 +1074,10 @@ class AGEGraphDB(CypherBackend):
         The writer is tied to the current connection and graph. It is cleared
         automatically on disconnect() and reconnect() so it is never stale.
         """
+        self._require_connection()
+        assert self._graph_name is not None, "Graph name is required"
         if self._bulk_writer is None:
-            self._bulk_writer = AGEBulkWriter(self._connection, self._graph_name)
+            self._bulk_writer = AGEBulkWriter(self._conn, self._graph_name)
         return self._bulk_writer
 
     # ── Cypher UNWIND helpers (fallback path) ─────────────────────────────
@@ -1082,6 +1106,7 @@ class AGEGraphDB(CypherBackend):
 
     def _get_label_tables(self) -> set[str]:
         """Get the set of existing label table names in the graph schema."""
+        assert self._graph_name is not None, "Graph name is required"
         with self._fetch_cursor(row_factory=None) as cursor:
             cursor.execute(SQLBuilder.get_label_tables(self._graph_name), (self._graph_name,))
             return {row[0] for row in cursor.fetchall()}
@@ -1151,8 +1176,8 @@ class AGEGraphDB(CypherBackend):
             raise
 
     def _execute_sql(
-        self, sql: SQL, fetch_one: bool = False, raw_data: bool = False, params: tuple | None = None
-    ) -> tuple[list[tuple[GraphObject]], ExecStatistics, SqlStatistics]:
+        self, sql: SQL | Composed, fetch_one: bool = False, raw_data: bool = False, params: tuple | None = None
+    ) -> tuple[TabularResult, ExecStatistics, SqlStatistics]:
         """Execute SQL statement and return results with statistics.
 
         Args:
@@ -1183,21 +1208,21 @@ class AGEGraphDB(CypherBackend):
                 else:
                     result = cursor.execute(sql, params).fetchall()
 
-                col_names = [col.name for col in cursor.description]
+                col_names = [col.name for col in cursor.description] if cursor.description is not None else []
                 sql_stats = SqlStatistics(sql_stmt=sql.as_string(), col_names=col_names)
 
                 if self.autocommit:
-                    self._connection.commit()
+                    self._conn.commit()
             except psycopg.errors.UndefinedTable as e:
                 # Label table does not exist (never created). Close unusable connection.
-                self._connection.close()
+                self._conn.close()
                 self._connection = None
                 from cypher_graphdb.exceptions import LabelNotFoundError
 
                 raise LabelNotFoundError(f"Label does not exist in the graph: {e}") from e
             except (psycopg.errors.ProgrammingError, psycopg.errors.DataError) as e:
                 # Handling errors like syntax errors in the statement. Connection gets unusable.
-                self._connection.close()
+                self._conn.close()
                 self._connection = None
                 raise AGEExecutionError(f"AGE query execution failed: {e}") from e
 
@@ -1220,11 +1245,11 @@ class AGEGraphDB(CypherBackend):
         # reconnect if necessary
         self._require_connection()
 
-        return self._connection.cursor(row_factory=row_factory)
+        return self._conn.cursor(row_factory=row_factory)
 
     def _check_connection(self) -> bool:
         """Verify AGE connection by executing SELECT 1."""
-        with self._connection.cursor() as cur:
+        with self._conn.cursor() as cur:
             cur.execute("SELECT 1")
             result = cur.fetchone()
             return result is not None and result[0] == 1
@@ -1237,13 +1262,26 @@ class AGEGraphDB(CypherBackend):
         """
         if self._connection is not None:
             with contextlib.suppress(Exception):
-                self._connection.close()
+                self._conn.close()
             self._connection = None
 
     def _require_connection(self):
         """Ensure database connection is available, reconnecting if needed."""
         if self._connection is None and self._cinfo is not None:
             self.reconnect()
+
+    @property
+    def _conn(self) -> psycopg.Connection[tuple[Any, ...]]:
+        """The active connection, narrowed to non-None.
+
+        Callers that may be disconnected should call `_require_connection()`
+        (which attempts a reconnect) before reading this property. Raises if
+        still not connected afterward -- previously this crashed with a raw
+        `AttributeError` on `None` at the first use of the connection.
+        """
+        if self._connection is None:
+            raise RuntimeError("Not connected to the database")
+        return self._connection
 
     def _setup_age(self, connection):
         """Set up Apache AGE extension on the database connection.

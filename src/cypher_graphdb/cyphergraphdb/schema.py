@@ -1,7 +1,7 @@
 """Schema and introspection mixin for CypherGraphDB."""
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 
@@ -11,12 +11,17 @@ from ..cypherbuilder import CypherBuilder
 from ..models import Graph
 from ..statistics import GraphObjectType, LabelStatistics
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
+
 # Safe label name pattern: Cypher node labels must be valid identifiers.
 # This guards against injection when label names are interpolated into Cypher.
 _SAFE_LABEL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-class SchemaMixin:
+class SchemaMixin(_Host):
     """Mixin providing schema introspection methods for CypherGraphDB."""
 
     def graphs(self) -> list[str]:
@@ -26,7 +31,10 @@ class SchemaMixin:
             Sorted list of graph names.
         """
         assert self._backend
-        return sorted(self._backend.graphs())
+        # CypherBackend.graphs() (src/cypher_graphdb/backend.py, out of scope) is
+        # mis-annotated as `-> list[LabelStatistics]` (copy/paste from labels()
+        # above it); every concrete backend actually returns list[str].
+        return sorted(cast("list[str]", self._backend.graphs()))
 
     def graph_exists(self, graph_name: str) -> bool:
         """Check if a graph exists in the database backend.

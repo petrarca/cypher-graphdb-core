@@ -82,8 +82,9 @@ class GraphExporter:
         _, _, ext = utils.split_path(filename)
         export_format = utils.resolve_fileformat(ext)
 
-        if export_format not in ("json", "yaml"):
-            rich.print(f"[red]'{export_format.upper()}' does not support tree exports.", file=sys.stderr)
+        if not export_format or export_format not in ("json", "yaml"):
+            label = export_format.upper() if export_format else "unknown format"
+            rich.print(f"[red]'{label}' does not support tree exports.", file=sys.stderr)
             return
 
         exporter = HierarchicalExporter(self.db, FileExporterOptions.from_opts(args, kwargs))

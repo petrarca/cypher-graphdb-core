@@ -11,10 +11,11 @@ from typing import Any
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from pydantic import BaseModel, Field, PrivateAttr
+from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 import cypher_graphdb.utils as utils
-from cypher_graphdb.models import GraphObject, GraphObjectType
+from cypher_graphdb.models import GraphObject, GraphObjectType, GraphPropertiesMixin
 from cypher_graphdb.options import TypedOptionModel
 
 from .command_registry import registry
@@ -27,14 +28,14 @@ _FIND_WORD_RE = re.compile(r"([a-zA-Z0-9_\$]+|[^a-zA-Z0-9_\s]+)")
 class CompleterConfig(BaseModel):
     """Configuration class for CLI completion settings."""
 
-    _cmd_props: dict[str, Field] = PrivateAttr(default_factory=dict)
+    _cmd_props: dict[str, FieldInfo] = PrivateAttr(default_factory=dict)
     _parse_result: PromptParserCmd = PrivateAttr()
 
     @property
     def parse_result(self):
         return self._parse_result
 
-    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel] = None, **kwargs):
+    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel[Any]] | None = None, **kwargs):
         super().__init__(**kwargs)
         self._parse_result = parse_result
 
@@ -46,8 +47,8 @@ class CompleterConfig(BaseModel):
                 self.update_cmd_property(name, prop_type=field.annotation, default=field.default)
 
     def update_cmd_property(
-        self, name: str, prop_type: type = str, default: Any = None, completer: Callable = None, ctx: Any = None
-    ) -> Field:
+        self, name: str, prop_type: type | None = str, default: Any = None, completer: Callable | None = None, ctx: Any = None
+    ) -> FieldInfo:
         field = self._cmd_props.get(name)
         if field is None:
             field = Field()
@@ -63,20 +64,21 @@ class CompleterConfig(BaseModel):
 
         return field
 
-    def resolve_props(self, word: str) -> dict[str, Field]:
+    def resolve_props(self, word: str) -> dict[str, FieldInfo]:
         result = {}
+        kwargs = self._parse_result.kwargs or {}
         for name, prop_info in self._cmd_props.items():
             if "|" in name:
                 parts = name.split("|")
-                if not any(self._parse_result.kwargs.get(part.strip()) for part in parts):
+                if not any(kwargs.get(part.strip()) for part in parts):
                     result.update({part.strip(): prop_info for part in parts if part.startswith(word)})
             else:
-                if not self._parse_result.kwargs.get(name) and name.startswith(word):
+                if not kwargs.get(name) and name.startswith(word):
                     result[name] = prop_info
 
         return result
 
-    def get_cmd_property(self, name: str) -> Field:
+    def get_cmd_property(self, name: str) -> FieldInfo | None:
         for name_, prop_info in self._cmd_props.items():
             if name in name_.split("|"):
                 return prop_info
@@ -88,22 +90,30 @@ class LabelPropsCompleterConfig(CompleterConfig):
     """Configuration for completing both labels and properties."""
 
     complete_mandatory_props: bool = False
-    object_type: GraphObjectType = None
+    object_type: GraphObjectType | None = None
     with_label: bool = True
     with_props: bool = True
     label_from_model: bool = True
     resolve_model_props: bool = True
     default_from_values: bool = False
 
-    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel] = None, **kwargs):
+    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel[Any]] | None = None, **kwargs):
         super().__init__(parse_result, opts_cls, **kwargs)
 
         if self.object_type is None:
-            self.object_type = self._parse_result.mappings.get("object_type") if self._parse_result else None
+            self.object_type = (self._parse_result.mappings or {}).get("object_type") if self._parse_result else None
 
 
 class LabelCompleterConfig(LabelPropsCompleterConfig):
     """Configuration for completing only labels."""
+
+    # Explicit passthrough __init__: without it, the pydantic mypy plugin
+    # synthesizes a fields-only __init__ for this subclass (since it doesn't
+    # define one itself), which drops the `parse_result` positional parameter
+    # and breaks every call site below. Defining __init__ here -- even as a
+    # pure passthrough -- makes the plugin skip synthesis for this class.
+    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel[Any]] | None = None, **kwargs):
+        super().__init__(parse_result, opts_cls, **kwargs)
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
@@ -115,6 +125,10 @@ class LabelCompleterConfig(LabelPropsCompleterConfig):
 class PropsCompleterConfig(LabelPropsCompleterConfig):
     """Configuration for completing only properties."""
 
+    # See LabelCompleterConfig.__init__ for why this passthrough is required.
+    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel[Any]] | None = None, **kwargs):
+        super().__init__(parse_result, opts_cls, **kwargs)
+
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
 
@@ -125,7 +139,13 @@ class PropsCompleterConfig(LabelPropsCompleterConfig):
 class ListProviderConfig(CompleterConfig):
     """Configuration for completion using list providers."""
 
-    list_provider: Callable[[], tuple[str]] | list[str]
+    list_provider: Callable[[], tuple[str, ...] | list[str]] | list[str]
+
+    # See LabelCompleterConfig.__init__ for why this passthrough is required:
+    # without it, the plugin-synthesized __init__ would expose `list_provider`
+    # as the first positional parameter instead of `parse_result`.
+    def __init__(self, parse_result: PromptParserCmd, opts_cls: type[TypedOptionModel[Any]] | None = None, **kwargs):
+        super().__init__(parse_result, opts_cls, **kwargs)
 
 
 class CommandLineCompleter(Completer):
@@ -141,7 +161,7 @@ class CommandLineCompleter(Completer):
 
     def __init__(
         self,
-        cmd_map: dict[str, list[str]],
+        cmd_map: dict[str, dict[str, Any]],
         default_action: str | None,
         providers: CLIProviders,
     ):
@@ -150,8 +170,8 @@ class CommandLineCompleter(Completer):
         self._providers = providers
 
         self._prompt_parser = PromptParser(cmd_map, default_action)
-        self._obj_cache = {}
-        self._props_cache = None
+        self._obj_cache: dict[Any, GraphObject | None] = {}
+        self._props_cache: dict[str, FieldInfo] | None = None
 
     def get_completions(self, document: Document, _: CompleteEvent) -> Generator[Completion]:
         text, separator = self._text_before_cursor_to_sep(document)
@@ -313,7 +333,7 @@ class CommandLineCompleter(Completer):
         # try to select properties
         yield from self._complete_property_choice(word, properties)
 
-    def _complete_property_choice(self, word: str, properties: dict[str, Field]) -> Generator[Completion]:
+    def _complete_property_choice(self, word: str, properties: dict[str, FieldInfo]) -> Generator[Completion]:
         for name, prop_info in properties.items():
             yield Completion(
                 self._prop_completion_text(name, prop_info),
@@ -335,16 +355,17 @@ class CommandLineCompleter(Completer):
             # _resolve_props populates self._props_cache as a side effect
             self._resolve_props(name, config)
 
-        if prop_info := self._props_cache.get(name):
+        if prop_info := (self._props_cache or {}).get(name):
             yield Completion(utils.convert_to_str(prop_info.default))
 
-    def _complete_mandatory_props(self, properties: dict[str, Field]) -> Generator[Completion]:
+    def _complete_mandatory_props(self, properties: dict[str, FieldInfo]) -> Generator[Completion | None]:
         mandatory_props = {name: prop_info for name, prop_info in properties.items() if prop_info.is_required()}
 
         if mandatory_props:
             text = ",".join([self._prop_completion_text(name, prop_info) for name, prop_info in mandatory_props.items()])
             yield Completion(text, start_position=0)
         else:
+            # sentinel: caller treats a falsy yielded value as "no mandatory props"
             yield None
 
     def _complete_from_list(
@@ -360,20 +381,20 @@ class CommandLineCompleter(Completer):
         items = config.list_provider() if callable(config.list_provider) else config.list_provider
         yield from select_items(items)
 
-    def _prop_completion_text(self, name: str, prop_info: Field) -> str:
+    def _prop_completion_text(self, name: str, prop_info: FieldInfo) -> str:
         quotes = '""' if prop_info.annotation is str else ""
         return f"{name}={quotes}"
 
-    def _prop_completion_display(self, name: str, prop_info: Field) -> str:
+    def _prop_completion_display(self, name: str, prop_info: FieldInfo) -> str:
         required_marker = " *" if prop_info.is_required() else ""
         return f"{name}{required_marker}"
 
-    def _resolve_props(self, word: str, config: LabelPropsCompleterConfig) -> dict[str, Field] | None:
+    def _resolve_props(self, word: str, config: LabelPropsCompleterConfig) -> dict[str, FieldInfo] | None:
         def filter_props(props):
             return {
                 name: prop_info
                 for name, prop_info in props.items()
-                if name.startswith(word) and name not in config.parse_result.kwargs
+                if name.startswith(word) and name not in (config.parse_result.kwargs or {})
             }
 
         def props_from_models():
@@ -410,15 +431,22 @@ class CommandLineCompleter(Completer):
 
             return props_from_models()
         else:
-            graph_obj: GraphObject = self._resolve_graph_obj(value)
-            properties = graph_obj.resolve_model_properties(default_from_values=config.default_from_values) if graph_obj else None
+            graph_obj = self._resolve_graph_obj(value)
+            # resolve_model_properties is only defined on GraphPropertiesMixin
+            # (GraphNode/GraphEdge), not on the shared GraphObject base -- a
+            # resolved reference could also be a Graph or GraphPath.
+            properties = (
+                graph_obj.resolve_model_properties(default_from_values=config.default_from_values)
+                if isinstance(graph_obj, GraphPropertiesMixin)
+                else None
+            )
 
         # prevent from re-resolving same properties
         self._props_cache = properties
 
         return filter_props(properties)
 
-    def _resolve_graph_obj(self, graph_obj_ref) -> GraphObject:
+    def _resolve_graph_obj(self, graph_obj_ref) -> GraphObject | None:
         if (graph_obj := self._obj_cache.get(graph_obj_ref)) is None:
             graph_obj = self._providers.graphdata_provider.fetch_graph_obj(graph_obj_ref)
             self._obj_cache[graph_obj_ref] = graph_obj
@@ -512,7 +540,7 @@ class CommandLineCompleter(Completer):
 
         return document.text_before_cursor.strip(), ""
 
-    def _get_prop_name(self, word: str, document: Document) -> str:
+    def _get_prop_name(self, word: str, document: Document) -> str | None:
         pos = document.cursor_position - len(word) - 1
 
         if document.text[pos] != "=":

@@ -83,6 +83,18 @@ tasks:
     cmds:
       - .venv/bin/ruff check --fix src tests
 
+  typecheck:
+    desc: "Static type check with mypy (pydantic plugin)"
+    cmds:
+      - .venv/bin/mypy src
+
+  audit:
+    desc: "Scan Python dependencies for known vulnerabilities (OSV, via uv.lock)."
+    cmds:
+      # --frozen: audit the committed lock as-is, without re-resolving.
+      # CI uses --locked (clean checkout) so it also asserts lock freshness.
+      - uv audit --frozen --preview-features audit-command {{.CLI_ARGS}}
+
   verify:
     desc: "Read-only lint+format verification (no mutation). Used by release:check."
     cmds:
@@ -128,6 +140,7 @@ tasks:
     cmds:
       - task: format
       - task: check
+      - task: typecheck
       - task: test
 
   pre-commit:setup:
@@ -166,12 +179,13 @@ tasks:
       - pre-commit validate-config
 
   rebuild:all:
-    desc: "Clean, install, format/check/test:all, build"
+    desc: "Clean, install, format/check/typecheck/test:all, build"
     cmds:
       - task: clean:all
       - task: install
       - task: format
       - task: check
+      - task: typecheck
       - task: test:all
       - task: build
 
@@ -179,15 +193,17 @@ tasks:
     desc: "Run the CI pipeline"
     cmds:
       - task: check
+      - task: typecheck
       - task: test
     deps:
       - install
 
   fct:
-    desc: "Run format, check, and test tasks in sequence"
+    desc: "Run format, check, typecheck, and test tasks in sequence"
     cmds:
       - task: format
       - task: check
+      - task: typecheck
       - task: test
 
   run:

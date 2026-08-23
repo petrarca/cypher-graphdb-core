@@ -1,6 +1,9 @@
 """Contains configuration for the cypher_graphdb module."""
 
 from enum import Enum
+from typing import Final, Literal
+
+TreeDirection = Literal["incoming", "outgoing"]
 
 GID_LENGTH = 16
 
@@ -46,9 +49,9 @@ CGDB_BACKEND = "CGDB_BACKEND"
 CGDB_CINFO = "CGDB_CINFO"
 CGDB_GRAPH = "CGDB_GRAPH"
 
-TREE_DIRECTION_INCOMING = "incoming"
-TREE_DIRECTION_OUTGOING = "outgoing"
-DEFAULT_TREE_DIRECTION = TREE_DIRECTION_INCOMING
+TREE_DIRECTION_INCOMING: Final[TreeDirection] = "incoming"
+TREE_DIRECTION_OUTGOING: Final[TreeDirection] = "outgoing"
+DEFAULT_TREE_DIRECTION: Final[TreeDirection] = TREE_DIRECTION_INCOMING
 
 # Model source type identifier
 MODEL_SOURCE_MODEL = "model"  # Models defined in Python code (Pydantic models with decorators)

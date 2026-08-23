@@ -302,11 +302,15 @@ def json_schemas_to_graph(schemas: list[dict[str, Any]]) -> Graph:
         if schema.get("x-graph", {}).get("type") != "EDGE":
             edges = _create_schema_edges(schema_name, source_id, schema, schema_lookup)
             for edge in edges:
+                # id_ is always assigned by _create_schema_edges (edge_id=...).
+                assert edge.id_ is not None
                 g.edges[edge.id_] = edge
 
         # Create inheritance edges (for both NODE and EDGE schemas)
         inheritance_edges = _create_inheritance_edges(schema_name, source_id, schema, schema_lookup)
         for edge in inheritance_edges:
+            # id_ is always assigned by _create_inheritance_edges (edge_id=...).
+            assert edge.id_ is not None
             g.edges[edge.id_] = edge
 
     return g

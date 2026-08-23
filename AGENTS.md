@@ -83,10 +83,12 @@ src/cypher_graphdb/
 ## Build & Test
 
 ```bash
-task fct          # Format + check + test (always run before committing)
+task fct          # Format + check + typecheck + test (always run before committing)
 task format       # ruff format
 task check        # ruff check --fix
+task typecheck    # mypy
 task test         # pytest
+task audit        # uv audit (dependency CVE scan) -- PR gate, not part of fct
 ```
 
 ## CLI Commands (cypher-graphdb)

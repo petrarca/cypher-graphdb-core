@@ -20,6 +20,7 @@ The language:
 
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from cypher_graphdb._extras import require_extra
@@ -131,7 +132,9 @@ class _ArgsTransformer(Transformer):
     def list(self, children: list[Any]) -> list[Any]:
         return list(children)
 
-    def dict(self, children: list[Any]) -> dict[Any, Any]:
+    def dict(self, children: builtins.list[Any]) -> dict[Any, Any]:
+        # `builtins.list` is required here: the `list` method defined just above
+        # shadows the builtin `list` name for the rest of this class body.
         return dict(children)
 
     @v_args(inline=True)

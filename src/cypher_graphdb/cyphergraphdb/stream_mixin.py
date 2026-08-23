@@ -6,13 +6,18 @@ Provides streaming query execution capabilities for large result sets.
 import contextlib
 import warnings
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..backend import BackendCapability
 from ..cypherparser import ParsedCypherQuery, parse_cypher_query
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class StreamMixin:
+
+class StreamMixin(_Host):
     """Mixin class that adds streaming capabilities to CypherGraphDB."""
 
     def execute_cypher_stream(

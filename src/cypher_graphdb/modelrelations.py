@@ -116,8 +116,9 @@ def resolve_label(target: type[GraphNode] | type[GraphEdge] | str, kind: str) ->
     """
     if isinstance(target, str):
         return target
-    if getattr(target, "graph_info_", None) is not None:
-        return target.graph_info_.label_
+    graph_info = getattr(target, "graph_info_", None)
+    if graph_info is not None:
+        return graph_info.label_
     raise ValueError(f"Cannot resolve {kind} label from {target}. Ensure it is registered via @<provider>.node/.edge.")
 
 

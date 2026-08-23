@@ -63,7 +63,8 @@ class RowCollector:
             for n in nodes:
                 rows.append(self._row_from_entity(n))
                 gid = n.properties_.get(config.PROP_GID) if n.properties_ else None
-                self._node_cache[n.id_] = (gid, n.label_)
+                if n.id_ is not None:
+                    self._node_cache[n.id_] = (gid, n.label_)
 
         if not edges:
             return rows
@@ -103,8 +104,8 @@ class RowCollector:
 
     def _expand_edge(self, edge: GraphEdge, data: dict[str, Any]):
         # Use cached metadata populated earlier; fallback to on-demand fetch if missing
-        sgid, slabel = self._node_cache.get(edge.start_id_, (None, None))
-        egid, elabel = self._node_cache.get(edge.end_id_, (None, None))
+        sgid, slabel = self._lookup_node_meta(edge.start_id_)
+        egid, elabel = self._lookup_node_meta(edge.end_id_)
 
         if sgid is None and edge.start_id_ is not None:
             self._populate_node_cache(edge.start_id_)
@@ -118,6 +119,16 @@ class RowCollector:
             data["start_label_"], data["end_label_"] = slabel, elabel
         data.pop("start_id_", None)
         data.pop("end_id_", None)
+
+    def _lookup_node_meta(self, node_id: int | None) -> tuple[str | None, str | None]:
+        """Look up cached (gid, label) metadata for a node id, if known.
+
+        Edge endpoint ids are optional (unset for edges that were never
+        persisted), so this guards against using ``None`` as a cache key.
+        """
+        if node_id is None:
+            return (None, None)
+        return self._node_cache.get(node_id, (None, None))
 
     def _populate_node_cache(self, node_id: int):
         # Delegate to bulk path for code reuse
@@ -145,6 +156,8 @@ class RowCollector:
             return
         insert_rows: list[tuple[int, str | None, str | None]] = []
         for n in nodes:
+            if n.id_ is None:
+                continue
             gid = n.properties_.get(config.PROP_GID) if n.properties_ else None
             self._node_cache[n.id_] = (gid, n.label_)
             insert_rows.append((n.id_, gid, n.label_))
@@ -198,15 +211,14 @@ class RowCollector:
     def _process_edges_chunk(self, edges: list[GraphEdge]) -> list[dict[str, Any]]:
         """Process a single chunk of edges efficiently."""
         result: list[dict[str, Any]] = []
-        node_cache = self._node_cache  # Local reference for speed
 
         for edge in edges:
             edge_data = edge.model_dump(context={"with_type": False})
 
             # Get start node metadata
-            start_gid, start_label = node_cache.get(edge.start_id_, (None, None))
+            start_gid, start_label = self._lookup_node_meta(edge.start_id_)
             # Get end node metadata
-            end_gid, end_label = node_cache.get(edge.end_id_, (None, None))
+            end_gid, end_label = self._lookup_node_meta(edge.end_id_)
 
             # Build result row
             row: dict[str, Any] = {
@@ -250,7 +262,8 @@ class RowCollector:
             node_rows = []
             for n in nodes:
                 gid = n.properties_.get(config.PROP_GID) if n.properties_ else None
-                self._node_cache[n.id_] = (gid, n.label_)
+                if n.id_ is not None:
+                    self._node_cache[n.id_] = (gid, n.label_)
                 node_rows.append(self._row_from_entity(n))
             yield node_rows
 

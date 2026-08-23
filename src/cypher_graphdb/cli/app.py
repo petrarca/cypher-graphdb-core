@@ -38,7 +38,7 @@ class CypherGraphCLI(CLIRuntime):
         self._model_path: str | None = None  # Set in run() from CLI args or CLISettings
 
         self._prompt_parser = self._create_prompt_parser()
-        self._last_cypher_cmd = None
+        self._last_cypher_cmd: str | None = None
         self._with_prompt = True
         self._exec_stats = False
 
@@ -77,7 +77,7 @@ class CypherGraphCLI(CLIRuntime):
         """Returns the prompt parser."""
         return self._prompt_parser
 
-    def banner(self) -> type[CypherGraphCLI]:
+    def banner(self) -> CypherGraphCLI:
         """Shows the CLI banner."""
         banner.show_banner()
         return self
@@ -182,6 +182,8 @@ class CypherGraphCLI(CLIRuntime):
             logger.warning("Model path does not exist: '{}'", path)
             return
 
+        # Only called from _setup_after_connect(), which runs after a successful connect().
+        assert self._graphdb.db is not None
         loaded = self._graphdb.db.model_provider.try_to_load_models(module_name, parent_path if module_name else path)
         if loaded:
             logger.info("Auto-loaded {} model(s) from '{}'", len(loaded), path)
@@ -501,6 +503,7 @@ class CypherGraphCLI(CLIRuntime):
                 if isinstance(value, bool):
                     self._exec_stats = value
                     return True
+                return False
             case _:
                 return False
 

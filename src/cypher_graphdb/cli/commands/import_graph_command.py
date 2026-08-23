@@ -27,6 +27,8 @@ class ImportGraphCommand(BaseCommand):
             bool: True if successful, False otherwise
         """
         # Pass autoconfirm option to GraphImporter
+        if self._cli_runtime is None:
+            raise RuntimeError("CLI runtime not available")
         autoconfirm_value = self._cli_runtime.autoconfirm
         importer = GraphImporter(self.graphdb.db, autoconfirm=autoconfirm_value)
 

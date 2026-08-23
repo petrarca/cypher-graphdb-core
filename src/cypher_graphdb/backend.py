@@ -54,7 +54,7 @@ class ExecStatistics(GraphStatistics):
 class SqlStatistics(BaseModel):
     """SQL execution statistics, including statement and returned column names."""
 
-    sql_stmt: str = None
+    sql_stmt: str | None = None
     col_names: tuple[str, ...] = ()
 
 
@@ -62,11 +62,11 @@ class CypherBackend(abc.ABC):
     """Abstract base class for graph database backend implementations."""
 
     # Backend name - should be overridden by subclasses
-    name: str = None
+    name: str | None = None
 
-    def __init__(self, _, **kwargs):
+    def __init__(self, _: Any = None, **kwargs: Any) -> None:
         self.autocommit = kwargs.get("autocommit", True)
-        self._graph_name = kwargs.get("graph_name")
+        self._graph_name: str | None = kwargs.get("graph_name")
         self._read_only = kwargs.get("read_only", False)
 
         # Maximum seconds a single query may run before the backend cancels it.
@@ -77,18 +77,20 @@ class CypherBackend(abc.ABC):
         # overwrites this with its own provider right after construction.
         self._model_provider = kwargs.get("model_provider") or modelprovider.ModelProvider()
 
-        self._connection = None
+        # Concrete connection type varies per backend (psycopg for AGE, mgclient
+        # for Memgraph); subclasses re-declare this with their own precise type.
+        self._connection: Any = None
 
     @property
     def connection(self):
         return self._connection
 
     @property
-    def graph_name(self) -> str:
+    def graph_name(self) -> str | None:
         return self._graph_name
 
     @graph_name.setter
-    def graph_name(self, graph_name: str):
+    def graph_name(self, graph_name: str | None):
         if self._graph_name == graph_name:
             return
 
@@ -224,7 +226,7 @@ class CypherBackend(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def graph_exists(self, graph_name: str = None) -> bool:
+    def graph_exists(self, graph_name: str | None = None) -> bool:
         """Check if a graph or namespace exists in the backend."""
         pass
 
@@ -324,7 +326,7 @@ class CypherBackend(abc.ABC):
         self,
         cypher_query: ParsedCypherQuery,
         fts_query: str,
-        language: str = None,
+        language: str | None = None,
     ) -> tuple[TabularResult, ExecStatistics]:
         """Perform a full-text search via a Cypher query and return results and execution stats."""
         pass
@@ -353,8 +355,8 @@ class CypherBackend(abc.ABC):
         return []
 
     @abc.abstractmethod
-    def graphs(self) -> list[LabelStatistics]:
-        """Return statistics per graph/namespace available in the backend."""
+    def graphs(self) -> list[str]:
+        """Return the names of the graphs/namespaces available in the backend."""
         return []
 
     @abc.abstractmethod

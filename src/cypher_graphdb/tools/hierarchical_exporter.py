@@ -25,7 +25,7 @@ class HierarchicalExporter(FileExporter):
     re-attaching relations to their source nodes where appropriate.
     """
 
-    def __init__(self, db: CypherGraphDB, opts: FileExporterOptions = None) -> None:
+    def __init__(self, db: CypherGraphDB, opts: FileExporterOptions | None = None) -> None:
         """Initialize hierarchical exporter.
 
         Args:
@@ -72,18 +72,18 @@ class HierarchicalExporter(FileExporter):
         # Export to single file (tree export doesn't support multiple files)
         self._export_single_file(nested_data, filename)
 
-    def _convert_tree_result_to_nested(self, tree_result: TreeResult) -> list[tuple[str, Any]]:
+    def _convert_tree_result_to_nested(self, tree_result: TreeResult) -> dict[str, Any]:
         """Convert TreeResult to nested export format.
 
         Args:
             tree_result: TreeResult containing tree structure.
 
         Returns:
-            List of (label, entities) tuples with nested tree structure.
+            Nested data structure suitable for JSON/YAML export.
         """
 
         # Build dict structure: {node:Label: [root_data, ...]}
-        nested_data = {}
+        nested_data: dict[str, Any] = {}
 
         for root_node, _edge, children in tree_result.tree_structure:
             root_data = self._convert_tree_node_to_nested(root_node, children, tree_result.direction)
@@ -189,7 +189,7 @@ class HierarchicalExporter(FileExporter):
         node_lookup = self._build_node_lookup(nodes_by_label)
 
         # Build nested structure
-        result = {}
+        result: dict[str, Any] = {}
 
         # Add nodes with attached relations
         for label, nodes in nodes_by_label.items():

@@ -19,11 +19,11 @@ from .provider import GraphDataProvider, VarProvider
 class CLIGraphData(VarProvider, GraphDataProvider):
     """CLI provider for graph data management and variable storage."""
 
-    def __init__(self) -> Any:
-        self.db: CypherGraphDB = None
+    def __init__(self) -> None:
+        self.db: CypherGraphDB | None = None
         self._graph: Graph = Graph()
-        self._last_result = None
-        self._variables = {}
+        self._last_result: Any = None
+        self._variables: dict[str, Any] = {}
 
     @property
     def graph(self):
@@ -41,7 +41,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
     def variables(self):
         return self._variables
 
-    def get_var(self, varname: str | None) -> dict:
+    def get_var(self, varname: str | None) -> Any | None:
         if varname:
             if varname == ".":
                 return self._last_result
@@ -52,7 +52,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
         else:
             return None
 
-    def get_varnames(self) -> tuple[str]:
+    def get_varnames(self) -> tuple[str, ...]:
         result = sorted(self._variables.keys())
 
         if self._last_result:
@@ -62,7 +62,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
 
         return tuple(result)
 
-    def set_var(self, name: str, value: object) -> dict:
+    def set_var(self, name: str, value: object) -> Any | None:
         if value is None:
             # remove variable
             return self._variables.pop(name, None)
@@ -88,7 +88,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
 
         return obj
 
-    def _parse_row_col_from_ref(self, graph_obj_ref) -> tuple[int, int]:
+    def _parse_row_col_from_ref(self, graph_obj_ref) -> tuple[float, float]:
         """Parse row and column indices from a graph object reference."""
         if not graph_obj_ref:
             return (1, 1)
@@ -135,6 +135,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
 
     def _fetch_by_criteria(self, node_ref, graph_obj_type: str | None) -> GraphObject | None:
         """Fetch a graph object by criteria."""
+        assert self.db
         if criteria := self._node_ref_to_criteria(node_ref):
             if (not graph_obj_type or graph_obj_type == "node") and (result := self.db.fetch_nodes(criteria, unnest_result=True)):
                 return result
@@ -172,7 +173,7 @@ class CLIGraphData(VarProvider, GraphDataProvider):
 
         return result if isinstance(result, GraphNode) else None
 
-    def fetch_edge(self, edge_ref: str | int) -> GraphNode | None:
+    def fetch_edge(self, edge_ref: str | int) -> GraphEdge | None:
         result = self.fetch_graph_obj(edge_ref, "edge")
 
         return result if isinstance(result, GraphEdge) else None

@@ -131,7 +131,7 @@ def _merge_descriptions(schemas: list[dict[str, Any]]) -> str | None:
 
 def _merge_properties(schemas: list[dict[str, Any]]) -> dict[str, Any]:
     """Merge properties from multiple schemas (union) with conflict detection."""
-    all_properties = {}
+    all_properties: dict[str, Any] = {}
     conflicts = []
 
     for schema_idx, schema in enumerate(schemas):
@@ -232,13 +232,13 @@ def _merge_x_graph_extensions(schemas: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _merge_relations(relations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Merge relations from multiple schemas with conflict detection."""
-    seen = {}
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
     merged_relations = []
     conflicts = []
 
     for rel in relations:
         # Create a unique key for deduplication
-        key = (rel.get("rel_type_name"), rel.get("to_type_name"))
+        key = (rel.get("rel_type_name", ""), rel.get("to_type_name", ""))
 
         if key in seen:
             # Check for conflicts

@@ -55,9 +55,13 @@ class MemgraphDB(CypherBackend):
         """
         super().__init__(args, **kwargs)
 
+        # Narrow the base class's generic `Any` connection to the concrete
+        # mgclient type this backend actually uses.
+        self._connection: mgclient.Connection | None = None
+
         # required for reconnect
-        self._cinfo = None
-        self._ckwargs = None
+        self._cinfo: str | None = None
+        self._ckwargs: dict[str, Any] | None = None
 
         if args or kwargs:
             self.connect(*args, **kwargs)
@@ -192,7 +196,7 @@ class MemgraphDB(CypherBackend):
         """
         timeout_ms = int(timeout_s * 1000)
         with self._autocommit_mode():
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
             try:
                 cursor.execute(f"SET DATABASE SETTING 'query.timeout' TO '{timeout_ms}'")
                 logger.debug("Memgraph query timeout set to {}ms", timeout_ms)
@@ -307,7 +311,7 @@ class MemgraphDB(CypherBackend):
         chunk_size: int = 1000,
         raw_data: bool = False,
         params: dict | None = None,
-    ) -> Generator[list[list[Any]]]:
+    ) -> Generator[TabularResult]:
         """Execute a Cypher query and yield results in chunks.
 
         Args:
@@ -317,7 +321,7 @@ class MemgraphDB(CypherBackend):
             params: Optional dictionary of parameter values to bind (e.g., {"key": "value"}).
 
         Yields:
-            list[list[Any]]: Lists of result rows (chunks).
+            TabularResult: Lists of result rows (chunks).
         """
         assert isinstance(cypher_query, ParsedCypherQuery)
 
@@ -331,7 +335,7 @@ class MemgraphDB(CypherBackend):
 
         from .memgraphrowfactories import memgraph_row_factory
 
-        cursor = self._connection.cursor()
+        cursor = self._conn.cursor()
         try:
             # Execute the query with optional params
             cursor.execute(query, params or {})
@@ -351,7 +355,9 @@ class MemgraphDB(CypherBackend):
                 if raw_data:
                     yield chunk
                 else:
-                    # Apply row factory to each row in chunk
+                    # Apply row factory to each row in chunk. row_factory is
+                    # always set here since raw_data is False in this branch.
+                    assert row_factory is not None
                     processed_chunk = [row_factory(row) for row in chunk]
                     yield processed_chunk
 
@@ -375,7 +381,7 @@ class MemgraphDB(CypherBackend):
             List of label statistics including counts and types.
         """
 
-        labels = []
+        labels: list[LabelStatistics] = []
 
         # Single efficient query to get both node labels and relationship types
         combined_query = """
@@ -419,7 +425,7 @@ class MemgraphDB(CypherBackend):
         """Close the database connection and clear connection info."""
         if self._connection:
             try:
-                self._connection.close()
+                self._conn.close()
                 logger.debug("Disconnected from Memgraph")
             except mgclient.DatabaseError as e:
                 logger.error(f"Database error disconnecting from Memgraph: {e}")
@@ -442,7 +448,7 @@ class MemgraphDB(CypherBackend):
         # Close existing connection if any
         if self._connection:
             with contextlib.suppress(Exception):
-                self._connection.close()
+                self._conn.close()
             self._connection = None
 
         # Reconnect using stored parameters
@@ -450,7 +456,7 @@ class MemgraphDB(CypherBackend):
 
     def _check_connection(self) -> bool:
         """Verify Memgraph connection by executing RETURN 1."""
-        cursor = self._connection.cursor()
+        cursor = self._conn.cursor()
         try:
             cursor.execute("RETURN 1")
             result = cursor.fetchone()
@@ -466,6 +472,18 @@ class MemgraphDB(CypherBackend):
         if self._connection is None:
             raise RuntimeError("Not connected to Memgraph database")
 
+    @property
+    def _conn(self) -> mgclient.Connection:
+        """The active connection, narrowed to non-None.
+
+        Callers that may be disconnected should call `_require_connection()`
+        (which raises if still not connected after attempting reconnect)
+        before reading this property.
+        """
+        if self._connection is None:
+            raise RuntimeError("Not connected to Memgraph database")
+        return self._connection
+
     def commit(self):
         """Commit the current transaction.
 
@@ -473,7 +491,7 @@ class MemgraphDB(CypherBackend):
         """
         self._require_connection()
         try:
-            self._connection.commit()
+            self._conn.commit()
             logger.debug("Transaction committed successfully")
         except mgclient.DatabaseError as e:
             logger.error(f"Failed to commit transaction: {e}")
@@ -489,7 +507,7 @@ class MemgraphDB(CypherBackend):
         """
         self._require_connection()
         try:
-            self._connection.rollback()
+            self._conn.rollback()
             logger.debug("Transaction rolled back successfully")
         except mgclient.DatabaseError as e:
             logger.error(f"Failed to rollback transaction: {e}")
@@ -520,7 +538,7 @@ class MemgraphDB(CypherBackend):
         """
         raise NotImplementedError("Memgraph doesn't support dropping graphs, only the default 'memgraph' graph is available.")
 
-    def graph_exists(self, graph_name: str = None) -> bool:
+    def graph_exists(self, graph_name: str | None = None) -> bool:
         """Check if a graph exists in the database.
 
         Args:
@@ -578,7 +596,7 @@ class MemgraphDB(CypherBackend):
         """
         self._require_connection()
         with self._autocommit_mode():
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
             cursor.execute("SHOW INDEX INFO")
             rows = cursor.fetchall()
             cursor.close()
@@ -624,14 +642,14 @@ class MemgraphDB(CypherBackend):
 
         total = 0
         for batch in chunk_list(rows, batch_size):
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(
                 f"UNWIND $rows AS props CREATE (n:{label}) SET n = props",
                 {"rows": batch},
             )
             cursor.close()
             if self.autocommit:
-                self._connection.commit()
+                self._conn.commit()
             total += len(batch)
 
         return total
@@ -682,11 +700,11 @@ class MemgraphDB(CypherBackend):
 
         total = 0
         for batch in chunk_list(edges, batch_size):
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(cypher, {"edges": batch})
             cursor.close()
             if self.autocommit:
-                self._connection.commit()
+                self._conn.commit()
             total += len(batch)
 
         return total
@@ -698,17 +716,17 @@ class MemgraphDB(CypherBackend):
         Memgraph requires DDL (CREATE/DROP INDEX) and storage info queries
         (SHOW INDEX INFO) to run in autocommit (implicit transaction) mode.
         """
-        prev = self._connection.autocommit
-        self._connection.autocommit = True
+        prev = self._conn.autocommit
+        self._conn.autocommit = True
         try:
             yield
         finally:
-            self._connection.autocommit = prev
+            self._conn.autocommit = prev
 
     def _run_ddl(self, statement: str) -> None:
         """Execute a DDL statement (CREATE/DROP INDEX etc.) on Memgraph."""
         with self._autocommit_mode():
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(statement)
             cursor.close()
 
@@ -756,7 +774,7 @@ class MemgraphDB(CypherBackend):
 
     def _execute_query(
         self, query: str, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
-    ) -> tuple[list[tuple[GraphObject]], ExecStatistics]:
+    ) -> tuple[TabularResult, ExecStatistics]:
         """Execute a Cypher query and process the results.
 
         Args:
@@ -782,7 +800,7 @@ class MemgraphDB(CypherBackend):
 
         try:
             # Get cursor from connection
-            cursor = self._connection.cursor()
+            cursor = self._conn.cursor()
 
             # Execute the query with optional params
             cursor.execute(query, params or {})
@@ -808,7 +826,7 @@ class MemgraphDB(CypherBackend):
 
             # Handle autocommit like AGE does
             if self.autocommit:
-                self._connection.commit()
+                self._conn.commit()
 
         except mgclient.DatabaseError as e:
             logger.error("Memgraph database error: {}", e)

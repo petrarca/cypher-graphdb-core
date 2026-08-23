@@ -63,6 +63,7 @@ dev = [
     "cypher_graphdb[cli]",
     "testcontainers",
     "ruff",
+    "mypy>=1.18.0",
     "pytest",
     "pytest-cov",
     "pre-commit",
@@ -104,6 +105,15 @@ select = [
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.14"
+# Third-party deps without type stubs. We type our own code, not theirs.
+ignore_missing_imports = true
+# ANTLR-generated parser, same directory ruff already excludes via extend-exclude.
+# Not our code; the ANTLR runtime it star-imports from ships no type stubs.
+exclude = ["^src/cypher_graphdb/cypher/"]
 
 [tool.pytest.ini_options]
 markers = [

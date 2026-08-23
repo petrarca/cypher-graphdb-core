@@ -67,7 +67,7 @@ class CsvSource(RowSource):
         batch = []
         for row in self._reader:
             # Convert empty strings to None for consistency with standard CSV behavior
-            processed_row = {}
+            processed_row: dict[str, str | None] = {}
             for key, value in row.items():
                 if value == "":
                     processed_row[key] = None

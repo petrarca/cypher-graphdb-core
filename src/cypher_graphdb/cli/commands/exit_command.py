@@ -26,5 +26,6 @@ class ExitCommand(BaseCommand):
             True to indicate successful execution
         """
         # Exact same logic as original implementation
+        assert parsed_cmd.parse_result is not None
         parsed_cmd.parse_result.exit_cmd = True
         return True

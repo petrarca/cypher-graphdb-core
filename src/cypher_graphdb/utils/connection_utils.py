@@ -78,7 +78,7 @@ def _parse_uri_format(uri: str) -> dict[str, Any]:
     except Exception as exc:
         raise ValueError(f"Invalid URI format: {uri}") from exc
 
-    params = {}
+    params: dict[str, Any] = {}
 
     # Extract protocol
     if parsed.scheme:
@@ -119,7 +119,7 @@ def _parse_key_value_format(cinfo: str) -> dict[str, Any]:
     Raises:
         ValueError: If port value is invalid.
     """
-    params = {}
+    params: dict[str, Any] = {}
 
     for pair in cinfo.split():
         if "=" in pair:

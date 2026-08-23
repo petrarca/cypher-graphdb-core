@@ -18,7 +18,7 @@ from typing import Literal
 
 import psycopg
 from loguru import logger
-from psycopg.sql import SQL, Identifier
+from psycopg.sql import SQL, Composed, Identifier
 from psycopg.sql import Literal as SQLLiteral
 
 from cypher_graphdb.utils import chunk_list
@@ -300,6 +300,7 @@ class AGEBulkWriter:
         # When the edge label table does not exist, no node can have such an
         # edge -- every node of the label is an orphan. Use an always-true
         # predicate instead of an anti-join against a missing table.
+        no_edge_pred: SQL | Composed
         if edge_label in edge_labels:
             no_edge_pred = SQL(
                 "NOT EXISTS (SELECT 1 FROM {egraph}.{eref} ref WHERE ref.{refcol} OPERATOR(ag_catalog.=) n.id)"
@@ -312,6 +313,7 @@ class AGEBulkWriter:
             no_edge_pred = SQL("TRUE")
 
         # Optionally restrict the scan to nodes matching property filters.
+        orphan_pred: SQL | Composed
         if filters:
             orphan_pred = SQL("({no_edge}) AND ({props})").format(
                 no_edge=no_edge_pred,

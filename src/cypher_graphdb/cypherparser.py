@@ -5,6 +5,8 @@ extracting query structure, clauses, and metadata for analysis and processing.
 """
 
 import re
+from collections.abc import Iterator
+from typing import Any
 
 from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 from pydantic import BaseModel, Field
@@ -31,7 +33,7 @@ class CypherClausePart(BaseModel):
 
     query_part: str
     part_type: str
-    varname: str = None
+    varname: str | None = None
     labels: list[str] = []
     parameters: list[str] = []
 
@@ -75,7 +77,9 @@ class ParsedCypherQuery(BaseModel):
     parameters: list[str] = []
     has_limit: bool = False
     has_skip: bool = False
-    parse_tree: object = Field(exclude=True)
+    # ANTLR-generated parse tree context; antlr4 ships no type stubs
+    # (ignore_missing_imports = true, see pyproject.toml [tool.mypy]).
+    parse_tree: Any = Field(exclude=True)
 
     @property
     def parsed_query(self) -> str:
@@ -115,11 +119,9 @@ class ParsedCypherQuery(BaseModel):
                     parameters.extend(part.parameters)
 
         # Remove duplicates while preserving order
-        seen = set()
-        unique_parameters = [p for p in parameters if not (p in seen or seen.add(p))]
-        return unique_parameters
+        return list(dict.fromkeys(parameters))
 
-    def find_clause_parts(self, part_types: tuple[str]) -> tuple[CypherClausePart]:
+    def find_clause_parts(self, part_types: tuple[str, ...]) -> Iterator[CypherClausePart]:
         """Find clause parts of specified types.
 
         Args:

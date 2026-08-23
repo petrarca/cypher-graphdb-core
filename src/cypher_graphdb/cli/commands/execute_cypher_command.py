@@ -28,6 +28,13 @@ class ExecuteCypherCommand(BaseCommand):
         Returns:
             bool: True if successful, False otherwise
         """
+        if self._cli_runtime is None:
+            raise RuntimeError("CLI runtime not available")
+
+        if not parsed_cmd.cmd:
+            rich.print("[red]No cypher command to execute.")
+            return False
+
         # Check for parse-only mode (dump_parsed_query or search)
         if parsed_cmd.has_nextcmd() and parsed_cmd.nextcmd().is_action({"dump_parsed_query", "search"}):
             # parse only

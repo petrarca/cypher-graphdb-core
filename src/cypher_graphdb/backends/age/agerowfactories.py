@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from psycopg.cursor import BaseCursor
-from psycopg.rows import BaseRowFactory, RowMaker, T
+from psycopg.rows import BaseRowFactory, RowMaker
 
 from cypher_graphdb.backend import ExecStatistics
 from cypher_graphdb.modelprovider import ModelProvider
@@ -67,7 +67,7 @@ def _map_age_value(value, stats: ExecStatistics, provider: ModelProvider):
         return value
 
 
-def _process_row_values(values: Sequence[Any], stats: ExecStatistics, provider: ModelProvider) -> tuple:
+def _process_row_values(values: Sequence[Any], stats: ExecStatistics, provider: ModelProvider) -> tuple[Any, ...]:
     """Process a row of values from the database result."""
     result = []
 
@@ -85,7 +85,7 @@ def _process_row_values(values: Sequence[Any], stats: ExecStatistics, provider: 
     return tuple(result)
 
 
-def age_row_factory(stats: ExecStatistics, provider: ModelProvider) -> BaseRowFactory[T]:
+def age_row_factory(stats: ExecStatistics, provider: ModelProvider) -> BaseRowFactory[tuple[Any, ...]]:
     """Create a row factory for AGE query results.
 
     This factory converts AGE-specific types to CypherGraphDB model objects.
@@ -98,11 +98,12 @@ def age_row_factory(stats: ExecStatistics, provider: ModelProvider) -> BaseRowFa
         A row factory compatible with psycopg cursors
     """
 
-    def age_row_maker_(cursor: BaseCursor[Any, Any]) -> RowMaker[T]:
-        # Update column statistics
-        stats.col_count = len(cursor.description)
+    def age_row_maker_(cursor: BaseCursor[Any, Any]) -> RowMaker[tuple[Any, ...]]:
+        # Update column statistics. cursor.description is None before a
+        # result-returning statement is executed; treat that as zero columns.
+        stats.col_count = len(cursor.description) if cursor.description is not None else 0
 
-        def age_row_maker__(values: Sequence[Any]) -> T:
+        def age_row_maker__(values: Sequence[Any]) -> tuple[Any, ...]:
             return _process_row_values(values, stats, provider)
 
         return age_row_maker__

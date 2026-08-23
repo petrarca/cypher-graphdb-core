@@ -22,9 +22,9 @@ class PageSql:
     call site instead of relying on positional tuple unpacking.
     """
 
-    page: sql.SQL
+    page: sql.Composed
     """Outer SELECT with OFFSET/LIMIT applied; preserves the agtype column spec."""
-    count: sql.SQL
+    count: sql.Composed
     """Outer SELECT count(*) for the exact total row count."""
 
 
@@ -45,25 +45,25 @@ class SQLBuilder:
         return sql.SQL("SET search_path = ag_catalog, '$user', public;")
 
     @classmethod
-    def graph_exists(cls, graph_name: str) -> sql.SQL:
+    def graph_exists(cls, graph_name: str) -> sql.Composed:
         return sql.SQL("SELECT count(*) FROM ag_graph WHERE name={graph_name}").format(graph_name=sql.Literal(graph_name))
 
     @classmethod
-    def create_graph(cls, graph_name: str) -> sql.SQL:
+    def create_graph(cls, graph_name: str) -> sql.Composed:
         return sql.SQL("SELECT create_graph({graph_name});").format(graph_name=sql.Literal(graph_name))
 
     @classmethod
-    def drop_graph(cls, graph_name: str) -> sql.SQL:
+    def drop_graph(cls, graph_name: str) -> sql.Composed:
         return sql.SQL("SELECT drop_graph({graph_name}, true);").format(graph_name=sql.Literal(graph_name))
 
     @classmethod
-    def create_vlabel(cls, graph_name: str, vlabel: str) -> sql.SQL:
+    def create_vlabel(cls, graph_name: str, vlabel: str) -> sql.Composed:
         return sql.SQL("SELECT create_vlabel({graph_name}, {vlabel});").format(
             graph_name=sql.Literal(graph_name), vlabel=sql.Literal(vlabel)
         )
 
     @classmethod
-    def create_elabel(cls, graph_name: str, elabel: str) -> sql.SQL:
+    def create_elabel(cls, graph_name: str, elabel: str) -> sql.Composed:
         return sql.SQL("SELECT create_elabel({graph_name}, {elabel});").format(
             graph_name=sql.Literal(graph_name), elabel=sql.Literal(elabel)
         )
@@ -174,19 +174,17 @@ class SQLBuilder:
         return PageSql(page=page, count=count)
 
     @classmethod
-    def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.SQL:
-        sql_, _ = cls.create_cypher_sql(graph_name, cypher_query)
+    def create_fts_sql(cls, graph_name: str, cypher_query: ParsedCypherQuery, fts_query: str, language: str) -> sql.Composed:
+        inner_sql, _ = cls.create_cypher_sql(graph_name, cypher_query)
 
         where_parts = []
         for k, v in cypher_query.return_arguments.items():
             if v.startswith("ag_catalog.agtype_out"):
                 where_parts.append(f"to_tsvector('{language}',{k}) @@ to_tsquery('{fts_query}')")
 
-        where_parts = " OR ".join(where_parts)
+        where_clause = " OR ".join(where_parts)
 
-        sql_ = sql_ + sql.SQL(f"WHERE {where_parts}")
-
-        return sql_
+        return inner_sql + sql.SQL(f"WHERE {where_clause}")
 
     @classmethod
     def resolve_graphs(cls) -> sql.SQL:
@@ -194,11 +192,11 @@ class SQLBuilder:
 
     @classmethod
     def resolve_labels(cls, graph_name: str) -> sql.SQL:
-        sql_ = sql.SQL("SELECT name, kind, relation FROM ag_catalog.ag_label")
+        query = "SELECT name, kind, relation FROM ag_catalog.ag_label"
         if graph_name:
-            sql_ = sql_ + sql.SQL(f" WHERE relation::text like '{graph_name}.%'")
+            query += f" WHERE relation::text like '{graph_name}.%'"
 
-        return sql_
+        return sql.SQL(query)
 
     @classmethod
     def resolve_label_count(cls, relation: str) -> sql.SQL:
@@ -207,7 +205,7 @@ class SQLBuilder:
     # ── Index management SQL ──────────────────────────────────────────────
 
     @classmethod
-    def get_label_tables(cls, graph_name: str) -> sql.SQL:
+    def get_label_tables(cls, graph_name: str) -> sql.Composed:
         """List all label tables in the graph schema via pg_class."""
         return sql.SQL(
             "SELECT c.relname FROM pg_class c "
@@ -216,7 +214,7 @@ class SQLBuilder:
         ).format(graph_name=sql.Placeholder())
 
     @classmethod
-    def create_gin_index(cls, graph_name: str, label: str) -> sql.SQL:
+    def create_gin_index(cls, graph_name: str, label: str) -> sql.Composed:
         """Create a GIN index on the properties column of a label table."""
         idx_name = f"{graph_name}_{label}_props_gin"
         return sql.SQL("CREATE INDEX IF NOT EXISTS {idx} ON {schema}.{table} USING gin(properties)").format(
@@ -226,7 +224,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def create_expression_index(cls, graph_name: str, label: str, property_name: str) -> sql.SQL:
+    def create_expression_index(cls, graph_name: str, label: str, property_name: str) -> sql.Composed:
         """Create a btree expression index on a single property of a label table.
 
         AGE Cypher uses ``agtype_access_operator`` to extract property values.
@@ -251,7 +249,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def drop_gin_index(cls, graph_name: str, label: str) -> sql.SQL:
+    def drop_gin_index(cls, graph_name: str, label: str) -> sql.Composed:
         """Drop a GIN index on the properties column of a label table."""
         idx_name = f"{graph_name}_{label}_props_gin"
         return sql.SQL("DROP INDEX IF EXISTS {schema}.{idx}").format(
@@ -260,7 +258,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def drop_expression_index(cls, graph_name: str, label: str, property_name: str) -> sql.SQL:
+    def drop_expression_index(cls, graph_name: str, label: str, property_name: str) -> sql.Composed:
         """Drop a btree expression index on a single property of a label table."""
         idx_name = f"{graph_name}_{label}_{property_name}_expr"
         return sql.SQL("DROP INDEX IF EXISTS {schema}.{idx}").format(
@@ -283,7 +281,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_prop: str) -> sql.SQL:
+    def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_prop: str) -> sql.Composed:
         """SQL to look up graphids of all nodes of a label by a property value.
 
         Returns (ref_value, graphid) pairs for every row in the label table.
@@ -300,7 +298,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def lookup_node_graphids_filtered_sql(cls, graph_name: str, label: str, ref_prop: str, ref_values: set[str]) -> sql.SQL:
+    def lookup_node_graphids_filtered_sql(cls, graph_name: str, label: str, ref_prop: str, ref_values: set[str]) -> sql.Composed:
         """SQL to look up graphids for a specific set of property values.
 
         Uses a WHERE ... IN (...) clause with the same agtype_access_operator
@@ -331,7 +329,7 @@ class SQLBuilder:
         )
 
     @classmethod
-    def list_indexes(cls, graph_name: str) -> sql.SQL:
+    def list_indexes(cls, graph_name: str) -> sql.Composed:
         """List all user-created indexes in the graph schema via pg_indexes."""
         return sql.SQL(
             "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = {graph_name} ORDER BY tablename, indexname"

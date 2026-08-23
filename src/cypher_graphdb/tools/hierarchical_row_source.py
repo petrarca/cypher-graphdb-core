@@ -6,7 +6,7 @@ converting it to flat rows compatible with the existing tabular import system.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
 from .data_flattener import DataFlattener, FlattenedNode
@@ -22,7 +22,7 @@ class HierarchicalRowSource(RowSource):
     preserving relationship information for later processing.
     """
 
-    def __init__(self, data: dict[str, Any], source_file: str = None):
+    def __init__(self, data: dict[str, Any], source_file: str | None = None):
         """Initialize hierarchical row source.
 
         Args:
@@ -32,7 +32,7 @@ class HierarchicalRowSource(RowSource):
         self.data = data
         self.source_file = source_file
         self._current_iterator = None
-        self._flattened_data = []
+        self._flattened_data: list[FlattenedNode] = []
         self._current_index = 0
 
         # Pre-process the data to flatten it
@@ -61,7 +61,7 @@ class HierarchicalRowSource(RowSource):
             return []
 
         # Collect all possible columns from all flattened items
-        all_columns = set()
+        all_columns: set[str] = set()
 
         for flattened_item in self._flattened_data:
             # Add node property columns
@@ -78,19 +78,19 @@ class HierarchicalRowSource(RowSource):
 
         return sorted_special + sorted_regular
 
-    def iter_batches(self, batch_size: int) -> Iterator[Iterable[dict[str, Any]]]:
+    def iter_batches(self, batch_size: int) -> Iterator[list[dict[str, Any]]]:
         """Yield flattened rows from nested data.
 
         Args:
             batch_size: Number of rows to include in each batch.
 
         Yields:
-            Iterables of flattened row dictionaries.
+            Lists of flattened row dictionaries.
         """
         self._current_index = 0
 
         while self._current_index < len(self._flattened_data):
-            batch = []
+            batch: list[dict[str, Any]] = []
 
             while len(batch) < batch_size and self._current_index < len(self._flattened_data):
                 flattened_item = self._flattened_data[self._current_index]
@@ -170,7 +170,7 @@ class RelationRowSource(RowSource):
     with underscore prefixes like '_relations.json').
     """
 
-    def __init__(self, relations_data: dict[str, Any], source_file: str = None):
+    def __init__(self, relations_data: dict[str, Any], source_file: str | None = None):
         """Initialize relation row source.
 
         Args:
@@ -179,7 +179,7 @@ class RelationRowSource(RowSource):
         """
         self.relations_data = relations_data
         self.source_file = source_file
-        self._relation_rows = []
+        self._relation_rows: list[dict[str, Any]] = []
         self._current_index = 0
 
         # Pre-process relations into flat rows
@@ -227,18 +227,18 @@ class RelationRowSource(RowSource):
         if not self._relation_rows:
             return []
 
-        all_columns = set()
+        all_columns: set[str] = set()
         for row in self._relation_rows:
             all_columns.update(row.keys())
 
         return sorted(all_columns)
 
-    def iter_batches(self, batch_size: int) -> Iterator[Iterable[dict[str, Any]]]:
+    def iter_batches(self, batch_size: int) -> Iterator[list[dict[str, Any]]]:
         """Yield relation rows in batches."""
         self._current_index = 0
 
         while self._current_index < len(self._relation_rows):
-            batch = []
+            batch: list[dict[str, Any]] = []
 
             while len(batch) < batch_size and self._current_index < len(self._relation_rows):
                 batch.append(self._relation_rows[self._current_index])

@@ -104,7 +104,7 @@ class CypherGraphDBPool:
 
         # Idle entries store (expiry_ts, db_instance) if ttl enabled
         # else (last_used_ts, db)
-        self._idle = deque()  # list[tuple[float, CypherGraphDB]]
+        self._idle: deque[tuple[float, CypherGraphDB]] = deque()
         self._in_use: set[CypherGraphDB] = set()
         self._lock = threading.RLock()
         self._not_empty = threading.Condition(self._lock)

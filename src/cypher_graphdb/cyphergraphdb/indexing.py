@@ -1,15 +1,20 @@
 """Indexing and bulk write mixin for CypherGraphDB."""
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..backend import BackendCapability
 from ..models import GraphEdge, GraphNode
 from ..statistics import IndexInfo
 from .bulk_normalize import normalize_edges_input, normalize_nodes_input
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class IndexingMixin:
+
+class IndexingMixin(_Host):
     """Mixin providing index management and bulk write operations for CypherGraphDB."""
 
     def has_capability(self, capability: BackendCapability) -> bool:

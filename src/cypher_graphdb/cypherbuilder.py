@@ -311,7 +311,7 @@ class CypherBuilder:
             return "", {}
 
         label = (f":{criteria.label_}" if criteria.label_ else "") if with_label else ""
-        params = {}
+        params: dict = {}
         props_fragment = ""
         if criteria.properties_ and len(criteria.properties_):
             props_fragment, params = _props_to_params(criteria.properties_, prefix=f"_c{prefix}_")

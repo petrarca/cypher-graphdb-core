@@ -32,7 +32,7 @@ class CommandReader(Iterable[str]):
         """Yield each complete statement (no trailing ';')."""
         acc = ""
         in_single = in_double = False
-        for raw_line in self._fd:  # type: ignore[arg-type]
+        for raw_line in self._fd:
             line = raw_line.rstrip("\n")
             stripped = line.strip()
             if not stripped and not acc:

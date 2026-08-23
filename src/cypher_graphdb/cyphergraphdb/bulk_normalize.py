@@ -9,9 +9,25 @@ the label automatically from the decorator registration.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from ..models import GraphEdge, GraphNode
+
+
+def _require_graph_info(obj: GraphNode | GraphEdge, op_name: str):
+    """Return ``obj.graph_info_``, raising if the class was never registered.
+
+    ``graph_info_`` is ``None`` until a class is decorated with ``@node()`` /
+    ``@edge()`` (see ``ModelProvider``); a plain ``GraphNode``/``GraphEdge``
+    instance (or an unregistered subclass) has no label to derive.
+    """
+    info = obj.graph_info_
+    if info is None:
+        raise ValueError(
+            f"{op_name}: {type(obj).__name__} is not registered via @node()/@edge() "
+            "(graph_info_ is None); pass 'label' explicitly or register the model"
+        )
+    return info
 
 
 def normalize_nodes_input(
@@ -44,9 +60,12 @@ def normalize_nodes_input(
 
     first = rows[0]
     if isinstance(first, GraphNode):
-        return _normalize_typed_nodes(rows, label)
+        # `isinstance(first, ...)` narrows `first`, not `rows` itself (still the
+        # declared union). `_normalize_typed_nodes` re-validates every element,
+        # so the cast merely restates what that check enforces at runtime.
+        return _normalize_typed_nodes(cast("Sequence[GraphNode]", rows), label)
     if isinstance(first, dict):
-        return _normalize_dict_nodes(rows, label)
+        return _normalize_dict_nodes(cast("Sequence[dict[str, Any]]", rows), label)
 
     raise TypeError(
         f"bulk_create_nodes: 'rows' must be list[dict] or list[GraphNode], got element of type {type(first).__name__}"
@@ -55,14 +74,15 @@ def normalize_nodes_input(
 
 def _normalize_typed_nodes(rows: Sequence[GraphNode], label: str | None) -> tuple[str, list[dict[str, Any]]]:
     """Convert a list of GraphNode instances to (label, dict_rows)."""
-    derived = rows[0].graph_info_.label_
+    derived = _require_graph_info(rows[0], "bulk_create_nodes").label_
     for i, node in enumerate(rows):
         if not isinstance(node, GraphNode):
             raise TypeError(f"bulk_create_nodes: rows[{i}] is {type(node).__name__}, expected GraphNode (cannot mix types)")
-        if node.graph_info_.label_ != derived:
+        node_label = _require_graph_info(node, "bulk_create_nodes").label_
+        if node_label != derived:
             raise ValueError(
                 f"bulk_create_nodes: all GraphNode instances must share the same label "
-                f"(rows[0]={derived!r}, rows[{i}]={node.graph_info_.label_!r})"
+                f"(rows[0]={derived!r}, rows[{i}]={node_label!r})"
             )
     if label is not None and label != derived:
         raise ValueError(f"bulk_create_nodes: explicit label {label!r} does not match instances' label {derived!r}")
@@ -117,14 +137,17 @@ def normalize_edges_input(
 
     first = edges[0]
     if isinstance(first, GraphEdge):
-        return _normalize_typed_edges(edges, src_refs, dst_refs, label)
+        # `isinstance(first, ...)` narrows `first`, not `edges` itself (still the
+        # declared union). `_normalize_typed_edges` re-validates every element,
+        # so the cast merely restates what that check enforces at runtime.
+        return _normalize_typed_edges(cast("Sequence[GraphEdge]", edges), src_refs, dst_refs, label)
     if isinstance(first, dict):
         if src_refs is not None or dst_refs is not None:
             raise ValueError(
                 "bulk_create_edges: 'src_refs' / 'dst_refs' must be None when 'edges' are dicts "
                 "(dicts carry 'src'/'dst' directly)"
             )
-        return _normalize_dict_edges(edges, label)
+        return _normalize_dict_edges(cast("Sequence[dict[str, Any]]", edges), label)
 
     raise TypeError(
         f"bulk_create_edges: 'edges' must be list[dict] or list[GraphEdge], got element of type {type(first).__name__}"
@@ -146,15 +169,16 @@ def _normalize_typed_edges(
             f"(edges={len(edges)}, src_refs={len(src_refs)}, dst_refs={len(dst_refs)})"
         )
 
-    derived = edges[0].graph_info_.label_
+    derived = _require_graph_info(edges[0], "bulk_create_edges").label_
     result: list[dict[str, Any]] = []
     for i, edge_obj in enumerate(edges):
         if not isinstance(edge_obj, GraphEdge):
             raise TypeError(f"bulk_create_edges: edges[{i}] is {type(edge_obj).__name__}, expected GraphEdge (cannot mix types)")
-        if edge_obj.graph_info_.label_ != derived:
+        edge_label = _require_graph_info(edge_obj, "bulk_create_edges").label_
+        if edge_label != derived:
             raise ValueError(
                 f"bulk_create_edges: all GraphEdge instances must share the same label "
-                f"(edges[0]={derived!r}, edges[{i}]={edge_obj.graph_info_.label_!r})"
+                f"(edges[0]={derived!r}, edges[{i}]={edge_label!r})"
             )
         edge_dict: dict[str, Any] = {"src": src_refs[i], "dst": dst_refs[i]}
         edge_dict.update(edge_obj.flatten_properties())

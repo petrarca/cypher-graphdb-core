@@ -5,13 +5,18 @@ identifiers, labels, and properties management.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, model_serializer
+from pydantic.fields import FieldInfo
 
 from . import config, utils
+
+if TYPE_CHECKING:
+    from .modelinfo import GraphEdgeInfo, GraphNodeInfo
 
 # Type aliases for query results
 TabularResult = list[tuple[Any, ...]]
@@ -155,6 +160,12 @@ class GraphPropertiesMixin:
 
     properties_: dict[str, Any] = {}
 
+    if TYPE_CHECKING:
+        # Provided by the pydantic.BaseModel this mixin is always combined
+        # with (GraphNode/GraphEdge); declared here so type checking of
+        # this mixin's own methods can see it.
+        model_fields: ClassVar[dict[str, FieldInfo]]
+
     def flatten_properties(self):
         """Merge model fields with dynamic properties into a single dict."""
         # Manually extract model fields to avoid recursive model_dump() call
@@ -185,7 +196,7 @@ class GraphPropertiesMixin:
 
         return result
 
-    def resolve_model_properties(self, default_from_values: bool = False) -> dict[str, Field]:
+    def resolve_model_properties(self, default_from_values: bool = False) -> dict[str, FieldInfo]:
         """Extract model fields and dynamic properties as Pydantic Field definitions."""
         # Access model_fields from the class instead of the instance (Pydantic v2.11+ recommendation)
         result = {name: field for name, field in self.__class__.model_fields.items() if not name.startswith("_")}
@@ -289,7 +300,7 @@ class GraphLabelMixin:
     def _resolve_label(self):
         """Set label from graph_info_ if not already assigned."""
         if self.label_ is None:
-            if hasattr(self, "graph_info_"):
+            if getattr(self, "graph_info_", None) is not None:
                 self.label_ = self.graph_info_.label_
             else:
                 raise RuntimeError(f"Graph object {self} does not have a label!")
@@ -303,6 +314,9 @@ class GraphNode(
     DictAccessMixin,
 ):
     """Graph node with ID, label, and dynamic properties."""
+
+    # Set by ModelProvider.node()/relation() decorators; None until registered.
+    graph_info_: ClassVar[GraphNodeInfo | None] = None
 
     @property
     def type_(self):
@@ -349,6 +363,9 @@ class GraphEdge(
     DictAccessMixin,
 ):
     """Directed graph edge connecting two nodes."""
+
+    # Set by ModelProvider.edge() decorator; None until registered.
+    graph_info_: ClassVar[GraphEdgeInfo | None] = None
 
     start_id_: int | None = None
     end_id_: int | None = None
@@ -519,16 +536,19 @@ class Graph(GraphObject):
 
     def grouped_entities(self):
         # combine the two dictionaries nodes and edge labels do not intersect
-        result = {}
+        result: dict[str, list[GraphNode | GraphEdge]] = {}
         result.update(self.grouped_nodes())
         result.update(self.grouped_edges())
 
         return result
 
-    def _group_by_label(self, entities: list[GraphObject]) -> dict[str, list[GraphObject]]:
-        result = {}
+    def _group_by_label(self, entities: Sequence[GraphNode | GraphEdge]) -> dict[str, list[GraphNode | GraphEdge]]:
+        result: dict[str, list[GraphNode | GraphEdge]] = {}
 
-        for entity in entities.copy():
+        for entity in list(entities):
+            # Entities stored in a Graph are always labeled (assigned on
+            # creation/resolution); label_ is only Optional pre-resolution.
+            assert entity.label_ is not None
             result.setdefault(entity.label_, []).append(entity)
 
         return result

@@ -68,21 +68,21 @@ class GraphModelInfo(BaseModel):
         )
 
     @property
-    def type_(self) -> str:
+    def type_(self) -> GraphObjectType:
         """Get the graph object type.
 
         Returns:
-            Type string (overridden in subclasses).
+            Type enum member (overridden in subclasses).
         """
         return GraphObjectType.UNDEFINED
 
     @property
-    def fields(self) -> dict[str, dict[str, Any]]:
+    def fields(self) -> dict[str, FieldInfo]:
         """Expose model fields excluding reserved core GraphDB attributes."""
         if self.graph_model is None:
-            return ()
+            return {}
 
-        fields_to_remove: set[str] = config.EDGE_FIELDS if self.type_ == GraphObjectType.EDGE else config.NODE_FIELDS
+        fields_to_remove: set[str] = set(config.EDGE_FIELDS if self.type_ == GraphObjectType.EDGE else config.NODE_FIELDS)
 
         return utils.remove_from_dict(self.graph_model.model_fields, fields_to_remove)
 
@@ -142,7 +142,7 @@ class GraphModelInfo(BaseModel):
     @staticmethod
     def _is_field_required(field: FieldInfo) -> bool:
         if hasattr(field, "is_required"):
-            return field.is_required()  # type: ignore[call-arg]
+            return field.is_required()
 
         default = getattr(field, "default", PydanticUndefined)
         default_factory = getattr(field, "default_factory", PydanticUndefined)
@@ -198,7 +198,7 @@ class GraphNodeInfo(GraphModelInfo):
     relations: list[GraphRelationInfo] = []
 
     @property
-    def type_(self) -> str:
+    def type_(self) -> GraphObjectType:
         """Get the graph object type for nodes.
 
         Returns:
@@ -229,7 +229,7 @@ class GraphEdgeInfo(GraphModelInfo):
     """
 
     @property
-    def type_(self) -> str:
+    def type_(self) -> GraphObjectType:
         """Get the graph object type for edges.
 
         Returns:

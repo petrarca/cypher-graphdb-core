@@ -1,6 +1,6 @@
 """Dump backends command implementation."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cypher_graphdb import utils
 from cypher_graphdb.backendprovider import backend_provider
@@ -38,6 +38,8 @@ class DumpBackendsCommand(BaseCommand):
         Returns:
             bool: True if command executed successfully
         """
+        result: Any
+        render_kwargs: dict[str, Any] | None
         if not parsed_cmd.args:
             # List all backends
             result = vars(backend_provider)

@@ -5,14 +5,22 @@ through the command-line interface.
 """
 
 import sys
-from typing import Any
+from typing import Any, cast
 
 import rich
 from prompt_toolkit import prompt
 
 import cypher_graphdb.config as config
 import cypher_graphdb.utils as utils
-from cypher_graphdb import CypherGraphDB, GraphEdge, GraphNode, MatchEdgeCriteria, MatchNodeCriteria, backend_provider
+from cypher_graphdb import (
+    CypherGraphDB,
+    GraphEdge,
+    GraphNode,
+    MatchCriteria,
+    MatchEdgeCriteria,
+    MatchNodeCriteria,
+    backend_provider,
+)
 from cypher_graphdb.cli.renderer import ResultRenderer
 from cypher_graphdb.settings import get_settings
 
@@ -23,7 +31,7 @@ class CLIGraphDB(GraphDBProvider):
     """CLI provider for graph database operations and connection management."""
 
     def __init__(self, renderer: ResultRenderer, autocommit: bool = True):
-        self.db = None
+        self.db: CypherGraphDB | None = None
         self._renderer = renderer
         self._autocommit = autocommit
         self._autoconfirm = False
@@ -54,7 +62,8 @@ class CLIGraphDB(GraphDBProvider):
     def autoconfirm(self, value):
         self._autoconfirm = value
 
-    def get_graphs(self) -> tuple[str]:
+    def get_graphs(self) -> list[str]:
+        assert self.db
         return self.db.graphs()
 
     def connect(self, from_prompt: bool = False) -> bool:
@@ -115,6 +124,7 @@ class CLIGraphDB(GraphDBProvider):
         return True
 
     def execute(self, cyper_cmd: str) -> list[tuple[Any, ...]]:
+        assert self.db
         return self.db.execute(cyper_cmd, unnest_result=False)
 
     def execute_with_stats(
@@ -133,9 +143,11 @@ class CLIGraphDB(GraphDBProvider):
         Returns:
             QueryResult: Complete query result with data, statistics, and parsed query
         """
+        assert self.db
         return self.db.execute_with_stats(cyper_cmd, fetch_one=fetch_one, raw_data=raw_data, unnest_result=unnest_result)
 
     def execute_sql(self, sql_str: str) -> list[tuple[Any, ...]]:
+        assert self.db
         return self.db.execute_sql(sql_str, unnest_result=False)
 
     def execute_sql_with_stats(
@@ -154,6 +166,7 @@ class CLIGraphDB(GraphDBProvider):
         Returns:
             QueryResult: Complete query result with data, execution statistics, and SQL statistics
         """
+        assert self.db
         return self.db.execute_sql_with_stats(sql_str, fetch_one=fetch_one, raw_data=raw_data, unnest_result=unnest_result)
 
     def commit(self) -> bool:
@@ -215,6 +228,7 @@ class CLIGraphDB(GraphDBProvider):
         return result
 
     def change_graph(self, args) -> bool:
+        assert self.db
         if not (graph_name := self._resolve_graph_name(args)):
             return False
 
@@ -258,7 +272,8 @@ class CLIGraphDB(GraphDBProvider):
 
     def create_linked_node(
         self, linked_node: GraphNode, direction: str, edge_label: str, args, kwargs
-    ) -> tuple[GraphNode, GraphEdge, GraphNode] | None:
+    ) -> list[tuple[GraphNode, GraphEdge, GraphNode]] | None:
+        assert self.db
         node_fields = self._resolve_fields(GraphNode, args[0], kwargs)
         node = GraphNode(**node_fields)
 
@@ -275,7 +290,9 @@ class CLIGraphDB(GraphDBProvider):
             rich.print("[blue]Auto-confirming creation of node and edge")
 
         # required to create id
-        node = self.db.create_or_merge(node)
+        # create_or_merge is typed to accept/return GraphNode | GraphEdge | Graph
+        # generically; passing a GraphNode always returns a GraphNode.
+        node = cast(GraphNode, self.db.create_or_merge(node))
 
         if direction == config.TREE_DIRECTION_OUTGOING:
             edge_links = {"start_id_": node.id_, "end_id_": linked_node.id_}
@@ -283,11 +300,12 @@ class CLIGraphDB(GraphDBProvider):
             edge_links = {"start_id_": linked_node.id_, "end_id_": node.id_}
 
         edge.__dict__.update(edge_links)
-        edge = self.db.create_or_merge(edge)
+        edge = cast(GraphEdge, self.db.create_or_merge(edge))
 
         return [(node, edge, linked_node)]
 
-    def create_node(self, args, kwargs) -> GraphNode:
+    def create_node(self, args, kwargs) -> list[tuple[GraphNode]] | bool | None:
+        assert self.db
         if len(args) != 1:
             return None
 
@@ -304,13 +322,14 @@ class CLIGraphDB(GraphDBProvider):
         else:
             rich.print("[blue]Auto-confirming creation of node")
 
-        node = self.db.create_or_merge(node)
+        node = cast(GraphNode, self.db.create_or_merge(node))
         rich.print("\n[green]Successfully created")
 
         # convert to result set: List[Tuple[]]
         return [(node,)]
 
-    def create_edge(self, start_node: GraphNode, end_node: GraphNode, args, kwargs) -> GraphEdge:
+    def create_edge(self, start_node: GraphNode, end_node: GraphNode, args, kwargs) -> list[tuple[GraphEdge]] | bool | None:
+        assert self.db
         # <label>
         if len(args) > 1:
             return None
@@ -340,12 +359,13 @@ class CLIGraphDB(GraphDBProvider):
         else:
             rich.print("[blue]Auto-confirming creation of edge")
 
-        edge = self.db.create_or_merge(edge)
+        edge = cast(GraphEdge, self.db.create_or_merge(edge))
 
         # convert to result set: List[Tuple[]]
         return [(edge,)]
 
-    def update_graph_obj(self, graphobj, args, kwargs) -> GraphNode | GraphEdge:
+    def update_graph_obj(self, graphobj, args, kwargs) -> list[tuple[GraphNode | GraphEdge]] | None:
+        assert self.db
         if len(args) > 1:
             return None
 
@@ -371,6 +391,7 @@ class CLIGraphDB(GraphDBProvider):
             return None
 
     def delete_graph_obj(self, graphobj, args, kwargs) -> bool:
+        assert self.db
         if len(args) > 1:
             return False
 
@@ -403,7 +424,7 @@ class CLIGraphDB(GraphDBProvider):
 
         return fields
 
-    def _create_criteria_from_args(self, cls, args, kwargs) -> bool:
+    def _create_criteria_from_args(self, cls, args, kwargs) -> MatchCriteria | None:
         label = None
 
         if args:

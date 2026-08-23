@@ -184,7 +184,7 @@ def _parse_path(raw: str) -> Path:
     clean = _ELEMENT_ANNOTATION_RE.sub("}", inner)
     elements_raw = json.loads(clean)
 
-    entities = []
+    entities: list[Vertex | Edge] = []
     for i, elem in enumerate(elements_raw):
         if i % 2 == 0:
             entities.append(_vertex_from_dict(elem))

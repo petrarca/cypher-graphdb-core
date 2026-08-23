@@ -205,7 +205,7 @@ integration tests need Docker.
 
 ```bash
 task install           # venv + editable install
-task fct               # format + check + unit tests — the local loop
+task fct               # format + check + typecheck + unit tests — the local loop
 task test:all          # unit + integration
 task run:cli           # run cypher-graphdb from the venv
 ```

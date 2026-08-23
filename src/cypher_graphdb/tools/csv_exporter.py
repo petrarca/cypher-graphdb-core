@@ -17,15 +17,15 @@ class CsvExporter(FileExporter):
     to CSV format files.
     """
 
-    def __init__(self, db: Any, opts: FileExporterOptions = None) -> None:
+    def __init__(self, db: Any, opts: FileExporterOptions | None = None) -> None:
         """Initialize CSV exporter.
 
         Args:
             db: CypherGraphDB instance to export data from.
             opts: Export options configuration.
         """
-        super().__init__(db)
-        self.valid_file_extensions = ".csv"
+        super().__init__(db, opts)
+        self.valid_file_extensions = (".csv",)
 
     def _write_to_file(self, items, dirname, filename):
         if not items:

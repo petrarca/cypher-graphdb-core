@@ -41,7 +41,11 @@ class GraphJSONEncoder(json.JSONEncoder):
             JSON string representation of the object.
         """
         if isinstance(o, GraphNode | GraphEdge | GraphPath | Graph):
-            return o.model_dump_json(indent=self.indent, context={"with_type": self.with_type})
+            # json.JSONEncoder.indent may be a str (indent chars); pydantic's
+            # model_dump_json only accepts int | None, so fall back to
+            # unindented output for that (unsupported-by-pydantic) case.
+            indent = self.indent if isinstance(self.indent, int) else None
+            return o.model_dump_json(indent=indent, context={"with_type": self.with_type})
 
         if utils.is_scalar_type(o) or o is None:
             return super().encode({"val": o})

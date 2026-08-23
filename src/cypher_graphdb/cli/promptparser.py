@@ -7,7 +7,7 @@ extracting arguments, and mapping them to appropriate handlers.
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from cypher_graphdb import utils
 from cypher_graphdb.cli import promptgrammar
@@ -17,6 +17,11 @@ from cypher_graphdb.cli.commandposition import CommandPosition
 class PromptParserCmd(BaseModel):
     """Parsed command representation with arguments, options, and metadata."""
 
+    # forbid=extra avoids the pydantic mypy plugin synthesizing a `**kwargs: Any`
+    # parameter on __init__/model_construct, which collides with the real
+    # `kwargs` field below (both named "kwargs" -> mypy [no-redef]).
+    model_config = ConfigDict(extra="forbid")
+
     options: str | None
     action: str
     cmd: str | None
@@ -24,7 +29,7 @@ class PromptParserCmd(BaseModel):
     kwargs: dict[str, Any] | None
     pos: int | None = None
     require_backend: bool
-    parse_result: PromptParserResult = None
+    parse_result: PromptParserResult | None = None
     mappings: dict[str, Any] | None
     _input: object = None
     _output: object = None
@@ -50,20 +55,30 @@ class PromptParserCmd(BaseModel):
 
         return any(self.action.upper() == v.upper() for v in action)
 
+    def _require_parse_result(self) -> PromptParserResult:
+        """Return the owning parse result, asserting the invariant that it is set.
+
+        `parse_result` is only unset for commands produced via the standalone
+        `PromptParser.parse_cmd()` path (used by the completer and rewrite
+        helpers), which never call sequence-position accessors below.
+        """
+        assert self.parse_result is not None, "parse_result not set on this command"
+        return self.parse_result
+
     def is_singlecmd(self) -> bool:
-        return len(self.parse_result.cmds) == 1
+        return len(self._require_parse_result().cmds) == 1
 
     def is_firstcmd(self) -> bool:
-        return self == self.parse_result.cmds[0]
+        return self == self._require_parse_result().cmds[0]
 
     def is_lastcmd(self) -> bool:
-        return self == self.parse_result.cmds[-1]
+        return self == self._require_parse_result().cmds[-1]
 
     def priorcmd(self):
-        return self.parse_result.cmds[self.pos - 1] if not self.is_firstcmd() else None
+        return self._require_parse_result().cmds[self.pos - 1] if not self.is_firstcmd() else None
 
     def nextcmd(self):
-        return self.parse_result.cmds[self.pos + 1] if not self.is_lastcmd() else None
+        return self._require_parse_result().cmds[self.pos + 1] if not self.is_lastcmd() else None
 
     def has_nextcmd(self) -> bool:
         return self.nextcmd() is not None
@@ -72,7 +87,7 @@ class PromptParserCmd(BaseModel):
         return self.priorcmd() is not None
 
     def has_shellcmd(self):
-        return self.parse_result.has_shellcmd()
+        return self._require_parse_result().has_shellcmd()
 
     def is_finalcmd(self) -> bool:
         return (self.is_singlecmd() or self.is_lastcmd()) and not self.has_shellcmd()
@@ -81,10 +96,11 @@ class PromptParserCmd(BaseModel):
         self._output = self._input
 
     def get_kwarg(self, name, default: Any = None) -> str | None:
-        return self.kwargs.get(name, default)
+        return (self.kwargs or {}).get(name, default)
 
-    def get_arg(self, pos, default=None, cast_to: type = None) -> object | None:
-        result = default if pos < 0 or pos >= len(self.args) else self.args[pos]
+    def get_arg(self, pos, default=None, cast_to: type | None = None) -> object | None:
+        args = self.args or []
+        result = default if pos < 0 or pos >= len(args) else args[pos]
 
         if cast_to is not None:
             result = cast_to(result)
@@ -92,7 +108,7 @@ class PromptParserCmd(BaseModel):
         return result
 
     def has_arg(self, name: str) -> bool:
-        return name in self.args
+        return name in (self.args or [])
 
     def has_num_args(self, min_len: int = 0, max_len: int | None = None) -> bool:
         if max_len is None:
@@ -107,7 +123,7 @@ class PromptParserCmd(BaseModel):
         else:
             return min_len == 0
 
-    def replay(self, replaced_cmd: type[PromptParserCmd] | None):
+    def replay(self, replaced_cmd: PromptParserCmd | None):
         if replaced_cmd is not None:
             values = replaced_cmd.model_dump()
             del values["pos"]
@@ -116,7 +132,7 @@ class PromptParserCmd(BaseModel):
             self.__dict__.update(values)
 
         # replay the command
-        self.parse_result.replay_cmd = True
+        self._require_parse_result().replay_cmd = True
 
 
 class PromptParserResult(BaseModel):
@@ -127,7 +143,7 @@ class PromptParserResult(BaseModel):
     shell_cmd: str
     exit_cmd: bool = False
     replay_cmd: bool = False
-    failed_reason: str = None
+    failed_reason: str | None = None
 
     def failed(self) -> bool:
         return self.failed_reason is not None
@@ -142,7 +158,7 @@ class PromptParserResult(BaseModel):
 class PromptParser:
     """Command line parser that maps user input to structured commands."""
 
-    def __init__(self, cmd_map: dict[str, list[str]], default_action=None) -> None:
+    def __init__(self, cmd_map: dict[str, dict[str, Any]], default_action=None) -> None:
         self.cmd_map = self._prepare_cmd_map(cmd_map)
 
         self._default_action = default_action
@@ -206,7 +222,7 @@ class PromptParser:
         exec_cmd: Callable,
         pipe_to_shellcmd: Callable,
     ) -> bool:
-        priorcmd: PromptParserCmd = None
+        priorcmd: PromptParserCmd | None = None
 
         for cmd in parse_result.cmds:
             while True:

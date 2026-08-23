@@ -23,7 +23,7 @@ class CommandLinePrompt:
         self,
         prompt_parser: PromptParser,
         providers: CLIProviders,
-        on_resolve_prompt: Callable[[], str] = None,
+        on_resolve_prompt: Callable[[], str] | None = None,
     ):
         self._session_store = ".cgdb_history"
         self._prompt_parser = prompt_parser
@@ -35,13 +35,13 @@ class CommandLinePrompt:
         assert handler is not None
 
         history = FileHistory(self._session_store) if self._session_store else InMemoryHistory()
-        session = PromptSession(history=history)
+        session: PromptSession[str] = PromptSession(history=history)
 
         kb = KeyBindings()
 
         @kb.add("escape", "enter")
         def _(event: KeyPressEvent):
-            event.current_bufer.insert_text("\n")
+            event.current_buffer.insert_text("\n")
 
         @kb.add("enter")
         def _(event: KeyPressEvent):

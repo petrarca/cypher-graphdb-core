@@ -1,7 +1,7 @@
 """GID command implementation for generating unique string IDs."""
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import rich
 
@@ -26,7 +26,7 @@ class GidCommand(BaseCommand):
     command_name = "gid"
 
     # For command line parsing
-    command_map_entry = BaseCommand.create_command_map_entry("gid", tokens={"gid"}, requires_backend=False)
+    command_map_entry = BaseCommand.create_command_map_entry("gid", tokens=["gid"], requires_backend=False)
 
     def execute(self, parsed_cmd: PromptParserCmd) -> bool:
         """Execute the gid command.
@@ -38,7 +38,9 @@ class GidCommand(BaseCommand):
             True if execution was successful, False on error
         """
         try:
-            n = parsed_cmd.get_arg(0, 1, int)
+            # get_arg's cast_to parameter guarantees an int here, but its
+            # signature can't express that dependency statically.
+            n = cast(int, parsed_cmd.get_arg(0, 1, int))
         except ValueError:
             rich.print(f"[red]Invalid argument {parsed_cmd.args}!", file=sys.stderr)
             return False

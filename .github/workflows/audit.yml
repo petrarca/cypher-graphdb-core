@@ -1,0 +1,45 @@
+name: Dependency audit
+
+# Scan the committed lockfile against OSV for known-vulnerable Python
+# dependencies. This is a PR gate, not a push gate: a push to main is never
+# blocked by it (a newly-disclosed, unfixable CVE must never stop unrelated
+# work). It also exposes a manual "Run workflow" button in the Actions tab.
+#
+# Fail policy: unfixable CVEs are listed under [tool.uv.audit] ignore-until-fixed
+# in pyproject.toml, so the gate only fails on vulnerabilities that have a fix
+# available -- i.e. something a PR author can actually act on. When an upstream
+# fix ships, uv audit reports the CVE again and the gate resumes failing on it.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        # setup-uv publishes no floating major tag after v7, so this is pinned
+        # exactly. Bump deliberately when a new version ships.
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "latest"
+
+      # --locked fails if uv.lock is stale rather than auditing a re-resolved
+      # graph. Reads the lock only -- no venv sync -- so it is fast.
+      - name: Audit dependencies (uv audit / OSV)
+        run: uv audit --locked --preview-features audit-command

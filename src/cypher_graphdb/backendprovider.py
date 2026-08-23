@@ -7,7 +7,7 @@ import collections.abc
 import importlib
 import threading
 from collections.abc import Iterator
-from typing import Final
+from typing import Any, Final, Literal, overload
 
 from loguru import logger
 
@@ -23,7 +23,7 @@ class BackendProvider(collections.abc.Collection):
         self._backends: dict[str, CypherBackend | type[CypherBackend]] = {}
         self._lock = threading.RLock()
 
-    def register(self, name: str, cls: CypherBackend) -> None:
+    def register(self, name: str, cls: type[CypherBackend]) -> None:
         """Register a backend class under the given name.
 
         Args:
@@ -36,7 +36,15 @@ class BackendProvider(collections.abc.Collection):
 
         self._backends[name.casefold()] = cls
 
-    def check_and_resolve(self, backend_ref: CypherBackend | str, raise_error=False) -> CypherBackend:
+    @overload
+    def check_and_resolve(self, backend_ref: CypherBackend | str, raise_error: Literal[True]) -> CypherBackend: ...
+
+    @overload
+    def check_and_resolve(
+        self, backend_ref: CypherBackend | str, raise_error: Literal[False] = False
+    ) -> CypherBackend | None: ...
+
+    def check_and_resolve(self, backend_ref: CypherBackend | str, raise_error: bool = False) -> CypherBackend | None:
         """Validate and resolve a backend reference to an instantiated backend.
 
         Args:
@@ -61,7 +69,7 @@ class BackendProvider(collections.abc.Collection):
                 raise RuntimeError(failure)
             return None
 
-        if not (result := backend_provider.resolve(backend_ref)) and raise_error:
+        if not (result := self.resolve(backend_ref)) and raise_error:
             raise RuntimeError(f"Invalid backend: '{backend_ref}'.")
 
         return result
@@ -78,7 +86,7 @@ class BackendProvider(collections.abc.Collection):
         """
         return self._backends.get(name.casefold(), None)
 
-    def resolve(self, name: str) -> CypherBackend:
+    def resolve(self, name: str) -> CypherBackend | None:
         """Load and return a fresh backend instance for the given name.
 
         Each call returns a **new instance** so that multiple pools using the
@@ -153,12 +161,21 @@ class BackendProvider(collections.abc.Collection):
     def __len__(self) -> int:
         return len(self._backends)
 
-    def __iter__(self) -> Iterator[tuple[str, CypherBackend]]:
+    def __iter__(self) -> Iterator[str]:
+        # Matches ModelProvider: __iter__ yields registered names, consistent
+        # with the Collection contract's "name in provider" membership check.
         return iter(self._backends)
 
     @property
-    def __dict__(self) -> dict[str, CypherBackend | str]:
-        """Return registry state as a serializable dict for introspection."""
+    def __dict__(self) -> dict[str, Any]:  # type: ignore[override]
+        """Return registry state as a serializable dict for introspection.
+
+        Deliberate override so vars(backend_provider)/**backend_provider yield
+        the serialized registry (used by CLI dump commands), not the internal
+        __dict__ slots. See ModelProvider.__dict__ for the same pattern and
+        rationale (no sound way to type a read-only override of a writable
+        base attribute).
+        """
         return {
             name: utils.to_collection(backend) if isinstance(backend, CypherBackend) else backend
             for name, backend in self._backends.items()

@@ -211,7 +211,8 @@ class GraphObjectSchema(BaseModel):
     @model_serializer
     def serialize_model(self, _) -> dict[str, Any]:
         """Serialize the schema with ordered keys (title, type, properties, required first)."""
-        return utils.order_dict(
-            utils.to_collection(self.json_schema),
-            ("title", "type", "properties", "required"),
-        )
+        schema = self.json_schema
+        if schema is None:
+            return {}
+
+        return utils.order_dict(schema, ("title", "type", "properties", "required"))

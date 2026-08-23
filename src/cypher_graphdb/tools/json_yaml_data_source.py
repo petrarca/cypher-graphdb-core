@@ -93,15 +93,13 @@ class JsonYamlDataSource:
             raise OSError(f"Failed to write file {filename}: {e}") from e
 
     @staticmethod
-    def get_file_extensions() -> set[str]:
+    def get_file_extensions() -> tuple[str, ...]:
         """Return supported file extensions.
 
         Returns:
-            Set of supported file extensions including dot prefixes.
+            Tuple of supported file extensions including dot prefixes.
         """
-        extensions = {".json"}
-        if YAML_AVAILABLE:
-            extensions.update({".yaml", ".yml"})
+        extensions = (".json", ".yaml", ".yml") if YAML_AVAILABLE else (".json",)
         return extensions
 
     @staticmethod

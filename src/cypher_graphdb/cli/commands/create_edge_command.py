@@ -40,7 +40,7 @@ class CreateEdgeCommand(BaseCommand):
         Returns:
             True if command executed successfully, False otherwise
         """
-        if not parsed_cmd.has_num_args(3):
+        if not parsed_cmd.has_num_args(3) or parsed_cmd.args is None:
             # <label> <start_node_ref> <end_node_ref>
             rich.print("Invalid syntax: create edge <label>, <start_node>, <end_node>[,prop=val,...]!")
             return False

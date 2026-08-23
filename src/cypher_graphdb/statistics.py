@@ -74,10 +74,10 @@ class GraphStatistics(BaseModel):
         """
         stats = GraphStatistics()
 
-        for node in graph.nodes:
+        for node in graph.nodes.values():
             stats.track_node(node)
 
-        for edge in graph.edges:
+        for edge in graph.edges.values():
             stats.track_edge(edge)
 
         return stats
@@ -117,18 +117,14 @@ class GraphStatistics(BaseModel):
     def track_node(self, node: GraphNode) -> None:
         """Increment node count and record the node's label frequency."""
         self.nodes += 1
-        if node.label_ in self.node_labels:
-            self.node_labels[node.label_] += 1
-        else:
-            self.node_labels.update({node.label_: 1})
+        if node.label_ is not None:
+            self.node_labels[node.label_] = self.node_labels.get(node.label_, 0) + 1
 
     def track_edge(self, edge: GraphEdge) -> None:
         """Increment edge count and record the edge's label frequency."""
         self.edges += 1
-        if edge.label_ in self.edge_labels:
-            self.edge_labels[edge.label_] += 1
-        else:
-            self.edge_labels.update({edge.label_: 1})
+        if edge.label_ is not None:
+            self.edge_labels[edge.label_] = self.edge_labels.get(edge.label_, 0) + 1
 
     def __str__(self) -> str:
         """Return a formatted summary of statistics."""

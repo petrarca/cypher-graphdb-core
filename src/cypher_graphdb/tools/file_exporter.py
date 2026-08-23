@@ -36,7 +36,7 @@ class FileExporter(BaseExporter):
     including file validation and graph building capabilities.
     """
 
-    def __init__(self, db, opts: FileExporterOptions = None):
+    def __init__(self, db, opts: FileExporterOptions | None = None):
         """Initialize file exporter.
 
         Args:
@@ -49,7 +49,7 @@ class FileExporter(BaseExporter):
         assert isinstance(db, CypherGraphDB)
         self.db = db
         self.opts = opts
-        self.valid_file_extensions = set()
+        self.valid_file_extensions: tuple[str, ...] = ()
 
         self.on_export_file: Callable = lambda df, dirname, filename, partname: None
 
@@ -68,14 +68,13 @@ class FileExporter(BaseExporter):
             source: Graph data to export (Graph, query string, or list/tuple).
             file_or_dirname: Target file path or directory path.
         """
-        if not isinstance(source, Graph):
-            source = self._build_graph(source)
+        graph = source if isinstance(source, Graph) else self._build_graph(source)
 
         if self.is_valid_file(file_or_dirname):
-            self.export_to_file(source, file_or_dirname, False)
+            self.export_to_file(graph, file_or_dirname, False)
         else:
             os.makedirs(file_or_dirname, exist_ok=True)
-            self.export_to_dir(source, file_or_dirname)
+            self.export_to_dir(graph, file_or_dirname)
 
     def export_to_file(self, graph: Graph, filename: str, validate_filename: bool = True):
         """Export graph data to a single file.
@@ -113,7 +112,7 @@ class FileExporter(BaseExporter):
 
         return base_name
 
-    def _build_graph(self, source):
+    def _build_graph(self, source: str | list[Any] | tuple[Any, ...]) -> Graph:
         wrapped_source = source if isinstance(source, list | tuple) else [source]
 
         result = Graph()

@@ -8,6 +8,7 @@ import glob
 import os
 import re
 from collections.abc import Callable
+from typing import Any
 
 import cypher_graphdb.config as config
 from cypher_graphdb import CypherGraphDB
@@ -31,16 +32,17 @@ class FileImporter(BaseImporter):
         """
         assert isinstance(db, CypherGraphDB)
         self.db = db
-        self.valid_file_extensions = set()
+        self.valid_file_extensions: tuple[str, ...] = ()
 
         self.on_import_file: Callable = lambda filename, partname, count=None: None
         self.on_invalid_file: Callable = lambda filename: None
 
-    def statistics(self) -> None:
+    def statistics(self) -> dict[str, Any] | None:
         """Get import statistics.
 
         Returns:
-            None (to be implemented by subclasses).
+            Dictionary with import statistics, or None if the subclass does
+            not track any (base implementation).
 
         """
         return None

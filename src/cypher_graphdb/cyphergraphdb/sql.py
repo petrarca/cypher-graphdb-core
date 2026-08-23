@@ -1,6 +1,6 @@
 """SQL execution mixin for CypherGraphDB."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -8,16 +8,21 @@ from .. import utils
 from ..models import TabularResult
 from .result import QueryResult
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class SqlMixin:
+
+class SqlMixin(_Host):
     """Mixin providing SQL execution methods for CypherGraphDB."""
 
     def execute_sql(
         self,
         sql_str: str,
-        unnest_result: str | bool = None,
-        fetch_one=False,
-        raw_data=False,
+        unnest_result: str | bool | None = None,
+        fetch_one: bool = False,
+        raw_data: bool = False,
     ) -> Any | TabularResult:
         """Execute a raw SQL command and return results, with optional unnesting."""
         assert self._backend
@@ -30,7 +35,7 @@ class SqlMixin:
     def execute_sql_with_stats(
         self,
         sql_str: str,
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool = False,
         raw_data: bool = False,
     ) -> QueryResult:

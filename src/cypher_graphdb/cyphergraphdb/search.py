@@ -1,6 +1,6 @@
 """Full-text search mixin for CypherGraphDB."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -8,12 +8,21 @@ from .. import utils
 from ..cypherparser import ParsedCypherQuery
 from ..models import TabularResult
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class SearchMixin:
+
+class SearchMixin(_Host):
     """Mixin providing full-text search methods for CypherGraphDB."""
 
     def search(
-        self, parsed_query: ParsedCypherQuery, fts_query: str, language: str = None, unnest_result: str | bool = None
+        self,
+        parsed_query: ParsedCypherQuery,
+        fts_query: str,
+        language: str | None = None,
+        unnest_result: str | bool | None = None,
     ) -> Any | TabularResult:
         """Perform full-text search on graph data using backend-specific search capabilities.
 

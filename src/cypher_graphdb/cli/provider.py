@@ -7,6 +7,7 @@ and configuration properties.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 from cypher_graphdb import GraphObject, ModelProvider
 
@@ -15,7 +16,7 @@ class GraphDBProvider(ABC):
     """Abstract base class for graph database operations provider."""
 
     @abstractmethod
-    def get_graphs(self) -> tuple[str]:
+    def get_graphs(self) -> list[str]:
         pass
 
 
@@ -31,15 +32,15 @@ class VarProvider(ABC):
     """Abstract base class for variable management provider."""
 
     @abstractmethod
-    def get_var(self, varname: str | None) -> dict:
+    def get_var(self, varname: str | None) -> Any | None:
         pass
 
     @abstractmethod
-    def get_varnames(self) -> tuple[str]:
+    def get_varnames(self) -> tuple[str, ...]:
         pass
 
     @abstractmethod
-    def set_var(self, name: str, value: object) -> dict:
+    def set_var(self, name: str, value: object) -> Any | None:
         pass
 
 
@@ -47,7 +48,7 @@ class ConfigProvider(ABC):
     """Abstract base class for configuration provider."""
 
     @abstractmethod
-    def get_props(self) -> tuple[str]:
+    def get_props(self) -> tuple[str, ...]:
         pass
 
 

@@ -24,12 +24,17 @@ pages** without requiring the user to add ``ORDER BY``.
 """
 
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..backend import BackendCapability
 from ..cypherparser import ParsedCypherQuery, parse_cypher_query
 from ..utils.column_utils import resolve_column_names
 from .pagination import Page
+
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
 # Default hard cap on rows materialized by the fallback. Protects the server
 # (and browser) from an accidentally unbounded query. The page's ``truncated``
@@ -40,7 +45,7 @@ DEFAULT_MAX_MATERIALIZED_ROWS = 50_000
 _RESERVED_PAGE_PARAMS = frozenset({"__cypher_page_skip__", "__cypher_page_limit__"})
 
 
-class PaginationMixin:
+class PaginationMixin(_Host):
     """Mixin adding windowed pagination to CypherGraphDB.
 
     Adds :meth:`execute_cypher_page` to the ``CypherGraphDB`` facade. Routing:

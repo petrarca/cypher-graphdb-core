@@ -44,10 +44,13 @@ from typing import Any, Literal, overload
 from ..cypherparser import ParsedCypherQuery, parse_cypher_query
 from ..exceptions import CypherQueryError
 from .params import AUTO_PREFIX, Param
-from .patterns import NodePattern, PathPattern, Predicate, RelPattern
+from .patterns import NodePattern, PathPattern, Predicate
 
 # Pattern-like inputs accepted where a Cypher pattern string is expected.
-_PatternInput = str | NodePattern | RelPattern | PathPattern
+# RelPattern is deliberately excluded: its render() needs left/right node
+# strings from the enclosing NodePattern/PathPattern and is never a valid
+# top-level match()/create()/merge() argument on its own.
+_PatternInput = str | NodePattern | PathPattern
 
 
 @dataclass(frozen=True)
@@ -261,9 +264,12 @@ class CypherQuery:
     def _assemble(self) -> str:
         if not self._segments:
             raise CypherQueryError("CypherQuery requires at least one clause before build()")
-        if self._cypher_cache is None:
-            object.__setattr__(self, "_cypher_cache", self._build_cypher())
-        return self._cypher_cache
+        cached = self._cypher_cache
+        if cached is None:
+            # frozen dataclass: bypass __setattr__ to cache the render result.
+            cached = self._build_cypher()
+            object.__setattr__(self, "_cypher_cache", cached)
+        return cached
 
     @overload
     def build(self, literal_binds: Literal[False] = ...) -> tuple[str, dict[str, Any]]: ...

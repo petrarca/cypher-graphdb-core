@@ -20,7 +20,7 @@ class ExcelExporter(FileExporter):
     to Excel format files, with each label type in a separate worksheet.
     """
 
-    def __init__(self, db: Any, opts: FileExporterOptions = None) -> None:
+    def __init__(self, db: Any, opts: FileExporterOptions | None = None) -> None:
         """Initialize Excel exporter.
 
         Args:

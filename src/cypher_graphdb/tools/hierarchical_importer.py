@@ -14,7 +14,7 @@ from typing import Any
 from cypher_graphdb import CypherGraphDB, utils
 from cypher_graphdb.models import GraphEdge, GraphNode
 
-from .data_flattener import DataFlattener
+from .data_flattener import DataFlattener, FlattenedNode
 from .file_importer import FileImporter
 
 
@@ -35,8 +35,8 @@ class HierarchicalImporter(FileImporter):
         self.valid_file_extensions = (".json", ".yaml", ".yml")
 
         # Import state
-        self.node_cache = {}  # GID -> database ID mapping
-        self.pending_relations = []  # Deferred relations for Phase 2
+        self.node_cache: dict[str, int] = {}  # GID -> database ID mapping
+        self.pending_relations: list[dict[str, Any]] = []  # Deferred relations for Phase 2
         self.nodes_created = 0
         self.edges_created = 0
 
@@ -204,23 +204,22 @@ class HierarchicalImporter(FileImporter):
         eliminating duplication across the importer.
         """
         result = self.db.create_or_merge(node)
+        # create_or_merge(GraphNode) always returns the same GraphNode (with updated state).
+        assert isinstance(result, GraphNode)
 
-        # Get the node ID (create_or_merge returns GraphNode with updated state)
-        if isinstance(result, GraphNode):
-            node_id = result.id_
-            # Use the actual GID from the created/merged node for caching
-            actual_gid = result.properties_.get("gid_")
-            if actual_gid:
-                self.node_cache[actual_gid] = node_id
-        else:
-            node_id = result
-            # Cache using original GID as fallback
-            if original_gid:
-                self.node_cache[original_gid] = node_id
+        node_id = result.id_
+        if node_id is None:
+            raise RuntimeError("create_or_merge did not assign a database id to the node")
+
+        # Use the actual GID from the created/merged node for caching, falling back
+        # to the original GID if the node itself has none.
+        actual_gid = result.properties_.get("gid_") or original_gid
+        if actual_gid:
+            self.node_cache[actual_gid] = node_id
 
         return node_id
 
-    def _create_node_from_flattened(self, flattened: DataFlattener.FlattenedNode) -> int:
+    def _create_node_from_flattened(self, flattened: FlattenedNode) -> int:
         """Create a node from flattened data, preserving original GID."""
 
         # Check if node with this GID already exists in cache - avoid duplicates
@@ -288,11 +287,11 @@ class HierarchicalImporter(FileImporter):
             edge_properties = DataFlattener.extract_edge_properties(relation_data)
 
             # Create edges for all target nodes
-            for target_id in target_ids:
+            for nested_target_id in target_ids:
                 if direction == "reverse":
-                    self._create_edge_and_increment(relation_key, target_id, source_id, edge_properties)
+                    self._create_edge_and_increment(relation_key, nested_target_id, source_id, edge_properties)
                 else:
-                    self._create_edge_and_increment(relation_key, source_id, target_id, edge_properties)
+                    self._create_edge_and_increment(relation_key, source_id, nested_target_id, edge_properties)
 
             # Recursively process nested relations for all target nodes
             self._process_nested_relations(relation_data, target_ids)

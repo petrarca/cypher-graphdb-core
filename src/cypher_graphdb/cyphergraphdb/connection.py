@@ -1,12 +1,17 @@
 """Connection management mixin for CypherGraphDB."""
 
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cypher_graphdb.connection_guard import assert_connection_allowed
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class ConnectionMixin:
+
+class ConnectionMixin(_Host):
     """Mixin providing connection management methods for CypherGraphDB."""
 
     def __enter__(self):
@@ -101,7 +106,7 @@ class ConnectionMixin:
             self._backend.connect(cinfo=connect_url, **kwargs)
         else:
             # Pass settings as fallbacks - explicit params take precedence
-            merged_kwargs = {}
+            merged_kwargs: dict[str, Any] = {}
 
             # Only add cinfo from settings if no explicit connection params
             # (host, port, etc.) are provided

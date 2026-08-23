@@ -37,9 +37,10 @@ class ExcelRowSource(RowSource):
     def iter_batches(self, batch_size: int) -> Iterator[list[dict[str, Any]]]:
         if self._header is None:
             self._resolve_header()
+        header = self._header or []
         batch: list[dict[str, Any]] = []
         for row in self._ws.iter_rows(min_row=2, values_only=True):
-            record = {self._header[i]: row[i] for i in range(min(len(self._header), len(row)))}
+            record = {header[i]: row[i] for i in range(min(len(header), len(row)))}
             batch.append(record)
             if len(batch) >= batch_size:
                 yield batch

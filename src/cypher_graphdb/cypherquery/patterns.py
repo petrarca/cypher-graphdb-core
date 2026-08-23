@@ -56,7 +56,7 @@ class PropertyRef:
     # __eq__ is overridden to return a Predicate instead of bool, which Python
     # would otherwise use to set __hash__ to None (making PropertyRef unhashable).
     # Restore identity-based hashing so PropertyRef stays usable in sets/dicts.
-    __hash__ = object.__hash__  # type: ignore[assignment]
+    __hash__ = object.__hash__
 
     def _compare(self, op: str, other: Any) -> Predicate:
         if isinstance(other, PropertyRef):

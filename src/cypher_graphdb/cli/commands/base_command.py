@@ -60,7 +60,7 @@ class BaseCommand(ABC):
     def create_command_map_entry(
         cls,
         action: str,
-        tokens: set[str | None],
+        tokens: list[str | None],
         object_type: GraphObjectType | None = None,
         *,
         position: CommandPosition = CommandPosition.FIRST,
@@ -76,7 +76,7 @@ class BaseCommand(ABC):
 
         Args:
             action: The action name, e.g. ``"dump_labels"``.
-            tokens: Set of tokens that trigger this command.
+            tokens: List of tokens that trigger this command.
             object_type: Optional GraphObjectType for the command.
             position: Where the command may sit in a pipeline.
             requires_backend: Whether a database connection must exist first.

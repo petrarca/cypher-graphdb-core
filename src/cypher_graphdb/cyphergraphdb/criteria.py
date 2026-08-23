@@ -59,7 +59,7 @@ class MatchCriteria(BaseModel):
 
         self._resolve_label()
 
-    def _resolve_label(self) -> str:
+    def _resolve_label(self) -> None:
         def label_to_literal(lbl) -> str:
             if isinstance(lbl, str):
                 return lbl
@@ -70,7 +70,7 @@ class MatchCriteria(BaseModel):
             raise RuntimeError("Label must either be 'str|GraphNode|GraphEdge'")
 
         if self.label_ is None:
-            return None
+            return
 
         if isinstance(self.label_, list):
             self.label_ = [label_to_literal(lbl) for lbl in self.label_]
@@ -95,8 +95,8 @@ class MatchNodeById(MatchNodeCriteria):
 class MatchEdgeCriteria(MatchCriteria):
     """Criteria for matching graph edges, including optional start/end filters and fetch behavior."""
 
-    start_criteria_: MatchCriteria = None
-    end_criteria_: MatchCriteria = None
+    start_criteria_: MatchCriteria | None = None
+    end_criteria_: MatchCriteria | None = None
     fetch_nodes_: bool = False
 
     def resolve(self):

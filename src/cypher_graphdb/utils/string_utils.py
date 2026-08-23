@@ -153,22 +153,25 @@ def dict_from_value_pairs(value_pairs: str | dict, assignment_op: str = "=", sep
     if isinstance(value_pairs, dict):
         return value_pairs
 
-    result = {}
+    result: dict[str, Any] = {}
 
     for pair in value_pairs.split(separator):
-        key, value = pair.split(assignment_op)
-        if value.startswith('"'):
-            value = value.replace('"', "")
-        elif value.startswith("'"):
-            value = value.replace("'", "")
-        elif value.isdigit():
-            value = int(value)
-        elif value.lower() in ("true", "false"):
-            value = bool(value)
-        elif value.lower() in ("null", "nil", "none"):
-            value = None
+        key, raw_value = pair.split(assignment_op)
+        parsed_value: Any = raw_value
+        if raw_value.startswith('"'):
+            parsed_value = raw_value.replace('"', "")
+        elif raw_value.startswith("'"):
+            parsed_value = raw_value.replace("'", "")
+        elif raw_value.isdigit():
+            parsed_value = int(raw_value)
+        elif raw_value.lower() in ("true", "false"):
+            # bool(raw_value) would be wrong here: any non-empty string
+            # (including "false") is truthy in Python.
+            parsed_value = raw_value.lower() == "true"
+        elif raw_value.lower() in ("null", "nil", "none"):
+            parsed_value = None
 
-        result[key.strip()] = value
+        result[key.strip()] = parsed_value
 
     return result
 

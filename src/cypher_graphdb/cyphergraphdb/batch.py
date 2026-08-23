@@ -1,13 +1,18 @@
 """Batch operations mixin for CypherGraphDB."""
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from .. import config
 from ..exceptions import ReadOnlyModeError
 from ..models import GraphEdge, GraphNode
 
+if TYPE_CHECKING:
+    from ._host import CypherGraphDBHost as _Host
+else:
+    _Host = object
 
-class BatchMixin:
+
+class BatchMixin(_Host):
     """Mixin providing batch operations for CypherGraphDB."""
 
     def create_linked_nodes(
@@ -105,6 +110,12 @@ class BatchMixin:
 
             node_maps.append(node.flatten_properties())
             edge_maps.append(edge.flatten_properties())
+
+        # linked_pairs is guaranteed non-empty by the caller (create_linked_nodes
+        # returns early on an empty list), so the loop above always ran at least
+        # once and assigned both classes. Guard explicitly rather than assume it.
+        if node_class is None or edge_class is None:
+            raise ValueError("linked_pairs must not be empty")
 
         return node_maps, edge_maps, node_class, edge_class
 

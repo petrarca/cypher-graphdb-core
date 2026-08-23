@@ -40,7 +40,7 @@ Example: `feature/add-neo4j-support`
 
 - Follow PEP 8 style guidelines
 - Use ruff for linting and formatting
-- Add type annotations to all functions and methods
+- Add type annotations to all functions and methods; checked with mypy (`task typecheck`)
 - Write tests for new functionality
 - Document your code using Google-style docstrings (see [Docstrings](#docstrings))
 
@@ -169,7 +169,7 @@ release tasks share the same names across all petrarca repos
 
 **1. Push your work and run integration tests.**
 
-The pre-commit hook formats + lints + runs unit tests on every commit.
+The pre-commit hook formats + lints + type-checks + runs unit tests on every commit.
 `task release:check` (next step) re-verifies lint and format **read-only**
 (`task verify` -- it never reformats, so it cannot dirty the tree mid-release).
 The one gate neither the hooks nor CI cover is integration tests against live

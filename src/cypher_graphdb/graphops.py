@@ -68,7 +68,7 @@ def get_nodes(graph: Graph) -> tuple[GraphNode, ...]:
     return tuple(graph.nodes.values())
 
 
-def edges_between_nodes(graph: Graph, start_ref: int, end_ref: int) -> tuple[GraphEdge]:
+def edges_between_nodes(graph: Graph, start_ref: int, end_ref: int) -> tuple[GraphEdge, ...]:
     """Find all edges connecting two specific nodes."""
     result = []
     for edge in graph.edges.values():
@@ -103,7 +103,7 @@ def get_node(graph: Graph, node_ref: int | str) -> GraphNode | None:
 
 def root_nodes(
     graph: Graph,
-    direction: str = "incoming",
+    direction: config.TreeDirection = "incoming",
     with_unbound_nodes: bool = False,
 ) -> tuple[GraphNode, ...]:
     """Find root nodes in graph based on edge direction.
@@ -156,12 +156,12 @@ def unbound_nodes(graph: Graph) -> tuple[GraphNode, ...]:
 
 def missing_nodes(graph: Graph) -> set[int]:
     """Find node IDs referenced by edges but missing from the graph."""
-    result = set()
+    result: set[int] = set()
 
     for edge in graph.edges.values():
-        if edge.start_id_ not in graph.nodes:
+        if edge.start_id_ is not None and edge.start_id_ not in graph.nodes:
             result.add(edge.start_id_)
-        if edge.end_id_ != edge.start_id_ and edge.end_id_ not in graph.nodes:
+        if edge.end_id_ is not None and edge.end_id_ != edge.start_id_ and edge.end_id_ not in graph.nodes:
             result.add(edge.end_id_)
 
     return result
@@ -230,7 +230,7 @@ def outgoing_nodes(graph: Graph, node: GraphNode, label: str | None = None) -> t
 def create_tree(
     graph: Graph,
     roots: GraphNode | tuple[GraphNode, ...],
-    direction: str = config.DEFAULT_TREE_DIRECTION,
+    direction: config.TreeDirection = config.DEFAULT_TREE_DIRECTION,
     label: str | None = None,
     max_depth: int = -1,
 ):
@@ -265,12 +265,12 @@ def create_tree(
 
         return tuple(childs)
 
-    roots = [roots] if not isinstance(roots, list | tuple) else roots
+    root_list: list[GraphNode] = list(roots) if isinstance(roots, list | tuple) else [roots]
 
     result = []
     level = 0
 
-    for node in roots:
+    for node in root_list:
         result.append([node, None, get_children(node, level + 1)])
 
     return tuple(result)
@@ -278,7 +278,7 @@ def create_tree(
 
 def build_tree(
     graph: Graph,
-    direction: str = config.DEFAULT_TREE_DIRECTION,
+    direction: config.TreeDirection = config.DEFAULT_TREE_DIRECTION,
     with_unbound_nodes: bool = True,
 ) -> TreeResult:
     """Build a complete tree from graph root nodes.
@@ -307,7 +307,7 @@ def has_cycles(graph: Graph) -> bool:
 
         # Get neighbors based on edge direction
         for edge in graph.edges.values():
-            if edge.start_id_ == node_id:
+            if edge.start_id_ == node_id and edge.end_id_ is not None:
                 neighbor_id = edge.end_id_
                 if neighbor_id not in visited:
                     if dfs(neighbor_id):
@@ -332,28 +332,58 @@ def find_connected_components(graph: Graph) -> list[set[int]]:
 
         # Check both incoming and outgoing edges for connectivity
         for edge in graph.edges.values():
-            if edge.start_id_ == node_id and edge.end_id_ not in visited:
+            if edge.start_id_ == node_id and edge.end_id_ is not None and edge.end_id_ not in visited:
                 dfs(edge.end_id_, component)
-            elif edge.end_id_ == node_id and edge.start_id_ not in visited:
+            elif edge.end_id_ == node_id and edge.start_id_ is not None and edge.start_id_ not in visited:
                 dfs(edge.start_id_, component)
 
     for node_id in graph.nodes:
         if node_id not in visited:
-            component = set()
+            component: set[int] = set()
             dfs(node_id, component)
             components.append(component)
 
     return components
 
 
-def analyze_edge_directions(graph: Graph) -> DirectionAnalysis:
-    """Analyze edge direction patterns in the graph."""
-    outgoing_count = defaultdict(int)
-    incoming_count = defaultdict(int)
+def _count_edge_directions(graph: Graph) -> tuple[defaultdict[int, int], defaultdict[int, int]]:
+    """Count outgoing/incoming edges per node id (edges with an unset endpoint are skipped)."""
+    outgoing_count: defaultdict[int, int] = defaultdict(int)
+    incoming_count: defaultdict[int, int] = defaultdict(int)
 
     for edge in graph.edges.values():
-        outgoing_count[edge.start_id_] += 1
-        incoming_count[edge.end_id_] += 1
+        if edge.start_id_ is not None:
+            outgoing_count[edge.start_id_] += 1
+        if edge.end_id_ is not None:
+            incoming_count[edge.end_id_] += 1
+
+    return outgoing_count, incoming_count
+
+
+def _count_forward_reverse_edges(graph: Graph) -> tuple[int, int]:
+    """Count edges pointing from a lower to a higher node id (forward) vs. the reverse.
+
+    Used as a simple heuristic: in parent_to_child, most edges point from
+    lower ID to higher ID (typical creation order); in child_to_parent, most
+    edges point from higher ID to lower ID (pointing to parents).
+    """
+    forward_edges = 0
+    reverse_edges = 0
+
+    for edge in graph.edges.values():
+        if edge.start_id_ is None or edge.end_id_ is None:
+            continue
+        if edge.start_id_ < edge.end_id_:
+            forward_edges += 1
+        else:
+            reverse_edges += 1
+
+    return forward_edges, reverse_edges
+
+
+def analyze_edge_directions(graph: Graph) -> DirectionAnalysis:
+    """Analyze edge direction patterns in the graph."""
+    outgoing_count, incoming_count = _count_edge_directions(graph)
 
     # Find potential roots
     # nodes_with_no_outgoing = leaf nodes (no children)
@@ -361,18 +391,7 @@ def analyze_edge_directions(graph: Graph) -> DirectionAnalysis:
     nodes_with_no_outgoing = tuple(node_id for node_id in graph.nodes if outgoing_count.get(node_id, 0) == 0)
     nodes_with_no_incoming = tuple(node_id for node_id in graph.nodes if incoming_count.get(node_id, 0) == 0)
 
-    # Simple heuristic: check the majority of edge directions
-    # In parent_to_child: most edges point from lower ID to higher ID (typical creation order)
-    # In child_to_parent: most edges point from higher ID to lower ID (pointing to parents)
-
-    forward_edges = 0
-    reverse_edges = 0
-
-    for edge in graph.edges.values():
-        if edge.start_id_ < edge.end_id_:
-            forward_edges += 1
-        else:
-            reverse_edges += 1
+    forward_edges, reverse_edges = _count_forward_reverse_edges(graph)
 
     # Use a simple rule: if most edges go forward, it's parent_to_child
     # if most edges go backward, it's child_to_parent
@@ -383,34 +402,33 @@ def analyze_edge_directions(graph: Graph) -> DirectionAnalysis:
             roots_outgoing=nodes_with_no_outgoing,
             roots_incoming=nodes_with_no_incoming,
         )
-    elif reverse_edges > forward_edges:
+    if reverse_edges > forward_edges:
         return DirectionAnalysis(
             pattern="child_to_parent",
             dominant_direction="incoming",
             roots_outgoing=nodes_with_no_outgoing,
             roots_incoming=nodes_with_no_incoming,
         )
-    else:
-        # Equal or ambiguous - check if we have clear root/leaf pattern
-        if len(nodes_with_no_incoming) == 1 and len(nodes_with_no_outgoing) == 1:
-            # Single root and single leaf - likely a chain, check direction
-            # If the root has outgoing edges, it's parent_to_child
-            # If the root has incoming edges, it's child_to_parent
-            root_id = nodes_with_no_incoming[0]
-            if outgoing_count.get(root_id, 0) > 0:
-                return DirectionAnalysis(
-                    pattern="parent_to_child",
-                    dominant_direction="outgoing",
-                    roots_outgoing=nodes_with_no_outgoing,
-                    roots_incoming=nodes_with_no_incoming,
-                )
-            else:
-                return DirectionAnalysis(
-                    pattern="child_to_parent",
-                    dominant_direction="incoming",
-                    roots_outgoing=nodes_with_no_outgoing,
-                    roots_incoming=nodes_with_no_incoming,
-                )
+
+    # Equal or ambiguous - check if we have a clear single root/leaf pattern
+    if len(nodes_with_no_incoming) == 1 and len(nodes_with_no_outgoing) == 1:
+        # Single root and single leaf - likely a chain, check direction
+        # If the root has outgoing edges, it's parent_to_child
+        # If the root has incoming edges, it's child_to_parent
+        root_id = nodes_with_no_incoming[0]
+        if outgoing_count.get(root_id, 0) > 0:
+            return DirectionAnalysis(
+                pattern="parent_to_child",
+                dominant_direction="outgoing",
+                roots_outgoing=nodes_with_no_outgoing,
+                roots_incoming=nodes_with_no_incoming,
+            )
+        return DirectionAnalysis(
+            pattern="child_to_parent",
+            dominant_direction="incoming",
+            roots_outgoing=nodes_with_no_outgoing,
+            roots_incoming=nodes_with_no_incoming,
+        )
 
     # Default to mixed for ambiguous cases
     return DirectionAnalysis(

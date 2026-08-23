@@ -31,9 +31,9 @@ import re
 import sys
 import threading
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from types import ModuleType
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, cast, overload
 
 from loguru import logger
 
@@ -43,7 +43,9 @@ from .display import DisplayConfig
 from .modelinfo import GraphEdgeInfo, GraphModelInfo, GraphNodeInfo, GraphRelationInfo
 from .models import GraphEdge, GraphNode, GraphObject, GraphObjectType
 
-T = TypeVar("T")
+TNode = TypeVar("TNode", bound=GraphNode)
+TEdge = TypeVar("TEdge", bound=GraphEdge)
+TGraphObj = TypeVar("TGraphObj", bound=GraphObject)
 
 
 class ModelProvider(collections.abc.Collection):
@@ -56,7 +58,7 @@ class ModelProvider(collections.abc.Collection):
             ctx: Optional context object passed to callbacks.
 
         """
-        self._models: GraphModelInfo = {}
+        self._models: dict[str, GraphModelInfo] = {}
         self._disabled = False
         self._lock = threading.RLock()
 
@@ -64,7 +66,7 @@ class ModelProvider(collections.abc.Collection):
         self._ctx = ctx
 
     @classmethod
-    def sort_model_names(cls, model_names: set[str] | list[str]) -> list[str]:
+    def sort_model_names(cls, model_names: Iterable[str]) -> list[str]:
         """Sort model names with nodes first, then edges (ALL_CAPS pattern).
 
         Args:
@@ -129,7 +131,7 @@ class ModelProvider(collections.abc.Collection):
         display: DisplayConfig | None = None,
         inherit_relations: bool = True,
         merge_keys: list[str] | None = None,
-    ) -> Callable[[type[T]], type[T]]:
+    ) -> Callable[[type[TNode]], type[TNode]]:
         """Register a ``GraphNode`` subclass with this provider (decorator).
 
         Usage::
@@ -153,7 +155,7 @@ class ModelProvider(collections.abc.Collection):
             A class decorator that registers the node class.
         """
 
-        def decorator(cls: type[T]) -> type[T]:
+        def decorator(cls: type[TNode]) -> type[TNode]:
             if not issubclass(cls, GraphNode):
                 raise RuntimeError(f"node() can only be applied to GraphNode models. {cls.__name__} is not.")
 
@@ -191,7 +193,7 @@ class ModelProvider(collections.abc.Collection):
         self,
         label: str | None = None,
         display: DisplayConfig | None = None,
-    ) -> Callable[[type[T]], type[T]]:
+    ) -> Callable[[type[TEdge]], type[TEdge]]:
         """Register a ``GraphEdge`` subclass with this provider (decorator).
 
         Usage::
@@ -208,7 +210,7 @@ class ModelProvider(collections.abc.Collection):
             A class decorator that registers the edge class.
         """
 
-        def decorator(cls: type[T]) -> type[T]:
+        def decorator(cls: type[TEdge]) -> type[TEdge]:
             if not issubclass(cls, GraphEdge):
                 raise RuntimeError(f"edge() can only be applied to GraphEdge models. {cls.__name__} is not.")
 
@@ -232,7 +234,7 @@ class ModelProvider(collections.abc.Collection):
         cardinality: Cardinality = Cardinality.ONE_TO_MANY,
         form_field: bool = False,
         description: str | None = None,
-    ) -> Callable[[type[T]], type[T]]:
+    ) -> Callable[[type[TNode]], type[TNode]]:
         """Declare an outbound relationship on a node type (decorator).
 
         Usage::
@@ -252,7 +254,7 @@ class ModelProvider(collections.abc.Collection):
             A class decorator that records the relation on the node's metadata.
         """
 
-        def decorator(cls: type[T]) -> type[T]:
+        def decorator(cls: type[TNode]) -> type[TNode]:
             if not issubclass(cls, GraphNode):
                 raise RuntimeError(f"relation() can only be applied to GraphNode models. {cls.__name__} is not.")
 
@@ -271,7 +273,9 @@ class ModelProvider(collections.abc.Collection):
                 conflicts = modelrelations.detect_relation_conflicts(inherited, [rel_info], cls.__name__)
                 modelrelations.warn_relation_conflicts(conflicts, cls.__name__, stacklevel=4)
 
-            cls.graph_info_.relations.append(rel_info)
+            node_info = cls.graph_info_
+            assert node_info is not None  # guaranteed registered by self.node() above
+            node_info.relations.append(rel_info)
             return cls
 
         return decorator
@@ -284,7 +288,7 @@ class ModelProvider(collections.abc.Collection):
         cardinality: Cardinality = Cardinality.ONE_TO_MANY,
         form_field: bool = False,
         description: str | None = None,
-    ) -> Callable[[type[T]], type[T]] | None:
+    ) -> Callable[[type[TNode]], type[TNode]] | None:
         """Add a relation to an already-registered node type.
 
         Two calling styles:
@@ -308,7 +312,7 @@ class ModelProvider(collections.abc.Collection):
             self._extend_relation(target, rel_type, to_type, cardinality, form_field, description)
             return None
 
-        def decorator(cls: type[T]) -> type[T]:
+        def decorator(cls: type[TNode]) -> type[TNode]:
             if getattr(cls, "graph_info_", None) is None:
                 self.node()(cls)
             self._extend_relation(target, rel_type, cls, cardinality, form_field, description)
@@ -392,23 +396,23 @@ class ModelProvider(collections.abc.Collection):
 
     # -- lookup ---------------------------------------------------------------
 
-    def get(self, label: str) -> GraphModelInfo:
+    def get(self, label: str) -> GraphModelInfo | None:
         """Get model info by label, returning None if not found."""
         return self._models.get(label, None)
 
     def keys(self) -> list[str]:
         """Return all registered model labels."""
-        return self._models.keys()
+        return list(self._models.keys())
 
     def values(self) -> list[GraphModelInfo]:
         """Return all registered model info objects."""
-        return self._models.values()
+        return list(self._models.values())
 
-    def items(self) -> dict[str, GraphModelInfo]:
-        """Return label-to-modelinfo mapping."""
-        return self._models.items()
+    def items(self) -> list[tuple[str, GraphModelInfo]]:
+        """Return label-to-modelinfo pairs."""
+        return list(self._models.items())
 
-    def get_model_class(self, label: str, default_type: GraphObject | GraphEdge = None) -> type[GraphObject]:
+    def get_model_class(self, label: str, default_type: type[GraphObject] | None = None) -> type[GraphObject] | None:
         """Get the model class for a label, falling back to default_type."""
         if self._disabled:
             return default_type
@@ -419,8 +423,8 @@ class ModelProvider(collections.abc.Collection):
         return default_type
 
     def prepare_model_class(
-        self, label: str, props: dict[str, Any], default_cls: type[GraphObject], strict: bool = False
-    ) -> tuple[type[GraphObject], dict[str, Any], dict[str, Any]]:
+        self, label: str, props: dict[str, Any], default_cls: type[TGraphObj], strict: bool = False
+    ) -> tuple[type[TGraphObj], dict[str, Any], dict[str, Any]]:
         """Resolve model class and split properties into model fields vs. extra properties.
 
         Args:
@@ -436,12 +440,17 @@ class ModelProvider(collections.abc.Collection):
         if (cls := self.get_model_class(label)) is None and strict:
             raise RuntimeError(f"Missing typed class for label '{label}'")
 
-        if (cls := cls or default_cls) is None:
+        if (resolved_cls := cls or default_cls) is None:
             raise RuntimeError(f"Could not resolve class for label {label}")
 
-        field_values, properties = utils.slice_model_properties(cls, props)
+        # The registry does not track default_cls's bound TypeVar; registered
+        # classes for a label are guaranteed (by node()/edge()) to subclass
+        # the same base the caller passes as default_cls.
+        resolved_cls = cast("type[TGraphObj]", resolved_cls)
 
-        return cls, field_values, properties
+        field_values, properties = utils.slice_model_properties(resolved_cls, props)
+
+        return resolved_cls, field_values, properties
 
     def create_node(self, label: str, props: dict[str, Any], id_: int | None = None) -> GraphNode:
         """Create a typed GraphNode instance using registered model class."""
@@ -456,7 +465,7 @@ class ModelProvider(collections.abc.Collection):
         return cls(id_=id_, label_=label, start_id_=start_id, end_id_=end_id, properties_=properties, **field_values)
 
     def find(
-        self, label: str, case_insenstive: bool = True, graph_objectype: GraphObjectType = None
+        self, label: str, case_insenstive: bool = True, graph_objectype: GraphObjectType | None = None
     ) -> dict[str, GraphModelInfo]:
         """Find models with labels starting with the given prefix.
 
@@ -575,7 +584,7 @@ class ModelProvider(collections.abc.Collection):
 
         try:
             spec = importlib.util.spec_from_file_location(mod_name, file_path)
-            if spec is None:
+            if spec is None or spec.loader is None:
                 logger.debug("Could not find module at file_path={}", file_path)
                 return (False, [])
 
@@ -671,8 +680,8 @@ class ModelProvider(collections.abc.Collection):
             success, newly_loaded = self._load_as_package(path, package_name)
             if success and newly_loaded:
                 # Package loaded successfully and registered models
-                file_to_models = {init_file: newly_loaded}
-                return (True, file_to_models)
+                package_file_to_models = {init_file: newly_loaded}
+                return (True, package_file_to_models)
             if not newly_loaded:
                 logger.debug("Package loaded but no models registered, falling back to individual file loading")
             else:
@@ -767,6 +776,11 @@ class ModelProvider(collections.abc.Collection):
         if not path and module_name:
             path = f"./{module_name.replace('.', '/')}.py"
 
+        if path is None:
+            # Unreachable given the early return above, but narrows the type
+            # for the filesystem calls below.
+            return None
+
         # Validate path exists
         if not os.path.exists(path):
             raise FileNotFoundError(f"Path does not exist: {path}")
@@ -779,21 +793,7 @@ class ModelProvider(collections.abc.Collection):
         abs_path = os.path.abspath(path)
 
         with self._lock:
-            # Track loading results
-            file_to_models: dict[str, list[str]] = {}
-
-            # Check if path is a file or directory
-            if os.path.isfile(path):
-                logger.debug(f"Loading single model file: {path}")
-                mod_name = module_name or (utils.split_path(path))[1]
-                success, newly_loaded = self._load_single_file(path, mod_name)
-                if success and newly_loaded:
-                    file_to_models[abs_path] = newly_loaded
-            elif os.path.isdir(path):
-                success, file_to_models_result = self._load_from_directory(path)
-                if success:
-                    # Convert relative paths to absolute
-                    file_to_models = {os.path.abspath(fp): models for fp, models in file_to_models_result.items()}
+            file_to_models = self._load_models_from_file_or_dir(path, module_name, abs_path)
 
             if not file_to_models:
                 return None
@@ -802,6 +802,30 @@ class ModelProvider(collections.abc.Collection):
             sorted_model_infos = self._update_source_and_collect(file_to_models)
 
             return sorted_model_infos
+
+    def _load_models_from_file_or_dir(self, path: str, module_name: str | None, abs_path: str) -> dict[str, list[str]]:
+        """Load models from a single file or a directory, keyed by absolute source path."""
+        if os.path.isfile(path):
+            logger.debug(f"Loading single model file: {path}")
+            mod_name = module_name or (utils.split_path(path))[1]
+            success, newly_loaded = self._load_single_file(path, mod_name)
+            if success and newly_loaded:
+                return {abs_path: newly_loaded}
+            return {}
+
+        if os.path.isdir(path):
+            success, file_to_models_result = self._load_from_directory(path)
+            if success:
+                # Convert relative paths to absolute
+                return {os.path.abspath(fp): models for fp, models in file_to_models_result.items()}
+
+        return {}
+
+    @overload
+    def generate_schemas_from_path(self, models_path: str, combine: Literal[False] = False) -> list[dict[str, Any]]: ...
+
+    @overload
+    def generate_schemas_from_path(self, models_path: str, combine: Literal[True]) -> dict[str, Any]: ...
 
     def generate_schemas_from_path(self, models_path: str, combine: bool = False) -> list[dict[str, Any]] | dict[str, Any]:
         """Generate JSON schemas from Python models at given path.
@@ -852,7 +876,7 @@ class ModelProvider(collections.abc.Collection):
             return combine_schemas(schemas)
         return schemas
 
-    def model_dump(self, context: Any = None) -> dict[str, GraphModelInfo]:
+    def model_dump(self, context: Any = None) -> dict[str, Any]:
         """Export all model info as a serializable dictionary."""
         model_names = self.sort_model_names(self._models.keys())
         return {
@@ -872,7 +896,7 @@ class ModelProvider(collections.abc.Collection):
     def reset(self):
         """Remove all models without associated graph_model classes."""
         with self._lock:
-            self._models = [item for item in self._models if item.graph_model is not None]
+            self._models = {label: item for label, item in self._models.items() if item.graph_model is not None}
 
     def _parse_display_config(self, display_data: dict[str, Any] | None):
         """Parse display configuration from x-graph extension.
@@ -1074,6 +1098,7 @@ class ModelProvider(collections.abc.Collection):
                     typed_model = self._create_typed_model_class(schema, label, graph_type)
 
                     # Create appropriate model info (source is not set for schema-based models)
+                    model_info: GraphNodeInfo | GraphEdgeInfo
                     if graph_type == "NODE":
                         model_info = GraphNodeInfo(
                             label_=label,
@@ -1135,7 +1160,13 @@ class ModelProvider(collections.abc.Collection):
         return self._models[key]
 
     @property
-    def __dict__(self) -> dict[str, GraphModelInfo]:
+    def __dict__(self) -> dict[str, Any]:  # type: ignore[override]
+        # Deliberate override so `vars(provider)`/`**provider` yield the
+        # serialized model map (used by CLI dump commands), not the internal
+        # __dict__ slots (_models/_disabled/_lock/_ctx). `object.__dict__` is
+        # writable in typeshed; this is read-only by design, which mypy
+        # cannot express as a sound override -- there is no type-safe way to
+        # narrow a read-only property against a writable base attribute.
         return self.model_dump()
 
 

@@ -125,7 +125,7 @@ class Settings(BaseSettings):
         validation_alias=f"{DEFAULT_ENV_PREFIX}{_ENV_SUFFIXES['query_timeout_s']}",
     )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic.mypy plugin doesn't yet support decorators stacked on @property; this is the documented pydantic pattern for a computed field and works correctly at runtime.
     @property
     def cinfo_sanitized(self) -> str | None:
         """Get sanitized connection info safe for logging."""

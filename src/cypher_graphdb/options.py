@@ -4,7 +4,7 @@ Provides TypedOptionModel for creating Pydantic models that can be constructed
 from boolean and value option dictionaries.
 """
 
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel
 
@@ -13,7 +13,7 @@ class TypedOptionModel[T](BaseModel):
     """Base class for creating typed option models from boolean and value options."""
 
     @classmethod
-    def from_opts(cls: type[T], boolean_opts: set[str] = None, value_opts: dict[str, Any] = None) -> T:
+    def from_opts(cls, boolean_opts: set[str] | None = None, value_opts: dict[str, Any] | None = None) -> Self:
         """Create an instance from boolean flags and value options.
 
         Args:

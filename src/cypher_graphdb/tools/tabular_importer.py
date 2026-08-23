@@ -48,8 +48,8 @@ class TabularImporter:
     ) -> None:
         assert isinstance(db, CypherGraphDB)
         self.db = db
-        self.import_batch_size = import_batch_size or getattr(config, "IMPORT_BATCH_SIZE", 1000)
-        self.commit_every = commit_every or getattr(config, "COMMIT_EVERY", self.import_batch_size)
+        self.import_batch_size: int = import_batch_size or int(getattr(config, "IMPORT_BATCH_SIZE", 1000))
+        self.commit_every: int = commit_every or int(getattr(config, "COMMIT_EVERY", self.import_batch_size))
 
         # statistics / telemetry counters
         self.nodes_created = 0
@@ -144,7 +144,7 @@ class TabularImporter:
     ):
         # Determine label
         row_label = fallback_label if not col_info.contains_label else row.get("label_")
-        if utils.isnan(row_label):  # handle NaN numeric from CSV data
+        if row_label is None or utils.isnan(row_label):  # handle NaN numeric from CSV data
             self._add_error(row, "Missing node/edge label", errors)
             return
 

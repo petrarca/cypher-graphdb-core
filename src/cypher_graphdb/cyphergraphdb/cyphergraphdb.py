@@ -67,6 +67,7 @@ from ..cypherparser import ParsedCypherQuery
 from ..cypherquery import CypherQuery
 from ..exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
+from ..settings import Settings
 from .batch import BatchMixin
 from .connection import ConnectionMixin
 from .criteria import MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
@@ -239,7 +240,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
             if self._backend.graph_name:
                 return f"{self._backend.name}:{self._backend.graph_name}"
             else:
-                return self._backend.name
+                return self._backend.name or ""
         else:
             return ""
 
@@ -282,7 +283,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         self._backend.model_provider = provider
 
     @staticmethod
-    def get_settings() -> config.Settings:
+    def get_settings() -> Settings:
         """Get the singleton settings instance.
 
         Returns:
@@ -355,7 +356,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def fetch(
         self,
         criteria: MatchCriteria,
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool | None = None,
     ) -> Any:
         """Universal fetch method that dispatches to nodes or edges based on criteria type.
@@ -410,7 +411,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def fetch_nodes(
         self,
         criteria: MatchCriteria | int | str | dict[str, Any],
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool | None = None,
     ) -> Any:
         """Fetch GraphNode instances from the database using flexible criteria.
@@ -483,12 +484,14 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         elif isinstance(criteria, str):
             criteria = MatchNodeCriteria(properties_={config.PROP_GID: criteria})
         elif isinstance(criteria, dict):
-            if criteria:
-                fields, props = utils.slice_model_properties(MatchCriteria, criteria)
-                if props:
-                    fields.update({"properties_": props})
+            # An empty dict is falsy but still a valid "match everything" filter --
+            # it must still be converted to MatchNodeCriteria, otherwise criteria
+            # stays a plain dict and .resolve() below fails at runtime.
+            fields, props = utils.slice_model_properties(MatchCriteria, criteria)
+            if props:
+                fields.update({"properties_": props})
 
-                criteria = MatchNodeCriteria(**fields)
+            criteria = MatchNodeCriteria(**fields)
         else:
             assert isinstance(criteria, MatchCriteria)
 
@@ -501,7 +504,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def fetch_edges(
         self,
         criteria: MatchCriteria | int | str | dict[str, Any],
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool | None = None,
     ) -> Any:
         """Fetch GraphEdge instances from the database using flexible criteria.
@@ -570,12 +573,14 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         elif isinstance(criteria, str):
             criteria = MatchEdgeCriteria(properties_={config.PROP_GID: criteria})
         elif isinstance(criteria, dict):
-            if criteria:
-                fields, props = utils.slice_model_properties(MatchCriteria, criteria)
-                if props:
-                    fields.update({"properties_": props})
+            # An empty dict is falsy but still a valid "match everything" filter --
+            # it must still be converted to MatchEdgeCriteria, otherwise criteria
+            # stays a plain dict and .resolve() below fails at runtime.
+            fields, props = utils.slice_model_properties(MatchCriteria, criteria)
+            if props:
+                fields.update({"properties_": props})
 
-                criteria = MatchNodeCriteria(**fields)
+            criteria = MatchEdgeCriteria(**fields)
         else:
             assert isinstance(criteria, MatchCriteria)
 
@@ -604,7 +609,10 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def create_or_merge(
         self,
         obj: GraphNode | GraphEdge | Graph,
-        strategy: Literal["merge", "force_create"] = config.CREATE_OR_MERGE_STRATEGY[0],
+        # config.CREATE_OR_MERGE_STRATEGY[0] is "merge"; hardcoded here because that
+        # tuple is typed as tuple[str, ...] (not a Literal), so subscripting it
+        # can't produce a Literal default. Still validated below against the tuple.
+        strategy: Literal["merge", "force_create"] = "merge",
         *,
         validate: bool = False,
     ) -> GraphNode | GraphEdge | Graph:
@@ -684,7 +692,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         # only generic GraphNode instances carry unvalidated raw properties.
         if validate and isinstance(obj, GraphNode) and type(obj) is GraphNode:
             provider = getattr(self, "model_provider", None)
-            if provider is not None:
+            if provider is not None and obj.label_ is not None:
                 modelprovider.validate_node_properties(provider, obj.label_, obj.properties_)
 
         if isinstance(obj, GraphNode):
@@ -865,7 +873,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def execute(
         self,
         cypher_cmd: str | ParsedCypherQuery | CypherQuery,
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
@@ -949,7 +957,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
     def execute_with_stats(
         self,
         cypher_cmd: str | ParsedCypherQuery | CypherQuery,
-        unnest_result: str | bool = None,
+        unnest_result: str | bool | None = None,
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
@@ -1057,7 +1065,11 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
-            return -1
+            # Only reachable if on_before_execute cancels the query; there is no
+            # created node to return here, so -- unlike the delete methods, which
+            # legitimately return an int -- returning a sentinel would violate
+            # this method's GraphNode contract for every caller.
+            raise RuntimeError("Node creation was cancelled before execution (on_before_execute returned falsy)")
 
         # only the object id needs to be updated
         # result is [(id,)], extract the integer from the tuple
@@ -1070,7 +1082,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
-            return -1
+            raise RuntimeError("Node merge was cancelled before execution (on_before_execute returned falsy)")
 
         # merge results back from the retrieved one, could be modified in the meantime
         # result is [(node_obj,)], extract the node object from the tuple
@@ -1097,7 +1109,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
-            return -1
+            raise RuntimeError("Node merge-by-keys was cancelled before execution (on_before_execute returned falsy)")
 
         updated_node = result[0][0]
         obj.__dict__.update(updated_node.__dict__)
@@ -1119,7 +1131,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         result = self._fetch_node_by_criteria(criteria, True, True)
         return result if isinstance(result, str) else None
 
-    def _fetch_node_by_criteria(self, criteria: MatchCriteria, unnest_result: str, fetch_one: bool):
+    def _fetch_node_by_criteria(self, criteria: MatchCriteria, unnest_result: str | bool | None, fetch_one: bool):
         cypher_cmd, params = CypherBuilder.fetch_node_by_criteria(criteria)
         result = self._parse_and_execute(cypher_cmd, fetch_one, params=params or None)
         return utils.unnest_result(result, unnest_result)
@@ -1138,14 +1150,15 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         # mark node as not persisted
         obj.unbind_id()
 
-        return result[0]
+        # result is [(count,)] -- unwrap the tuple to get the int count itself.
+        return result[0][0]
 
     def _delete_node_by_criteria(self, criteria: MatchCriteria, detach: bool):
         cypher_cmd, params = CypherBuilder.delete_node_by_criteria(criteria, detach)
 
         return self._parse_and_execute(cypher_cmd, params=params or None)
 
-    def _create_or_merge_edge(self, obj, strategy: str) -> int:
+    def _create_or_merge_edge(self, obj, strategy: str) -> GraphEdge:
         obj.resolve()
 
         match strategy:
@@ -1165,6 +1178,12 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         cypher_cmd, params = CypherBuilder.create_edge(obj.label_, obj.start_id_, obj.end_id_, obj.flatten_properties())
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
+        if result is None:
+            # Unlike the other _create_*/_merge_* helpers, this branch was
+            # previously missing entirely, so `result[0][0]` below would raise
+            # TypeError instead of the intended cancellation error.
+            raise RuntimeError("Edge creation was cancelled before execution (on_before_execute returned falsy)")
+
         # result is [(id,)], extract the integer from the tuple
         obj.bind_id(result[0][0])
 
@@ -1175,7 +1194,7 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         result = self._parse_and_execute(cypher_cmd, True, params=params or None)
 
         if result is None:
-            return -1
+            raise RuntimeError("Edge merge was cancelled before execution (on_before_execute returned falsy)")
 
         # merge results back from the retrieved one, could be modified in the meantime
         # result is [(edge_obj,)], extract the edge object from the tuple
@@ -1198,21 +1217,22 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         # mark edge as not persisted
         obj.unbind_id()
 
-        return result[0]
+        # result is [(count,)] -- unwrap the tuple to get the int count itself.
+        return result[0][0]
 
     def _delete_edge_by_criteria(self, criteria: MatchCriteria):
         cypher_cmd, params = CypherBuilder.delete_edge_by_criteria(criteria)
 
         return self._parse_and_execute(cypher_cmd, params=params or None)
 
-    def _fetch_edge_by_criteria(self, criteria: MatchCriteria, unnest_result: str | bool, fetch_one: bool):
+    def _fetch_edge_by_criteria(self, criteria: MatchCriteria, unnest_result: str | bool | None, fetch_one: bool):
         cypher_cmd, params = CypherBuilder.fetch_edge_by_criteria(criteria)
 
         result = self._parse_and_execute(cypher_cmd, fetch_one, params=params or None)
 
         return utils.unnest_result(result, unnest_result)
 
-    def _create_or_merge_graph(self, obj, strategy: str) -> int:
+    def _create_or_merge_graph(self, obj, strategy: str) -> Graph:
         for node in obj.nodes:
             self._create_or_merge_node(node, strategy)
 
@@ -1273,15 +1293,18 @@ class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, Sea
         return result
 
     def _before_execute(self, parsed_query: ParsedCypherQuery):
-        result = self.on_before_execute(parsed_query) if isinstance(self.on_before_execute, Callable) else True
+        # `collections.abc.Callable` is not a valid isinstance() target under
+        # mypy (typeshed treats it as a typing special form); `callable()` is
+        # the idiomatic, type-checkable equivalent.
+        result = self.on_before_execute(parsed_query) if callable(self.on_before_execute) else True
 
         return result
 
     def _after_execute(self, result: list[tuple[GraphObject]], parsed_query: ParsedCypherQuery):
-        if isinstance(self.on_after_execute, Callable):
+        if callable(self.on_after_execute):
             self.on_after_execute(result, parsed_query)
 
-    def _resolve_obj_id(self, obj: GraphObject, fetch_func: Callable) -> bool:
+    def _resolve_obj_id(self, obj: GraphNode | GraphEdge, fetch_func: Callable) -> bool:
         if obj.has_id:
             return True
 

@@ -36,7 +36,7 @@ from cypher_graphdb.models import TreeResult
 class ResultRenderer:
     """Handles rendering of query results in various output formats."""
 
-    def __init__(self, default_format: str = None) -> None:
+    def __init__(self, default_format: str | None = None) -> None:
         # When True, all render operations become no-ops. This allows the
         # caller (CLI) to suppress output (e.g. for script / batch execution)
         # without changing call sites throughout the code base.
@@ -44,7 +44,7 @@ class ResultRenderer:
 
         self.default_format = default_format if default_format is not None else "json"
 
-    def render(self, result, output_format: str = None, args=None, kwargs=None):
+    def render(self, result, output_format: str | None = None, args=None, kwargs=None):
         if self.suppress_output:
             return
         args = args or []
@@ -65,7 +65,7 @@ class ResultRenderer:
     def _resolve_col_title(self, probe: Any) -> str:
         """Determine the column title based on the data type."""
         if isinstance(probe, GraphNode | GraphEdge):
-            return probe.label_
+            return probe.label_ or "Value"
         if isinstance(probe, GraphPath):
             return "Path"
         if isinstance(probe, Graph):
@@ -380,7 +380,7 @@ class RenderTableOpts(options.TypedOptionModel):
     value_name: str = "Value"
     col_headers: list[str] | None = []
     explicit_cols: list[str] = []
-    col_style: str = None
+    col_style: str | None = None
 
 
 class RenderTreeOpts(options.TypedOptionModel):

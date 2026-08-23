@@ -57,7 +57,7 @@ def _convert_properties(props: dict[str, Any]) -> dict[str, Any]:
     return {key: _convert_property_value(value) for key, value in props.items()}
 
 
-def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Node:
+def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Node | None:
     """Convert a Memgraph Node to CypherGraphDB Node.
 
     Args:
@@ -65,7 +65,7 @@ def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Nod
         model_provider: Optional model provider for node conversion.
 
     Returns:
-        CypherGraphDB Node object.
+        CypherGraphDB Node object, or None if ``node`` is None.
     """
     if node is None:
         return None
@@ -75,10 +75,13 @@ def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Nod
     labels = list(node.labels)
     properties = _convert_properties(node.properties)
 
-    # Create the node using model provider if available
-    if model_provider:
+    # Create the node using model provider if available. create_node requires
+    # a real label to look up the registered model class, so only use it when
+    # the node actually has one; an unlabeled node always falls back to a
+    # plain Node below.
+    if model_provider and labels:
         return model_provider.create_node(
-            label=labels[0] if labels else None,
+            label=labels[0],
             props=properties,
             id_=node_id,
         )
@@ -87,7 +90,7 @@ def _convert_node(node: Any, model_provider: ModelProvider | None = None) -> Nod
     return Node(id_=node_id, label_=labels[0] if labels else None, properties_=properties)
 
 
-def _convert_relationship(rel: Any, model_provider: ModelProvider | None = None) -> Edge:
+def _convert_relationship(rel: Any, model_provider: ModelProvider | None = None) -> Edge | None:
     """Convert a Memgraph Relationship to CypherGraphDB Edge.
 
     Args:
@@ -95,7 +98,7 @@ def _convert_relationship(rel: Any, model_provider: ModelProvider | None = None)
         model_provider: Optional model provider for edge conversion.
 
     Returns:
-        CypherGraphDB Edge object.
+        CypherGraphDB Edge object, or None if ``rel`` is None.
     """
     if rel is None:
         return None
@@ -121,7 +124,7 @@ def _convert_relationship(rel: Any, model_provider: ModelProvider | None = None)
     return Edge(id_=rel_id, label_=rel_type, start_id_=start_id, end_id_=end_id, properties_=properties)
 
 
-def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Path:
+def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Path | None:
     """Convert a Memgraph Path to CypherGraphDB Path.
 
     Args:
@@ -129,7 +132,7 @@ def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Pat
         model_provider: Optional model provider for path conversion.
 
     Returns:
-        CypherGraphDB Path object.
+        CypherGraphDB Path object, or None if ``path`` is None.
     """
     if path is None:
         return None
@@ -140,13 +143,20 @@ def _convert_path(path: Any, model_provider: ModelProvider | None = None) -> Pat
     )
 
     # Build the entity sequence directly: node -> rel -> node -> rel -> node
-    # In a path, entities alternate between nodes and relationships
-    entities = []
+    # In a path, entities alternate between nodes and relationships. The
+    # elements of path.nodes/path.relationships are never None, so the
+    # None branches of _convert_node/_convert_relationship are unreachable
+    # here -- assert that for the type checker.
+    entities: list[GraphObject] = []
     for i, node in enumerate(path.nodes):
-        entities.append(_convert_node(node, model_provider))
+        converted_node = _convert_node(node, model_provider)
+        assert converted_node is not None
+        entities.append(converted_node)
         if i < len(path.relationships):  # Add relationship if it exists
             rel = path.relationships[i]
-            entities.append(_convert_relationship(rel, model_provider))
+            converted_rel = _convert_relationship(rel, model_provider)
+            assert converted_rel is not None
+            entities.append(converted_rel)
 
     # Create the path
     return Path(entities=entities)
