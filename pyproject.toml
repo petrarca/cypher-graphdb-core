@@ -78,6 +78,9 @@ dev = [
 [project.scripts]
 cypher-graphdb = "cypher_graphdb.args:typer_main"
 
+[tool.setuptools.package-data]
+cypher_graphdb = ["py.typed"]
+
 [tool.setuptools_scm]
 tag_regex = "^v(?P<version>\\d+(?:\\.\\d+)*)"
 version_scheme = "guess-next-dev"
