@@ -92,7 +92,10 @@ tasks:
     desc: "Scan Python dependencies for known vulnerabilities (OSV, via uv.lock)."
     cmds:
       # --frozen: audit the committed lock as-is, without re-resolving.
-      # CI uses --locked (clean checkout) so it also asserts lock freshness.
+      # CI uses --frozen too (not --locked): uv audit has no --no-sources
+      # flag, so --locked would re-resolve against any [tool.uv.sources]
+      # entry instead of trusting the committed lock. Lock freshness is
+      # asserted separately by "Check lock file is up to date" in ci.yml.
       - uv audit --frozen --preview-features audit-command {{.CLI_ARGS}}
 
   verify:

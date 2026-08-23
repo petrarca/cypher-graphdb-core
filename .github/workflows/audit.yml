@@ -41,5 +41,10 @@ jobs:
 
       # --locked fails if uv.lock is stale rather than auditing a re-resolved
       # graph. Reads the lock only -- no venv sync -- so it is fast.
+      # --frozen, not --locked: uv audit has no --no-sources flag, so --locked
+      # would re-resolve against any future [tool.uv.sources] entry (this repo
+      # has none today, but a future sonnet-* dependency would add one) instead
+      # of trusting the committed lock. Lock freshness is already asserted by
+      # the "Check lock file is up to date" step in ci.yml.
       - name: Audit dependencies (uv audit / OSV)
-        run: uv audit --locked --preview-features audit-command
+        run: uv audit --frozen --preview-features audit-command

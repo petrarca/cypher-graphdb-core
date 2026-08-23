@@ -57,6 +57,9 @@ jobs:
             zlib1g-dev \
             libzstd-dev
 
+      - name: Check lock file is up to date
+        run: uv lock --no-sources --check
+
       - name: Install dependencies
         run: |
           uv venv
