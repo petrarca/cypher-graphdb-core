@@ -119,11 +119,11 @@ class CypherBuilder:
 
         Example:
             >>> query, params = CypherBuilder.merge_node_by_keys(
-            ...     "_NamedQuery", ["query_key"],
-            ...     {"query_key": "hub-tech", "title": "Hub", "language": "cypher"},
+            ...     "Product", ["sku"],
+            ...     {"sku": "ABC-123", "title": "Widget", "status": "active"},
             ... )
-            >>> # MERGE (n:_NamedQuery {query_key: $mk_query_key})
-            >>> # SET n.title = $p_title, n.language = $p_language, ...
+            >>> # MERGE (n:Product {sku: $mk_sku})
+            >>> # SET n.title = $p_title, n.status = $p_status, ...
             >>> # RETURN n
         """
         missing = [k for k in merge_keys if k not in properties]

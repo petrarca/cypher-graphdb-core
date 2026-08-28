@@ -18,7 +18,7 @@ def format_schemas_for_llm(enriched_schema: dict, *, include_internal: bool = Fa
 
     By default, infrastructure nodes and edges whose labels start with
     ``_`` are excluded (convention: underscore-prefixed labels are internal
-    metadata, e.g. ``_GraphModel``, ``_GraphDescription``, ``_NamedQuery``).
+    metadata, e.g. ``_GraphModel``, ``_GraphDescription``).
     Pass ``include_internal=True`` to include them.
 
     Args:
