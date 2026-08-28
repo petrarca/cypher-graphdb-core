@@ -174,7 +174,7 @@ class SchemaMixin(_Host):
             include: If given, only these node labels are deleted. When ``None``,
                 all node labels are considered.
             exclude: Labels to preserve (e.g. infrastructure nodes like
-                ``_GraphModel`` / ``_NamedQuery``). Applied after ``include``.
+                ``_GraphModel``). Applied after ``include``.
 
         Returns:
             Total number of nodes deleted across all matched labels.
@@ -182,7 +182,7 @@ class SchemaMixin(_Host):
         Examples:
             ```python
             # Wipe all domain nodes but keep graph metadata nodes
-            cdb.mass_delete(exclude=["_GraphModel", "_NamedQuery"])
+            cdb.mass_delete(exclude=["_GraphModel"])
 
             # Delete only specific labels
             cdb.mass_delete(include=["Product", "Component"])

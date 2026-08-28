@@ -93,14 +93,14 @@ def test_merge_node_by_id():
 class TestMergeNodeByKeys:
     def test_single_merge_key(self):
         query, params = CypherBuilder.merge_node_by_keys(
-            "_NamedQuery", ["query_key"], {"query_key": "hub-tech", "title": "Hub", "language": "cypher"}
+            "Product", ["sku"], {"sku": "ABC-123", "title": "Widget", "status": "active"}
         )
-        assert "MERGE (n:_NamedQuery {query_key: $mk_query_key})" in query
+        assert "MERGE (n:Product {sku: $mk_sku})" in query
         assert "n.title = $p_title" in query
-        assert "n.language = $p_language" in query
+        assert "n.status = $p_status" in query
         assert "RETURN n" in query
-        assert params["mk_query_key"] == "hub-tech"
-        assert params["p_title"] == "Hub"
+        assert params["mk_sku"] == "ABC-123"
+        assert params["p_title"] == "Widget"
 
     def test_empty_merge_keys_singleton(self):
         query, params = CypherBuilder.merge_node_by_keys("_GraphModel", [], {"name": "tech_stack", "data": "{}"})
@@ -127,15 +127,13 @@ class TestMergeNodeByKeys:
 
     def test_missing_merge_key_raises(self):
         with pytest.raises(ValueError, match="merge_keys missing from properties"):
-            CypherBuilder.merge_node_by_keys("_NamedQuery", ["query_key"], {"title": "No Key"})
+            CypherBuilder.merge_node_by_keys("Product", ["sku"], {"title": "No Key"})
 
     def test_gid_emitted_as_plain_set(self):
         # gid_ preservation is handled by _merge_node_by_keys (caller), not
         # the builder -- AGE has no COALESCE in SET, so the builder uses a
         # plain assignment.
-        query, params = CypherBuilder.merge_node_by_keys(
-            "_NamedQuery", ["query_key"], {"query_key": "k", "title": "T", "gid_": "abc123"}
-        )
+        query, params = CypherBuilder.merge_node_by_keys("Product", ["sku"], {"sku": "k", "title": "T", "gid_": "abc123"})
         assert "n.gid_ = $p_gid_" in query
         assert params["p_gid_"] == "abc123"
 
