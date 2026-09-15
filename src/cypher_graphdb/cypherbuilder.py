@@ -195,6 +195,39 @@ class CypherBuilder:
         id_sequence = ",".join([str(id) for id in node_ids])
         return f"MATCH (n) WHERE id(n) IN [{id_sequence}] RETURN n"
 
+    # Directional MATCH patterns for expand_node. "both" is handled by the
+    # caller as two separate directional queries (a single bidirectional
+    # pattern forces a full edge scan on Memgraph).
+    _EXPAND_PATTERNS = {
+        "out": "(center)-[e]->(connected)",
+        "in": "(center)<-[e]-(connected)",
+    }
+
+    @classmethod
+    def expand_node(cls, node_id: int, direction: str, rel_types: list[str] | None) -> tuple[str, dict]:
+        """Build a parameterized one-hop expansion query for a node.
+
+        The node id is inlined (integers are safe); rel-type filtering is
+        parameterized (``type(e) IN $rel_types``), which is safe on both AGE
+        and Memgraph and avoids dialect-dependent string escaping.
+
+        Args:
+            node_id: The center node's database id.
+            direction: ``"out"`` or ``"in"`` (``"both"`` is issued by the
+                caller as two directional queries).
+            rel_types: Edge labels to include, or None/empty for all.
+
+        Returns:
+            ``(query, params)``. The query returns ``connected, e`` rows.
+        """
+        pattern = cls._EXPAND_PATTERNS[direction]
+        rel_filter, params = ("", {})
+        if rel_types:
+            rel_filter = " AND type(e) IN $rel_types"
+            params = {"rel_types": list(rel_types)}
+        query = f"MATCH {pattern} WHERE id(center) = {node_id}{rel_filter} RETURN connected, e"
+        return query, params
+
     @classmethod
     def delete_node_by_criteria(cls, criteria, detach: bool) -> tuple[str, dict]:
         """Build a parameterized DELETE node query.

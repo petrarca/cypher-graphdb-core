@@ -172,6 +172,32 @@ def test_fetch_nodes_by_ids():
     assert cypher == "MATCH (n) WHERE id(n) IN [10,20,30] RETURN n"
 
 
+def test_expand_node_out_no_rel_types():
+    query, params = CypherBuilder.expand_node(42, "out", None)
+    assert query == "MATCH (center)-[e]->(connected) WHERE id(center) = 42 RETURN connected, e"
+    assert params == {}
+
+
+def test_expand_node_in_no_rel_types():
+    query, params = CypherBuilder.expand_node(7, "in", None)
+    assert query == "MATCH (center)<-[e]-(connected) WHERE id(center) = 7 RETURN connected, e"
+    assert params == {}
+
+
+def test_expand_node_rel_types_parameterized():
+    # Rel-type filtering is parameterized (dialect-safe on AGE and Memgraph),
+    # never inlined -- no string escaping in the query text.
+    query, params = CypherBuilder.expand_node(3, "out", ["KNOWS", "USES"])
+    assert query == "MATCH (center)-[e]->(connected) WHERE id(center) = 3 AND type(e) IN $rel_types RETURN connected, e"
+    assert params == {"rel_types": ["KNOWS", "USES"]}
+
+
+def test_expand_node_empty_rel_types_is_unfiltered():
+    query, params = CypherBuilder.expand_node(3, "out", [])
+    assert "type(e) IN" not in query
+    assert params == {}
+
+
 def test_fetch_node_by_criteria_simple():
     criteria = MockCriteria(id_=42)
     query, params = CypherBuilder.fetch_node_by_criteria(criteria)

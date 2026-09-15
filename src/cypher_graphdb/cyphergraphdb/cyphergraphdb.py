@@ -71,6 +71,7 @@ from ..settings import Settings
 from .batch import BatchMixin
 from .connection import ConnectionMixin
 from .criteria import MatchCriteria, MatchEdgeCriteria, MatchNodeCriteria
+from .expand import ExpandMixin
 from .indexing import IndexingMixin
 from .pagination_mixin import DEFAULT_MAX_MATERIALIZED_ROWS, PaginationMixin
 from .result import QueryResult
@@ -103,7 +104,9 @@ def _resolve_cypher_input(
     return cypher, builder_params if builder_params else None
 
 
-class CypherGraphDB(ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin, PaginationMixin):
+class CypherGraphDB(
+    ConnectionMixin, BatchMixin, IndexingMixin, SchemaMixin, SearchMixin, SqlMixin, StreamMixin, PaginationMixin, ExpandMixin
+):
     """Primary client for connecting to and managing Cypher-based graph databases.
 
     CypherGraphDB provides a high-level interface for graph database operations

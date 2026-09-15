@@ -22,6 +22,7 @@ from .cyphergraphdb import (
     MatchNodeCriteria,
     QueryResult,
 )
+from .cyphergraphdb.expand import DEFAULT_EXPAND_LIMIT, ExpandDirection
 from .cyphergraphdb.pagination import Page
 from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
@@ -31,7 +32,7 @@ from .formatprovider import FormatProvider, FormatSpec, data_format, format_prov
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, validate_node_properties
 from .modelrelations import RelationSpec
-from .models import Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
+from .models import ExpandResult, Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
 from .settings import Settings, get_settings
 from .statistics import GraphStatistics, IndexInfo, IndexType
 
@@ -54,6 +55,9 @@ __all__ = [
     "IndexType",
     "CypherGraphDB",
     "QueryResult",
+    "ExpandResult",
+    "ExpandDirection",
+    "DEFAULT_EXPAND_LIMIT",
     "Page",
     "MatchCriteria",
     "MatchEdgeCriteria",

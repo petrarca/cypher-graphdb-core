@@ -592,6 +592,24 @@ class Graph(GraphObject):
         return value.id_ is not None and value.id_ not in self.edges
 
 
+class ExpandResult(BaseModel):
+    """Immutable result of expanding a node into its neighborhood.
+
+    Returned by :meth:`CypherGraphDB.expand_node`. Holds the deduplicated
+    neighbor nodes and connecting edges plus ``has_more``, which signals that
+    additional neighbors exist beyond the requested ``limit`` (an exact total
+    is intentionally not provided -- it would require an extra round-trip).
+
+    ``has_more`` alone is sufficient for interactive graph exploration.
+    """
+
+    nodes: list[GraphNode] = Field(default_factory=list, description="Deduplicated neighbor nodes")
+    edges: list[GraphEdge] = Field(default_factory=list, description="Deduplicated connecting edges")
+    has_more: bool = Field(False, description="Whether more neighbors exist beyond the limit")
+
+    model_config = {"frozen": True}
+
+
 @dataclass
 class TreeResult:
     """Wrapper for tree structure representation of graph data."""
