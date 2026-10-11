@@ -318,6 +318,20 @@ class GraphNode(
     # Set by ModelProvider.node()/relation() decorators; None until registered.
     graph_info_: ClassVar[GraphNodeInfo | None] = None
 
+    @classmethod
+    def graph_info(cls) -> GraphNodeInfo:
+        """Return the registered node info, or raise if the model is unregistered.
+
+        ``graph_info_`` is ``None`` until a model is registered (via the
+        ``ModelProvider`` decorators), so it is typed ``| None``. Callers that
+        operate on registered models want the non-optional value without an
+        inline assert at every use; this accessor narrows it once and fails
+        loudly if the model was never registered.
+        """
+        if cls.graph_info_ is None:
+            raise RuntimeError(f"{cls.__name__} has no graph_info_: register it via a ModelProvider decorator first")
+        return cls.graph_info_
+
     @property
     def type_(self):
         """Return GraphObjectType.NODE."""
@@ -366,6 +380,16 @@ class GraphEdge(
 
     # Set by ModelProvider.edge() decorator; None until registered.
     graph_info_: ClassVar[GraphEdgeInfo | None] = None
+
+    @classmethod
+    def graph_info(cls) -> GraphEdgeInfo:
+        """Return the registered edge info, or raise if the model is unregistered.
+
+        See :meth:`GraphNode.graph_info` -- the edge counterpart.
+        """
+        if cls.graph_info_ is None:
+            raise RuntimeError(f"{cls.__name__} has no graph_info_: register it via a ModelProvider decorator first")
+        return cls.graph_info_
 
     start_id_: int | None = None
     end_id_: int | None = None
