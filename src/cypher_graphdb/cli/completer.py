@@ -47,8 +47,12 @@ class CompleterConfig(BaseModel):
                 self.update_cmd_property(name, prop_type=field.annotation, default=field.default)
 
     def update_cmd_property(
-        self, name: str, prop_type: type | None = str, default: Any = None, completer: Callable | None = None, ctx: Any = None
+        self, name: str, prop_type: Any = str, default: Any = None, completer: Callable | None = None, ctx: Any = None
     ) -> FieldInfo:
+        # prop_type is stored onto a pydantic FieldInfo.annotation, whose static
+        # type (``type | None`` vs ``TypeForm[Any] | None``) varies across pydantic
+        # versions; accept Any so a caller passing ``field.annotation`` type-checks
+        # regardless of the resolved pydantic.
         field = self._cmd_props.get(name)
         if field is None:
             field = Field()
