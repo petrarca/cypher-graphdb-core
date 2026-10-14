@@ -17,29 +17,13 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics
-from cypher_graphdb.bulk_refs import as_ref_props
+from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern, ref_param
 from cypher_graphdb.cyphergraphdb.pagination import Page
 from cypher_graphdb.cyphergraphdb.pagination_mixin import _resolve_col_names
 from cypher_graphdb.cypherparser import ParsedCypherQuery
 from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import IndexInfo, IndexType, LabelStatistics
 from cypher_graphdb.utils import chunk_list, parse_connection_uri, validate_protocol
-
-
-def _edge_match_pattern(alias: str, node_label: str, props: Sequence[str], ref: str) -> str:
-    """Build a Cypher node-match pattern for one edge endpoint (parameterized UNWIND var ``e``).
-
-    ``ref`` is the UNWIND field ("src" or "dst"). A single-prop key matches the
-    scalar ``e.src``; a composite key matches each property against an element of
-    the list value (``e.src[0]``, ``e.src[1]``, ...). ``node_label`` may be empty
-    (match any label), preserving Memgraph's prior behaviour.
-    """
-    if len(props) == 1:
-        body = f"{props[0]}: e.{ref}"
-    else:
-        body = ", ".join(f"{p}: e.{ref}[{i}]" for i, p in enumerate(props))
-    labelled = f"{alias}:{node_label}" if node_label else alias
-    return f"({labelled} {{{body}}})"
 
 
 class MemgraphDB(CypherBackend):
@@ -710,8 +694,8 @@ class MemgraphDB(CypherBackend):
         dst_props = as_ref_props(dst_ref_prop)
 
         # Build MATCH patterns from label/prop names (not user values -- safe to inline)
-        src_pat = _edge_match_pattern("a", src_label, src_props, "src")
-        dst_pat = _edge_match_pattern("b", dst_label, dst_props, "dst")
+        src_pat = edge_match_pattern("a", src_label, src_props, "src")
+        dst_pat = edge_match_pattern("b", dst_label, dst_props, "dst")
 
         # Collect edge property keys (beyond src/dst) from first row
         edge_prop_keys = [k for k in edges[0] if k not in ("src", "dst")]
@@ -722,11 +706,9 @@ class MemgraphDB(CypherBackend):
 
         cypher = f"UNWIND $edges AS e MATCH {src_pat} MATCH {dst_pat} CREATE (a)-[r:{label}]->(b){set_clause}"
 
-        # A composite key's src/dst is a tuple; mgclient accepts lists, not tuples,
-        # as query parameters, so coerce composite refs to lists.
-        composite = len(src_props) > 1 or len(dst_props) > 1
-        if composite:
-            edges = [{**e, "src": list(e["src"]), "dst": list(e["dst"])} for e in edges]
+        # mgclient rejects tuples as query parameters; coerce each endpoint by its own
+        # key arity (source and destination may differ).
+        edges = [{**e, "src": ref_param(e["src"], len(src_props)), "dst": ref_param(e["dst"], len(dst_props))} for e in edges]
 
         total = 0
         for batch in chunk_list(edges, batch_size):

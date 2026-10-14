@@ -2,7 +2,7 @@
 
 import pytest
 
-from cypher_graphdb.bulk_refs import as_ref_props, ref_key
+from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern, ref_key, ref_param
 
 pytestmark = pytest.mark.unit
 
@@ -54,3 +54,32 @@ class TestRefKey:
     def test_composite_wrong_length(self):
         with pytest.raises(ValueError, match="expected 2 match values"):
             ref_key(("pkg.foo",), 2)
+
+
+class TestRefParam:
+    """Per-endpoint parameter coercion (source and destination arity may differ)."""
+
+    def test_single_prop_scalar_stays_scalar(self):
+        # A scalar string must never be split into characters.
+        assert ref_param("abc", 1) == "abc"
+
+    def test_composite_tuple_becomes_list(self):
+        assert ref_param(("a", "b"), 2) == ["a", "b"]
+
+    def test_composite_validates_length(self):
+        with pytest.raises(ValueError, match="expected 2 match values"):
+            ref_param(("a",), 2)
+
+
+class TestEdgeMatchPattern:
+    """The shared UNWIND endpoint pattern used by the AGE fallback and Memgraph."""
+
+    def test_single_prop(self):
+        assert edge_match_pattern("a", "Fn", ("symbol",), "src") == "(a:Fn {symbol: e.src})"
+
+    def test_composite_indexes_list(self):
+        assert edge_match_pattern("b", "Fn", ("qn", "sk"), "dst") == "(b:Fn {qn: e.dst[0], sk: e.dst[1]})"
+
+    def test_empty_label_matches_any(self):
+        assert edge_match_pattern("a", "", ("symbol",), "src") == "(a {symbol: e.src})"
+        assert edge_match_pattern("a", None, ("symbol",), "src") == "(a {symbol: e.src})"

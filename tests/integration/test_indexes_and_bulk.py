@@ -512,6 +512,92 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH (:CKSpec)-[r:CALLS]->(:CKSpec) RETURN count(r)", unnest_result=True)
         assert total == 1
 
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("composite_side", ["src", "dst"])
+    def test_mixed_arity_composite_and_scalar_endpoints(self, clean_db, composite_side):
+        """One endpoint on a composite key, the other on a single property.
+
+        Regression: Memgraph coerced both endpoints to lists as soon as either was
+        composite, splitting the scalar endpoint's string into characters so the
+        edge silently matched nothing. Each endpoint must be handled by its own arity.
+        """
+        clean_db.bulk_create_nodes([{"symbol": "ext:srcA:os.path", "name": "ext"}], label="CKExt")
+        clean_db.create_property_index("CKExt", "symbol")
+        clean_db.commit()
+
+        composite_key = ("qualified_name", "source_key")
+        if composite_side == "src":
+            edge = {"src": ("pkg.foo", "srcA"), "dst": "ext:srcA:os.path"}
+            kwargs = {"src_label": "CKFn", "dst_label": "CKExt", "src_ref_prop": composite_key, "dst_ref_prop": "symbol"}
+            query = "MATCH (a:CKFn)-[r:CALLS]->(b:CKExt) RETURN a.source_key, b.symbol"
+        else:
+            edge = {"src": "ext:srcA:os.path", "dst": ("pkg.foo", "srcA")}
+            kwargs = {"src_label": "CKExt", "dst_label": "CKFn", "src_ref_prop": "symbol", "dst_ref_prop": composite_key}
+            query = "MATCH (a:CKExt)-[r:CALLS]->(b:CKFn) RETURN a.symbol, b.source_key"
+
+        count = clean_db.bulk_create_edges([edge], label="CALLS", **kwargs)
+        clean_db.commit()
+
+        assert count == 1
+        rows = clean_db.execute(query)
+        assert len(rows) == 1, "mixed-arity edge was silently dropped"
+        assert "srcA" in tuple(rows[0])
+
+    @pytest.mark.parametrize("test_db", ["age_db"], indirect=True)
+    def test_age_cypher_fallback_composite_and_mixed_arity(self, clean_db):
+        """The AGE Cypher UNWIND fallback (direct_bulk_insert off) honours composite keys.
+
+        The default AGE path is direct SQL; the fallback builds a different statement
+        and was previously not exercised for composite or mixed-arity keys.
+        """
+        backend = clean_db._backend
+        previous = backend.direct_bulk_insert
+        backend.direct_bulk_insert = False
+        try:
+            clean_db.execute("MATCH (n) DETACH DELETE n")
+            clean_db.bulk_create_nodes(
+                [
+                    {"qualified_name": "pkg.foo", "source_key": "srcA"},
+                    {"qualified_name": "pkg.bar", "source_key": "srcA"},
+                    {"qualified_name": "pkg.foo", "source_key": "srcB"},
+                    {"qualified_name": "pkg.bar", "source_key": "srcB"},
+                ],
+                label="CKFb",
+            )
+            clean_db.bulk_create_nodes([{"symbol": "ext:srcA:os.path"}], label="CKFbExt")
+            clean_db.commit()
+            key = ("qualified_name", "source_key")
+
+            clean_db.bulk_create_edges(
+                [
+                    {"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcA")},
+                    {"src": ("pkg.foo", "srcB"), "dst": ("pkg.bar", "srcB")},
+                ],
+                label="CALLS",
+                src_label="CKFb",
+                dst_label="CKFb",
+                src_ref_prop=key,
+                dst_ref_prop=key,
+            )
+            clean_db.bulk_create_edges(
+                [{"src": ("pkg.foo", "srcA"), "dst": "ext:srcA:os.path"}],
+                label="EXT",
+                src_label="CKFb",
+                dst_label="CKFbExt",
+                src_ref_prop=key,
+                dst_ref_prop="symbol",
+            )
+            clean_db.commit()
+
+            pairs = clean_db.execute("MATCH (a:CKFb)-[:CALLS]->(b:CKFb) RETURN a.source_key, b.source_key ORDER BY a.source_key")
+            assert [tuple(r) for r in pairs] == [("srcA", "srcA"), ("srcB", "srcB")]
+            ext = clean_db.execute("MATCH (a:CKFb)-[:EXT]->(:CKFbExt) RETURN a.source_key", unnest_result=True)
+            assert ext == "srcA"
+        finally:
+            backend.direct_bulk_insert = previous
+            clean_db.execute("MATCH (n) DETACH DELETE n")
+            clean_db.commit()
+
 
 # ── Bulk + rollback interaction ─────────────────────────────────────────────
 

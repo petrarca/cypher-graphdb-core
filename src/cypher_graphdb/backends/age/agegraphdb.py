@@ -26,7 +26,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
-from cypher_graphdb.bulk_refs import as_ref_props
+from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern
 
 # Deferred at module level to avoid a circular import:
 # agegraphdb -> pagination (cyphergraphdb package) -> cyphergraphdb -> agegraphdb
@@ -49,20 +49,6 @@ from .agtype import AgTypeLoader
 # Property name inside an AGE btree expression index, e.g.
 #   agtype_access_operator(VARIADIC ARRAY[properties, '"qualified_name"'::agtype])
 _AGTYPE_PROPERTY_RE = re.compile(r"'\"(?P<prop>[^\"]+)\"'::agtype")
-
-
-def _edge_match_pattern(alias: str, node_label: str, props: Sequence[str], ref: str) -> str:
-    """Build a Cypher node-match pattern for one edge endpoint.
-
-    ``ref`` is the UNWIND field carrying the match value ("src" or "dst"). For a
-    single-prop key the value is a scalar (``e.src``); for a composite key it is a
-    list, each property matched against its element (``e.src[0]``, ``e.src[1]``, ...).
-    """
-    if len(props) == 1:
-        body = f"{props[0]}: e.{ref}"
-    else:
-        body = ", ".join(f"{p}: e.{ref}[{i}]" for i, p in enumerate(props))
-    return f"({alias}:{node_label} {{{body}}})"
 
 
 class AGEExecutionError(Exception):
@@ -1076,8 +1062,8 @@ class AGEGraphDB(CypherBackend):
             )
 
         # Cypher UNWIND fallback (direct_bulk_insert disabled).
-        src_pat = _edge_match_pattern("a", src_label, as_ref_props(src_ref_prop), "src")
-        dst_pat = _edge_match_pattern("b", dst_label, as_ref_props(dst_ref_prop), "dst")
+        src_pat = edge_match_pattern("a", src_label, as_ref_props(src_ref_prop), "src")
+        dst_pat = edge_match_pattern("b", dst_label, as_ref_props(dst_ref_prop), "dst")
 
         total = 0
         for batch in chunk_list(edges, batch_size):
