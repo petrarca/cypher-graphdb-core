@@ -340,7 +340,7 @@ class SQLBuilder:
             sql.SQL("(")
             + sql.SQL(" AND ").join(
                 sql.SQL("{a} OPERATOR(ag_catalog.=) {v}").format(a=accessors[i], v=agtype_literal(v))
-                for i, v in enumerate(value_tuple if isinstance(value_tuple, tuple) else (value_tuple,))
+                for i, v in enumerate(value_tuple)
             )
             + sql.SQL(")")
             for value_tuple in ref_values
