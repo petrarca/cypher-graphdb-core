@@ -14,6 +14,7 @@ committed immediately (DDL cannot run inside a user transaction in PostgreSQL)
 without affecting any surrounding data already written by the caller.
 """
 
+from collections.abc import Sequence
 from typing import Literal
 
 import psycopg
@@ -21,6 +22,7 @@ from loguru import logger
 from psycopg.sql import SQL, Composed, Identifier
 from psycopg.sql import Literal as SQLLiteral
 
+from cypher_graphdb.bulk_refs import as_ref_props, ref_key
 from cypher_graphdb.utils import chunk_list
 
 from .ageserializer import escape_value
@@ -62,7 +64,7 @@ class AGEBulkWriter:
         # edges all resolving against Method.qualified_name).
         # Invalidated by invalidate_graphid_cache() after node inserts that
         # change the graphid mapping.
-        self._graphid_cache: dict[tuple[str, str], dict[str, int]] = {}
+        self._graphid_cache: dict[tuple[str, tuple[str, ...]], dict[tuple, int]] = {}
         # Cached list of edge label names for bulk_delete_nodes.
         # Edge labels are stable within a connection lifetime -- populated on
         # first call to _list_edge_labels() and reused for all subsequent deletes.
@@ -124,8 +126,8 @@ class AGEBulkWriter:
         edges: list[dict],
         src_label: str,
         dst_label: str,
-        src_ref_prop: str = "id",
-        dst_ref_prop: str = "id",
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
         batch_size: int = 500,
     ) -> int:
         """Insert edges via direct SQL INSERT into the AGE edge label table.
@@ -143,8 +145,10 @@ class AGEBulkWriter:
             edges: List of dicts with at least "src" and "dst" keys.
             src_label: Vertex label of source nodes.
             dst_label: Vertex label of destination nodes.
-            src_ref_prop: Property name on source nodes to match "src" values.
-            dst_ref_prop: Property name on destination nodes to match "dst" values.
+            src_ref_prop: Property (or ordered sequence of properties) on source
+                nodes to match "src" values. A sequence forms a composite key;
+                each edge's "src" is then a parallel sequence of values.
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
             batch_size: Number of rows per executemany batch.
 
         Returns:
@@ -155,17 +159,20 @@ class AGEBulkWriter:
 
         label_id = self._ensure_label(label, kind="e")
 
-        # Collect the unique ref values we actually need -- avoids loading
-        # the entire label table (which can be 200K+ rows in a shared graph).
-        src_refs = {e["src"] for e in edges}
-        dst_refs = {e["dst"] for e in edges}
+        src_props = as_ref_props(src_ref_prop)
+        dst_props = as_ref_props(dst_ref_prop)
 
-        # Build {ref_value: graphid} maps for only the referenced nodes
-        src_map = self._build_graphid_index(src_label, src_ref_prop, ref_values=src_refs)
-        if src_label == dst_label and src_ref_prop == dst_ref_prop:
-            dst_map = self._build_graphid_index(dst_label, dst_ref_prop, ref_values=src_refs | dst_refs)
+        # Collect the unique (composite) ref keys we actually need -- avoids
+        # loading the entire label table (200K+ rows in a shared graph).
+        src_refs = {ref_key(e["src"], len(src_props)) for e in edges}
+        dst_refs = {ref_key(e["dst"], len(dst_props)) for e in edges}
+
+        # Build {ref_key: graphid} maps for only the referenced nodes
+        src_map = self._build_graphid_index(src_label, src_props, ref_values=src_refs)
+        if src_label == dst_label and src_props == dst_props:
+            dst_map = self._build_graphid_index(dst_label, dst_props, ref_values=src_refs | dst_refs)
         else:
-            dst_map = self._build_graphid_index(dst_label, dst_ref_prop, ref_values=dst_refs)
+            dst_map = self._build_graphid_index(dst_label, dst_props, ref_values=dst_refs)
 
         total = 0
         skipped = 0
@@ -173,8 +180,8 @@ class AGEBulkWriter:
             for batch in chunk_list(edges, batch_size):
                 value_parts = []
                 for edge in batch:
-                    src_gid = src_map.get(edge["src"])
-                    dst_gid = dst_map.get(edge["dst"])
+                    src_gid = src_map.get(ref_key(edge["src"], len(src_props)))
+                    dst_gid = dst_map.get(ref_key(edge["dst"], len(dst_props)))
                     if src_gid is None or dst_gid is None:
                         skipped += 1
                         continue
@@ -479,51 +486,60 @@ class AGEBulkWriter:
             for k in keys_to_drop:
                 del self._graphid_cache[k]
 
-    def _build_graphid_index(self, label: str, ref_prop: str, ref_values: set[str] | None = None) -> dict[str, int]:
-        """Load a {ref_prop_value: graphid} mapping for nodes of a label.
+    def _build_graphid_index(
+        self, label: str, ref_props: Sequence[str], ref_values: set[tuple] | None = None
+    ) -> dict[tuple, int]:
+        """Load a {ref_key_tuple: graphid} mapping for nodes of a label.
 
-        When ``ref_values`` is provided, only loads graphids for those specific
-        property values (using a WHERE IN clause). This is critical for shared
-        graphs where a label table may contain hundreds of thousands of rows
-        across all sources, but only a small subset is needed for the current
-        edge batch.
+        ``ref_props`` is the ordered key: one property for a simple key, several
+        for a composite one. Keys in the returned map are value tuples aligned
+        with ``ref_props`` (always a tuple, even for a single prop), so a composite
+        key never collapses two nodes that merely share one property value.
+
+        When ``ref_values`` is provided (a set of value tuples), only loads
+        graphids for those specific keys (WHERE ... IN). Critical for shared
+        graphs where a label table may hold hundreds of thousands of rows across
+        all sources, but only a small subset is needed for the current edge batch.
 
         When ``ref_values`` is None, loads the entire table (used for small
         labels like structural edges).
 
-        Results are cached per (label, ref_prop) and incrementally extended
+        Results are cached per (label, ref_props) and incrementally extended
         when new ref_values are requested.
 
         Values returned by agtype_access_operator are agtype-quoted strings
         (e.g. '"mth:foo.bar"'), so we strip the surrounding quotes.
         """
-        cache_key = (label, ref_prop)
+        props = tuple(ref_props)
+        cache_key = (label, props)
         cached = self._graphid_cache.get(cache_key)
 
         if ref_values is not None and cached is not None:
-            # Check if all requested values are already in the cache
+            # Check if all requested keys are already in the cache
             missing = ref_values - cached.keys()
             if not missing:
                 return cached
-            # Only query the missing values
+            # Only query the missing keys
             ref_values = missing
 
         if ref_values is not None and ref_values:
-            sql_stmt = SQLBuilder.lookup_node_graphids_filtered_sql(self._graph_name, label, ref_prop, ref_values)
+            sql_stmt = SQLBuilder.lookup_node_graphids_filtered_sql(self._graph_name, label, props, ref_values)
         else:
-            sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, ref_prop)
+            sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, props)
 
         with self._conn.cursor() as cursor:
             cursor.execute(sql_stmt)
             rows = cursor.fetchall()
-        result = {str(r[0]).strip('"'): r[1] for r in rows}
+        # Each row is (val_0, ..., val_n, graphid); the key is the tuple of values.
+        n = len(props)
+        result = {tuple(str(v).strip('"') for v in r[:n]): r[n] for r in rows}
 
         # Merge into cache
         if cached is not None:
             cached.update(result)
-            logger.debug("Graphid index extended for {}.{}: +{} entries (total {})", label, ref_prop, len(result), len(cached))
+            logger.debug("Graphid index extended for {}.{}: +{} entries (total {})", label, props, len(result), len(cached))
             return cached
 
         self._graphid_cache[cache_key] = result
-        logger.debug("Graphid index built for {}.{}: {} entries", label, ref_prop, len(result))
+        logger.debug("Graphid index built for {}.{}: {} entries", label, props, len(result))
         return result

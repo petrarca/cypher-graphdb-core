@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import psycopg
@@ -26,6 +26,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
+from cypher_graphdb.bulk_refs import as_ref_props
 
 # Deferred at module level to avoid a circular import:
 # agegraphdb -> pagination (cyphergraphdb package) -> cyphergraphdb -> agegraphdb
@@ -48,6 +49,20 @@ from .agtype import AgTypeLoader
 # Property name inside an AGE btree expression index, e.g.
 #   agtype_access_operator(VARIADIC ARRAY[properties, '"qualified_name"'::agtype])
 _AGTYPE_PROPERTY_RE = re.compile(r"'\"(?P<prop>[^\"]+)\"'::agtype")
+
+
+def _edge_match_pattern(alias: str, node_label: str, props: Sequence[str], ref: str) -> str:
+    """Build a Cypher node-match pattern for one edge endpoint.
+
+    ``ref`` is the UNWIND field carrying the match value ("src" or "dst"). For a
+    single-prop key the value is a scalar (``e.src``); for a composite key it is a
+    list, each property matched against its element (``e.src[0]``, ``e.src[1]``, ...).
+    """
+    if len(props) == 1:
+        body = f"{props[0]}: e.{ref}"
+    else:
+        body = ", ".join(f"{p}: e.{ref}[{i}]" for i, p in enumerate(props))
+    return f"({alias}:{node_label} {{{body}}})"
 
 
 class AGEExecutionError(Exception):
@@ -1027,11 +1042,11 @@ class AGEGraphDB(CypherBackend):
         edges: list[dict],
         src_label: str,
         dst_label: str,
-        src_ref_prop: str = "id",
-        dst_ref_prop: str = "id",
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
         batch_size: int = 500,
     ) -> int:
-        """Create edges in batches by matching src/dst nodes on a reference property.
+        """Create edges in batches by matching src/dst nodes on a reference key.
 
         When ``direct_bulk_insert`` is True and both ``src_label`` and ``dst_label``
         are specified, uses direct SQL INSERT via :class:`AGEBulkWriter` with
@@ -1042,8 +1057,10 @@ class AGEGraphDB(CypherBackend):
             edges: List of dicts with at least "src" and "dst" keys.
             src_label: Label of source nodes. Required for optimal performance on AGE.
             dst_label: Label of destination nodes. Required for optimal performance on AGE.
-            src_ref_prop: Property name on source nodes to match against "src".
-            dst_ref_prop: Property name on destination nodes to match against "dst".
+            src_ref_prop: Property (or ordered sequence of properties) on source
+                nodes to match against "src". A sequence forms a composite key and
+                each edge's "src" is then a parallel sequence of values.
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
             batch_size: Number of edges per batch.
 
         Returns:
@@ -1059,8 +1076,8 @@ class AGEGraphDB(CypherBackend):
             )
 
         # Cypher UNWIND fallback (direct_bulk_insert disabled).
-        src_pat = f"(a:{src_label} {{{src_ref_prop}: e.src}})"
-        dst_pat = f"(b:{dst_label} {{{dst_ref_prop}: e.dst}})"
+        src_pat = _edge_match_pattern("a", src_label, as_ref_props(src_ref_prop), "src")
+        dst_pat = _edge_match_pattern("b", dst_label, as_ref_props(dst_ref_prop), "dst")
 
         total = 0
         for batch in chunk_list(edges, batch_size):

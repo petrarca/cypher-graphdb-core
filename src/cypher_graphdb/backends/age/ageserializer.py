@@ -37,12 +37,14 @@ def escape_string_inner(v: str) -> str:
 def escape_value(v: object) -> str:
     """Escape a Python value for inline AGE Cypher literals.
 
-    Handles None, bool, int, float, and str-coercible values. Strings are
-    escaped for double-quoted Cypher literals: backslashes, double quotes,
-    newlines, carriage returns, tabs, and null bytes are all handled.
+    Handles None, bool, int, float, list/tuple (nested), and str-coercible
+    values. Strings are escaped for double-quoted Cypher literals: backslashes,
+    double quotes, newlines, carriage returns, tabs, and null bytes are all
+    handled. A list/tuple becomes a Cypher list literal -- used for composite
+    edge-endpoint match keys (``e.src`` / ``e.dst``).
 
     Args:
-        v: Python value (None, bool, int, float, or str-coercible).
+        v: Python value (None, bool, int, float, list/tuple, or str-coercible).
 
     Returns:
         Cypher literal string representation.
@@ -53,6 +55,8 @@ def escape_value(v: object) -> str:
         return "true" if v else "false"
     if isinstance(v, int | float):
         return str(v)
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(escape_value(item) for item in v) + "]"
     return f'"{escape_string_inner(str(v))}"'
 
 
