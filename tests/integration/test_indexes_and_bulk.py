@@ -394,6 +394,124 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH ()-[r:LINKS]->() RETURN count(r)", unnest_result=True)
         assert total >= 1
 
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_three_property_composite_key(self, clean_db):
+        """A key of three properties matches only the node agreeing on all three."""
+        # Same qualified_name+source_key in two langs: only the 3-key disambiguates.
+        clean_db.bulk_create_nodes(
+            [
+                {"qualified_name": "pkg.x", "source_key": "srcA", "lang": "py", "name": "x"},
+                {"qualified_name": "pkg.y", "source_key": "srcA", "lang": "py", "name": "y"},
+                {"qualified_name": "pkg.x", "source_key": "srcA", "lang": "ts", "name": "x"},
+                {"qualified_name": "pkg.y", "source_key": "srcA", "lang": "ts", "name": "y"},
+            ],
+            label="CK3",
+        )
+        clean_db.commit()
+
+        key = ("qualified_name", "source_key", "lang")
+        count = clean_db.bulk_create_edges(
+            [{"src": ("pkg.x", "srcA", "py"), "dst": ("pkg.y", "srcA", "py")}],
+            label="CALLS",
+            src_label="CK3",
+            dst_label="CK3",
+            src_ref_prop=key,
+            dst_ref_prop=key,
+        )
+        clean_db.commit()
+
+        assert count == 1
+        pairs = clean_db.execute("MATCH (a:CK3)-[:CALLS]->(b:CK3) RETURN a.lang, b.lang")
+        assert [tuple(r) for r in pairs] == [("py", "py")]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_typed_edges_parallel_refs(self, clean_db):
+        """The typed GraphEdge path carries composite values via src_refs/dst_refs."""
+        edges = [_ITFriendsWith(since=2020), _ITFriendsWith(since=2021)]
+        count = clean_db.bulk_create_edges(
+            edges,
+            src_refs=[("pkg.foo", "srcA"), ("pkg.foo", "srcB")],
+            dst_refs=[("pkg.bar", "srcA"), ("pkg.bar", "srcB")],
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        assert count == 2
+        pairs = clean_db.execute(
+            "MATCH (a:CKFn)-[:FRIENDS_WITH]->(b:CKFn) RETURN a.source_key, b.source_key ORDER BY a.source_key"
+        )
+        assert [tuple(r) for r in pairs] == [("srcA", "srcA"), ("srcB", "srcB")]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_no_match_creates_nothing(self, clean_db):
+        """A composite key resolving to no node creates 0 edges (no stray scalar match)."""
+        # qualified_name exists, but source_key 'ghost' does not -- must not match.
+        clean_db.bulk_create_edges(
+            [{"src": ("pkg.foo", "ghost"), "dst": ("pkg.bar", "ghost")}],
+            label="CALLS",
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        total = clean_db.execute("MATCH ()-[r:CALLS]->() RETURN count(r)", unnest_result=True)
+        assert total == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_batching(self, clean_db):
+        """Composite matching holds across multiple batches (graphid cache extend path)."""
+        nodes = [{"qualified_name": f"n{i}", "source_key": "srcA", "name": f"n{i}"} for i in range(250)]
+        clean_db.bulk_create_nodes(nodes, label="CKBatch")
+        clean_db.commit()
+
+        # Chain n0->n1->...->n249, 249 edges, forced through small batches.
+        edges = [{"src": (f"n{i}", "srcA"), "dst": (f"n{i + 1}", "srcA")} for i in range(249)]
+        count = clean_db.bulk_create_edges(
+            edges,
+            label="NEXT",
+            src_label="CKBatch",
+            dst_label="CKBatch",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+            batch_size=100,
+        )
+        clean_db.commit()
+
+        assert count == 249
+        total = clean_db.execute("MATCH (:CKBatch)-[r:NEXT]->(:CKBatch) RETURN count(r)", unnest_result=True)
+        assert total == 249
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_special_characters(self, clean_db):
+        """Composite values with quotes/backslashes are escaped on both paths."""
+        clean_db.bulk_create_nodes(
+            [
+                {"qualified_name": 'q"x', "source_key": "src\\a", "name": "a"},
+                {"qualified_name": "q'y", "source_key": "src\\a", "name": "b"},
+            ],
+            label="CKSpec",
+        )
+        clean_db.commit()
+
+        count = clean_db.bulk_create_edges(
+            [{"src": ('q"x', "src\\a"), "dst": ("q'y", "src\\a")}],
+            label="CALLS",
+            src_label="CKSpec",
+            dst_label="CKSpec",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        assert count == 1
+        total = clean_db.execute("MATCH (:CKSpec)-[r:CALLS]->(:CKSpec) RETURN count(r)", unnest_result=True)
+        assert total == 1
+
 
 # ── Bulk + rollback interaction ─────────────────────────────────────────────
 

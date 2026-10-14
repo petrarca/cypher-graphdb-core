@@ -61,3 +61,53 @@ class TestCypherSqlTaggedDollarQuote:
         sql_str = sql_obj.as_string(None)
         assert "$$" not in sql_str
         assert "$age_cypher$" in sql_str
+
+
+class TestGraphidLookupCompositeKey:
+    """Composite-key graphid lookups must use agtype-safe equality, not row IN.
+
+    AGE's agtype does not support SQL row-value comparison -- ``(a, b) IN
+    ((x, y))`` raises "cannot cast agtype string to type boolean". The filtered
+    lookup therefore expands a composite key into per-tuple AND groups joined by
+    OR, and compares each property with the ``ag_catalog.=`` operator.
+    """
+
+    def test_single_prop_select_lists_one_value_column(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_sql("g", "Fn", ("symbol",))
+        s = sql_obj.as_string(None)
+        assert '"symbol"' in s
+        assert ", id FROM" in s
+
+    def test_composite_select_lists_all_value_columns(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_sql("g", "Fn", ("qualified_name", "source_key"))
+        s = sql_obj.as_string(None)
+        assert '"qualified_name"' in s
+        assert '"source_key"' in s
+
+    def test_filtered_composite_uses_operator_equality_not_row_in(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql("g", "Fn", ("qualified_name", "source_key"), {("pkg.foo", "srcA")})
+        s = sql_obj.as_string(None)
+        # agtype-safe equality, AND-joined within a tuple.
+        assert "OPERATOR(ag_catalog.=)" in s
+        assert " AND " in s
+        # Must NOT use the unsupported row-value IN comparison.
+        assert ") IN (" not in s
+
+    def test_filtered_composite_ors_multiple_tuples(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql(
+            "g", "Fn", ("qualified_name", "source_key"), {("a", "s1"), ("b", "s1")}
+        )
+        s = sql_obj.as_string(None)
+        assert " OR " in s
+
+    def test_filtered_single_prop_still_builds(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql("g", "Fn", ("symbol",), {("mth:x",)})
+        s = sql_obj.as_string(None)
+        assert "OPERATOR(ag_catalog.=)" in s
+        assert "mth:x" in s
+
+    def test_filtered_composite_escapes_special_chars(self):
+        sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql("g", "Fn", ("qualified_name", "source_key"), {('q"x', "s")})
+        s = sql_obj.as_string(None)
+        # The embedded double quote is escaped for the agtype JSON string literal.
+        assert '\\"' in s
