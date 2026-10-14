@@ -5,6 +5,7 @@ interface with Apache AGE graph functionality, including graph creation,
 Cypher query execution, and full-text search operations.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from psycopg import sql
@@ -280,52 +281,63 @@ class SQLBuilder:
             "WHERE g.name = %s AND l.name = %s"
         )
 
-    @classmethod
-    def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_prop: str) -> sql.Composed:
-        """SQL to look up graphids of all nodes of a label by a property value.
-
-        Returns (ref_value, graphid) pairs for every row in the label table.
-        Use ``lookup_node_graphids_filtered_sql`` when only a subset of values
-        is needed (avoids scanning hundreds of thousands of rows).
-        """
-        return sql.SQL(
-            "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
-            "FROM {schema}.{table}"
-        ).format(
-            schema=sql.Identifier(graph_name),
-            table=sql.Identifier(label),
-            prop=sql.Literal(f'"{ref_prop}"'),
+    @staticmethod
+    def _prop_access(prop: str) -> sql.Composed:
+        """agtype_access_operator expression reading one property, matching the expression index."""
+        return sql.SQL("ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])").format(
+            prop=sql.Literal(f'"{prop}"'),
         )
 
     @classmethod
-    def lookup_node_graphids_filtered_sql(cls, graph_name: str, label: str, ref_prop: str, ref_values: set[str]) -> sql.Composed:
-        """SQL to look up graphids for a specific set of property values.
+    def lookup_node_graphids_sql(cls, graph_name: str, label: str, ref_props: Sequence[str]) -> sql.Composed:
+        """SQL to look up graphids of all nodes of a label by one or more property values.
 
-        Uses a WHERE ... IN (...) clause with the same agtype_access_operator
-        expression as the expression index, so the btree index is used for
-        the filter. For 500 ref values against a 200K+ row table this turns
-        a sequential scan into 500 index lookups.
-
-        The ref values are cast to ``::ag_catalog.agtype`` to match the
-        expression index type exactly. Values containing double quotes or
-        backslashes are escaped for the agtype JSON string format before
-        being wrapped in the PostgreSQL string literal via sql.Literal.
+        Returns ``(ref_value_0, ..., ref_value_n, graphid)`` for every row in the
+        label table -- one value column per entry in ``ref_props``, in order, so
+        the caller can build a composite key. Use
+        ``lookup_node_graphids_filtered_sql`` when only a subset is needed
+        (avoids scanning hundreds of thousands of rows).
         """
-        # Build the IN list: each value is a double-quoted agtype string literal.
-        # escape_string_inner handles backslashes, double quotes, control chars,
-        # and null bytes -- identical escaping to the Cypher UNWIND path.
-        in_values = ", ".join(
-            sql.Literal('"' + escape_string_inner(v) + '"').as_string(None) + "::ag_catalog.agtype" for v in ref_values
-        )
-        return sql.SQL(
-            "SELECT ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype])::text, id "
-            "FROM {schema}.{table} "
-            "WHERE ag_catalog.agtype_access_operator(VARIADIC ARRAY[properties, {prop}::ag_catalog.agtype]) IN ({in_vals})"
-        ).format(
+        value_cols = sql.SQL(", ").join(cls._prop_access(p) + sql.SQL("::text") for p in ref_props)
+        return sql.SQL("SELECT {cols}, id FROM {schema}.{table}").format(
+            cols=value_cols,
             schema=sql.Identifier(graph_name),
             table=sql.Identifier(label),
-            prop=sql.Literal(f'"{ref_prop}"'),
-            in_vals=sql.SQL(in_values),
+        )
+
+    @classmethod
+    def lookup_node_graphids_filtered_sql(
+        cls, graph_name: str, label: str, ref_props: Sequence[str], ref_values: set
+    ) -> sql.Composed:
+        """SQL to look up graphids for a specific set of (composite) property values.
+
+        ``ref_props`` is the ordered list of key properties; ``ref_values`` is a
+        set of value tuples (one element per prop, same order). Uses a
+        ``WHERE (access_0, ..., access_n) IN ((v0, ..., vn), ...)`` row-comparison
+        so the per-prop expression indexes are usable. For the common single-prop
+        case this is exactly the previous ``col IN (...)`` form.
+
+        Values are cast to ``::ag_catalog.agtype`` to match the expression index
+        type. Values containing double quotes or backslashes are escaped for the
+        agtype JSON string format before being wrapped via sql.Literal -- identical
+        escaping to the Cypher UNWIND path.
+        """
+
+        def agtype_literal(v: str) -> str:
+            return sql.Literal('"' + escape_string_inner(v) + '"').as_string(None) + "::ag_catalog.agtype"
+
+        access_cols = sql.SQL(", ").join(cls._prop_access(p) for p in ref_props)
+        # Each tuple becomes a parenthesised row literal; single-prop stays (v).
+        rows_sql = sql.SQL(", ").join(
+            sql.SQL("(" + ", ".join(agtype_literal(v) for v in value_tuple) + ")") for value_tuple in ref_values
+        )
+        value_cols = sql.SQL(", ").join(cls._prop_access(p) + sql.SQL("::text") for p in ref_props)
+        return sql.SQL("SELECT {cols}, id FROM {schema}.{table} WHERE ({access}) IN ({rows})").format(
+            cols=value_cols,
+            schema=sql.Identifier(graph_name),
+            table=sql.Identifier(label),
+            access=access_cols,
+            rows=rows_sql,
         )
 
     @classmethod

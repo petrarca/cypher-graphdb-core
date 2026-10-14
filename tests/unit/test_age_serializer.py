@@ -64,9 +64,16 @@ class TestEscapeValue:
         assert escape_value(True) == "true"
         assert escape_value(False) == "false"
 
-    def test_non_string_coerced(self):
-        """Non-primitive types are coerced to str."""
-        result = escape_value(["a", "b"])
+    def test_list_becomes_cypher_list_literal(self):
+        """A list/tuple serializes to a Cypher list literal (composite endpoint keys)."""
+        assert escape_value(["a", "b"]) == '["a", "b"]'
+        assert escape_value(("a", 2)) == '["a", 2]'
+        # Nested escaping is applied per element.
+        assert escape_value(['a"b']) == '["a\\"b"]'
+
+    def test_other_non_string_coerced(self):
+        """A non-primitive, non-sequence value is coerced to a quoted string."""
+        result = escape_value(object())
         assert result.startswith('"')
         assert result.endswith('"')
 

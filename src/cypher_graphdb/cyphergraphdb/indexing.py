@@ -198,11 +198,11 @@ class IndexingMixin(_Host):
         src_refs: Sequence[Any] | None = None,
         dst_refs: Sequence[Any] | None = None,
         label: str | None = None,
-        src_ref_prop: str = "id",
-        dst_ref_prop: str = "id",
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
         batch_size: int = 500,
     ) -> int:
-        """Create edges in batches by matching src/dst nodes on a reference property.
+        """Create edges in batches by matching src/dst nodes on a reference key.
 
         Accepts either plain dicts (traditional shape) or decorated
         ``GraphEdge`` instances (typed shape).
@@ -215,6 +215,15 @@ class IndexingMixin(_Host):
         ``src_refs`` / ``dst_refs`` lists; the edge properties come from
         ``flatten_properties()`` on each instance.
 
+        A ref prop may name a **single** property (the common case) or an ordered
+        **sequence** of properties forming a composite key. A composite key is the
+        correct choice when no single property is unique within the label (e.g. the
+        same ``symbol`` exists in several sources of a shared graph): matching on
+        ``("symbol", "source_key")`` binds each edge to the intended node instead of
+        an arbitrary one that happens to share the symbol. For a composite key each
+        ``src`` / ``dst`` (or ``src_refs`` / ``dst_refs`` element) is a parallel
+        sequence of values, in the same order as the props.
+
         Args:
             edges: Either a list of dicts (each with ``src``/``dst`` + props)
                 or a list of ``GraphEdge`` instances (all sharing the same
@@ -226,8 +235,9 @@ class IndexingMixin(_Host):
             label: Edge label. Required for dicts; optional for typed input.
             src_label: Label of source nodes. Required for optimal performance on AGE.
             dst_label: Label of destination nodes. Required for optimal performance on AGE.
-            src_ref_prop: Property name on source nodes to match against src refs.
-            dst_ref_prop: Property name on destination nodes to match against dst refs.
+            src_ref_prop: Property, or ordered sequence of properties (composite
+                key), on source nodes to match against src refs.
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
             batch_size: Number of edges per batch.
 
         Returns:
@@ -253,6 +263,17 @@ class IndexingMixin(_Host):
                     src_label="Method", dst_label="Method",
                     src_ref_prop="qualified_name",
                     dst_ref_prop="qualified_name",
+                )
+
+            Composite key (disambiguate a non-unique property)::
+
+                cdb.bulk_create_edges(
+                    calls,
+                    src_refs=[("mod.foo.bar", "svc-a"), ("mod.foo.baz", "svc-a")],
+                    dst_refs=[("mod.target.a", "svc-a"), ("mod.target.b", "svc-a")],
+                    src_label="Method", dst_label="Method",
+                    src_ref_prop=("qualified_name", "source_key"),
+                    dst_ref_prop=("qualified_name", "source_key"),
                 )
         """
         assert self._backend

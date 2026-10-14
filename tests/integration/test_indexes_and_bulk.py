@@ -276,6 +276,125 @@ class TestBulkCreateEdges:
         assert result == 0
 
 
+# ── Composite endpoint keys ───────────────────────────────────────────────────
+
+
+class TestBulkCreateEdgesCompositeKey:
+    """Edge endpoint matching on a composite (multi-property) key.
+
+    A single ref prop is only correct when it is unique within the label. When
+    it is not -- the same ``qualified_name`` exists in several ``source_key``s of
+    a shared graph -- a single-prop match binds an edge to an arbitrary node that
+    happens to share the value, cross-linking (and, on re-index, corrupting)
+    sources. Matching on ``(qualified_name, source_key)`` must bind each edge to
+    the intended node within its own source. Runs on both the AGE direct-SQL path
+    and the Memgraph Cypher UNWIND path.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_shared_symbol_nodes(self, clean_db):
+        """Two sources with an identical qualified_name layout (the leak scenario)."""
+        clean_db.bulk_create_nodes(
+            [
+                {"qualified_name": "pkg.foo", "source_key": "srcA", "name": "foo"},
+                {"qualified_name": "pkg.bar", "source_key": "srcA", "name": "bar"},
+                {"qualified_name": "pkg.foo", "source_key": "srcB", "name": "foo"},
+                {"qualified_name": "pkg.bar", "source_key": "srcB", "name": "bar"},
+            ],
+            label="CKFn",
+        )
+        clean_db.create_property_index("CKFn", "qualified_name")
+        clean_db.create_property_index("CKFn", "source_key")
+        clean_db.commit()
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_binds_within_source(self, clean_db):
+        """Each source's edge stays within that source -- no cross-source leak."""
+        edges = [
+            {"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcA")},
+            {"src": ("pkg.foo", "srcB"), "dst": ("pkg.bar", "srcB")},
+        ]
+        count = clean_db.bulk_create_edges(
+            edges,
+            label="CALLS",
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        assert count == 2
+        pairs = clean_db.execute("MATCH (a:CKFn)-[:CALLS]->(b:CKFn) RETURN a.source_key, b.source_key ORDER BY a.source_key")
+        assert [tuple(r) for r in pairs] == [("srcA", "srcA"), ("srcB", "srcB")]
+        leaked = clean_db.execute(
+            "MATCH (a:CKFn)-[:CALLS]->(b:CKFn) WHERE a.source_key <> b.source_key RETURN count(*)",
+            unnest_result=True,
+        )
+        assert leaked == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_crossing_sources_is_explicit(self, clean_db):
+        """A deliberately cross-source edge is still expressible via the composite key."""
+        edges = [{"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcB")}]
+        count = clean_db.bulk_create_edges(
+            edges,
+            label="CALLS",
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        assert count == 1
+        pairs = clean_db.execute("MATCH (a:CKFn)-[:CALLS]->(b:CKFn) RETURN a.source_key, b.source_key")
+        assert [tuple(r) for r in pairs] == [("srcA", "srcB")]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_with_edge_properties(self, clean_db):
+        """Edge properties are preserved alongside a composite endpoint key."""
+        edges = [{"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcA"), "confidence": "EXTRACTED", "line": 7}]
+        clean_db.bulk_create_edges(
+            edges,
+            label="CALLS",
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop=("qualified_name", "source_key"),
+            dst_ref_prop=("qualified_name", "source_key"),
+        )
+        clean_db.commit()
+
+        result = clean_db.execute("MATCH (:CKFn)-[r:CALLS]->(:CKFn) RETURN r.confidence, r.line")
+        assert len(result) == 1
+        assert tuple(result[0]) == ("EXTRACTED", 7)
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_single_prop_key_still_matches_scalar(self, clean_db):
+        """The scalar (single-property) form is accepted and matches as before.
+
+        ``qualified_name`` alone is deliberately ambiguous here (two sources share
+        it), which is exactly why a composite key is needed. The backends resolve
+        the ambiguity differently -- AGE's direct-SQL graphid map keeps one node per
+        value (1 edge), while Memgraph's Cypher MATCH yields the Cartesian product
+        (2 foo x 2 bar = 4 edges). Both are pre-existing single-prop behaviour; this
+        test only asserts the scalar form still works and produces at least one edge.
+        """
+        edges = [{"src": "pkg.foo", "dst": "pkg.bar"}]
+        clean_db.bulk_create_edges(
+            edges,
+            label="LINKS",
+            src_label="CKFn",
+            dst_label="CKFn",
+            src_ref_prop="qualified_name",
+            dst_ref_prop="qualified_name",
+        )
+        clean_db.commit()
+
+        total = clean_db.execute("MATCH ()-[r:LINKS]->() RETURN count(r)", unnest_result=True)
+        assert total >= 1
+
+
 # ── Bulk + rollback interaction ─────────────────────────────────────────────
 
 

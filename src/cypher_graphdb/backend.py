@@ -7,6 +7,7 @@ CypherBackend: Abstract base class for implementing graph database backends.
 
 import abc
 import re
+from collections.abc import Sequence
 from enum import Enum, auto
 from typing import Any
 
@@ -453,23 +454,27 @@ class CypherBackend(abc.ABC):
         edges: list[dict],
         src_label: str,
         dst_label: str,
-        src_ref_prop: str = "id",
-        dst_ref_prop: str = "id",
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
         batch_size: int = 500,
     ) -> int:
-        """Create edges in batches by matching src/dst nodes on a reference property.
+        """Create edges in batches by matching src/dst nodes on a reference key.
 
         Each dict in edges must have "src" and "dst" keys whose values match
         the src_ref_prop/dst_ref_prop properties on source/destination nodes.
         Any additional keys are set as properties on the created edge.
+
+        A ref prop may name a single property or an ordered sequence of properties
+        (a composite key); for a composite key each "src"/"dst" is a parallel
+        sequence of values in the same order.
 
         Args:
             label: Edge label for all created edges.
             edges: List of dicts with "src", "dst", and optional edge properties.
             src_label: Label of source nodes. Required for optimal performance on AGE.
             dst_label: Label of destination nodes. Required for optimal performance on AGE.
-            src_ref_prop: Property name on source nodes to match against "src".
-            dst_ref_prop: Property name on destination nodes to match against "dst".
+            src_ref_prop: Property, or ordered sequence of properties, on source nodes to match against "src".
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
             batch_size: Number of edges per UNWIND batch.
 
         Returns:
