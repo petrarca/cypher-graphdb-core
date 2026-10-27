@@ -76,9 +76,11 @@ def _get_parent_labels(graph_model: type[GraphNode | GraphEdge]) -> list[str] | 
         if base in (GraphNode, GraphEdge):
             break
 
-        # Only include classes that are decorated graph models
-        if hasattr(base, "graph_info_"):
-            parents.append(base.graph_info_.label_)
+        # Only include classes that are decorated graph models: an undecorated base
+        # (an abstract parent) inherits graph_info_ = None from GraphNode/GraphEdge.
+        info = getattr(base, "graph_info_", None)
+        if info is not None:
+            parents.append(info.label_)
 
     return parents if parents else None
 

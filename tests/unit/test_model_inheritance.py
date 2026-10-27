@@ -163,6 +163,23 @@ class TestRelationInheritance:
                 == manualproduct_relations[0]["to_type_name"]
             )
 
+    def test_an_undecorated_base_is_no_parent(self, mp):
+        """A node inheriting from an undecorated (abstract) base names no parent -- the base has no label of its own."""
+        from cypher_graphdb.utils.schema_utils import extract_schemas_from_model_infos
+
+        class Language(GraphNode):
+            name: str
+
+        @mp.node(label="ProgrammingLanguage")
+        class ProgrammingLanguage(Language):
+            paradigm: str | None = None
+
+        mp.register(ProgrammingLanguage)
+        schema = extract_schemas_from_model_infos([mp.get("ProgrammingLanguage")])[0]
+
+        assert "inherits_from" not in schema.get("x-graph", {})
+        assert "name" in schema["properties"]
+
     def test_schema_description_merging(self, mp):
         """Test that schema-level descriptions are merged during schema combination."""
         # Two schemas with different descriptions for the same title
