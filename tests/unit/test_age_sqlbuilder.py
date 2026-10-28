@@ -68,8 +68,9 @@ class TestGraphidLookupCompositeKey:
 
     AGE's agtype does not support SQL row-value comparison -- ``(a, b) IN
     ((x, y))`` raises "cannot cast agtype string to type boolean". The filtered
-    lookup therefore expands a composite key into per-tuple AND groups joined by
-    OR, and compares each property with the ``ag_catalog.=`` operator.
+    lookup therefore matches each property against its distinct values with
+    ``OPERATOR(ag_catalog.=) ANY (ARRAY[...])``, AND'd across properties -- one
+    index-friendly condition per property, never a per-tuple OR chain.
     """
 
     def test_single_prop_select_lists_one_value_column(self):
@@ -93,12 +94,15 @@ class TestGraphidLookupCompositeKey:
         # Must NOT use the unsupported row-value IN comparison.
         assert ") IN (" not in s
 
-    def test_filtered_composite_ors_multiple_tuples(self):
+    def test_filtered_composite_is_one_any_condition_per_prop(self):
         sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql(
             "g", "Fn", ("qualified_name", "source_key"), {("a", "s1"), ("b", "s1")}
         )
         s = sql_obj.as_string(None)
-        assert " OR " in s
+        assert " OR " not in s
+        assert s.count("OPERATOR(ag_catalog.=) ANY (ARRAY[") == 2
+        # Distinct values per prop: the shared source key is listed once.
+        assert s.count("'\"s1\"'") == 1
 
     def test_filtered_single_prop_still_builds(self):
         sql_obj = SQLBuilder.lookup_node_graphids_filtered_sql("g", "Fn", ("symbol",), {("mth:x",)})
