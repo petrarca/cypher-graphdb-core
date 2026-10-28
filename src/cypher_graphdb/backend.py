@@ -485,6 +485,63 @@ class CypherBackend(abc.ABC):
         """
         raise NotImplementedError(f"Backend {self.name} does not support bulk_create_edges")
 
+    def bulk_delete_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str,
+        dst_label: str,
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Delete edges in batches, matching their src/dst nodes on a reference key.
+
+        The counterpart of :meth:`bulk_create_edges`: each dict in edges has
+        "src" and "dst" keys matched against the src_ref_prop/dst_ref_prop
+        properties, and every ``label`` edge from a matched source to its matched
+        destination is deleted. Pairs whose endpoints match no node are skipped.
+        Composite keys work as for :meth:`bulk_create_edges`.
+
+        Args:
+            label: Label of the edges to delete.
+            edges: List of dicts with "src" and "dst" keys; other keys are ignored.
+            src_label: Label of source nodes.
+            dst_label: Label of destination nodes.
+            src_ref_prop: Property, or ordered sequence of properties, on source nodes to match against "src".
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
+            batch_size: Number of pairs per batch.
+
+        Returns:
+            Total number of edges deleted.
+
+        Raises:
+            NotImplementedError: If the backend does not support bulk_delete_edges.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support bulk_delete_edges")
+
+    def bulk_update_nodes(self, label: str, rows: list[dict], ref_prop: str | Sequence[str] = "id", batch_size: int = 500) -> int:
+        """Set properties on existing nodes in batches, matching them on a reference key.
+
+        Each dict in rows has a "ref" key matched against the ``ref_prop``
+        property (or, for a composite key, a parallel sequence of values matched
+        element-wise) and the properties to set on the matched node. All rows of
+        one call set the same property keys. Rows that match no node are skipped.
+
+        Args:
+            label: Label of the nodes to update.
+            rows: List of dicts with "ref" and the properties to set.
+            ref_prop: Property, or ordered sequence of properties, to match "ref" against.
+            batch_size: Number of rows per batch.
+
+        Returns:
+            Total number of nodes updated.
+
+        Raises:
+            NotImplementedError: If the backend does not support bulk_update_nodes.
+        """
+        raise NotImplementedError(f"Backend {self.name} does not support bulk_update_nodes")
+
     def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.
 

@@ -287,3 +287,118 @@ class IndexingMixin(_Host):
             dst_ref_prop=dst_ref_prop,
             batch_size=batch_size,
         )
+
+    def bulk_delete_edges(
+        self,
+        label: str,
+        src_refs: Sequence[Any],
+        dst_refs: Sequence[Any],
+        src_label: str,
+        dst_label: str,
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Delete edges in batches by matching src/dst nodes on a reference key.
+
+        The counterpart of :meth:`bulk_create_edges`: ``src_refs[i]`` and
+        ``dst_refs[i]`` identify one endpoint pair, and every ``label`` edge from
+        that source to that destination is deleted. Pairs that match no node are
+        skipped. Each backend picks its fastest path (direct SQL on AGE, Cypher
+        UNWIND on Memgraph) -- large Cypher ``MATCH ... DELETE`` runs are slow on
+        some backends.
+
+        A ref prop may be a single property or an ordered sequence forming a
+        composite key, exactly as for :meth:`bulk_create_edges`.
+
+        Args:
+            label: Label of the edges to delete.
+            src_refs: Source match values, parallel to ``dst_refs``.
+            dst_refs: Destination match values, parallel to ``src_refs``.
+            src_label: Label of source nodes.
+            dst_label: Label of destination nodes.
+            src_ref_prop: Property, or ordered sequence of properties, on source nodes.
+            dst_ref_prop: As ``src_ref_prop``, for destination nodes.
+            batch_size: Number of pairs per batch.
+
+        Returns:
+            Total number of edges deleted.
+
+        Raises:
+            ValueError: If ``src_refs`` and ``dst_refs`` differ in length.
+
+        Example::
+
+            cdb.bulk_delete_edges(
+                "CALLS",
+                src_refs=[("mod.foo.bar", "svc-a")],
+                dst_refs=[("mod.target.a", "svc-a")],
+                src_label="Method", dst_label="Method",
+                src_ref_prop=("qualified_name", "source_key"),
+                dst_ref_prop=("qualified_name", "source_key"),
+            )
+        """
+        assert self._backend
+        if len(src_refs) != len(dst_refs):
+            raise ValueError(f"src_refs and dst_refs must be parallel: {len(src_refs)} != {len(dst_refs)}")
+        edges = [{"src": src, "dst": dst} for src, dst in zip(src_refs, dst_refs, strict=True)]
+        return self._backend.bulk_delete_edges(
+            label,
+            edges,
+            src_label=src_label,
+            dst_label=dst_label,
+            src_ref_prop=src_ref_prop,
+            dst_ref_prop=dst_ref_prop,
+            batch_size=batch_size,
+        )
+
+    def bulk_update_nodes(
+        self,
+        label: str,
+        refs: Sequence[Any],
+        properties: Sequence[dict[str, Any]],
+        ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Set properties on existing nodes in batches, matching them on a reference key.
+
+        ``refs[i]`` identifies one node (a single value, or for a composite
+        ``ref_prop`` a parallel sequence of values) and ``properties[i]`` holds the
+        properties to set on it; every entry must set the same keys. Nodes that
+        match no ref are skipped. Each backend picks its own path (inline literals
+        on AGE, which cannot bind parameters inside UNWIND; parameterized UNWIND on
+        Memgraph).
+
+        Args:
+            label: Label of the nodes to update.
+            refs: Match values, parallel to ``properties``.
+            properties: Properties to set, parallel to ``refs``.
+            ref_prop: Property, or ordered sequence of properties, to match refs against.
+            batch_size: Number of nodes per batch.
+
+        Returns:
+            Total number of nodes updated.
+
+        Raises:
+            ValueError: If ``refs`` and ``properties`` differ in length, the
+                property keys differ between entries, or a key is ``ref``.
+
+        Example::
+
+            cdb.bulk_update_nodes(
+                "Class",
+                refs=[("cls:app.Foo", "svc-a")],
+                properties=[{"community": 3, "centrality": 0.25}],
+                ref_prop=("symbol", "source_key"),
+            )
+        """
+        assert self._backend
+        if len(refs) != len(properties):
+            raise ValueError(f"refs and properties must be parallel: {len(refs)} != {len(properties)}")
+        keys = {frozenset(p) for p in properties}
+        if len(keys) > 1:
+            raise ValueError("every properties entry must set the same keys")
+        if any("ref" in k for k in keys):
+            raise ValueError("'ref' is reserved for the match value and cannot be set as a property")
+        rows = [{**props, "ref": ref} for ref, props in zip(refs, properties, strict=True)]
+        return self._backend.bulk_update_nodes(label, rows, ref_prop=ref_prop, batch_size=batch_size)

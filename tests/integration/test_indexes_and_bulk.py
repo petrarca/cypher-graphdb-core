@@ -276,6 +276,173 @@ class TestBulkCreateEdges:
         assert result == 0
 
 
+class TestBulkDeleteEdges:
+    """bulk_delete_edges on both backends: the AGE direct-SQL path and the Memgraph UNWIND path."""
+
+    @pytest.fixture(autouse=True)
+    def setup_graph(self, clean_db):
+        """Three people, two companies, and edges between them -- two parallel edges p1->c1."""
+        clean_db.bulk_create_nodes([{"id": f"p{i}", "source": "srcA" if i < 3 else "srcB"} for i in (1, 2, 3)], label="DPerson")
+        clean_db.bulk_create_nodes([{"id": "c1", "source": "srcA"}, {"id": "c2", "source": "srcB"}], label="DCompany")
+        clean_db.create_property_index("DPerson", "id")
+        clean_db.create_property_index("DCompany", "id")
+        edges = [{"src": "p1", "dst": "c1"}, {"src": "p1", "dst": "c1"}, {"src": "p2", "dst": "c1"}, {"src": "p3", "dst": "c2"}]
+        clean_db.bulk_create_edges(edges, label="WORKS_AT", src_label="DPerson", dst_label="DCompany")
+        clean_db.bulk_create_edges([{"src": "p1", "dst": "p2"}], label="KNOWS", src_label="DPerson", dst_label="DPerson")
+        clean_db.commit()
+
+    def _pairs(self, db, label: str) -> list[tuple]:
+        return sorted(tuple(r) for r in db.execute(f"MATCH (a)-[:{label}]->(b) RETURN a.id, b.id"))
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_deletes_every_edge_between_each_pair(self, clean_db):
+        deleted = clean_db.bulk_delete_edges(
+            "WORKS_AT", src_refs=["p1", "p3"], dst_refs=["c1", "c2"], src_label="DPerson", dst_label="DCompany"
+        )
+        clean_db.commit()
+
+        assert deleted == 3  # both parallel p1->c1 edges and p3->c2
+        assert self._pairs(clean_db, "WORKS_AT") == [("p2", "c1")]
+        assert self._pairs(clean_db, "KNOWS") == [("p1", "p2")]  # other labels untouched
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_scopes_the_delete(self, clean_db):
+        deleted = clean_db.bulk_delete_edges(
+            "WORKS_AT",
+            src_refs=[("p3", "srcA"), ("p2", "srcA")],
+            dst_refs=[("c2", "srcB"), ("c1", "srcA")],
+            src_label="DPerson",
+            dst_label="DCompany",
+            src_ref_prop=("id", "source"),
+            dst_ref_prop=("id", "source"),
+        )
+        clean_db.commit()
+
+        assert deleted == 1  # p3 is in srcB, so ("p3", "srcA") matches nothing
+        assert self._pairs(clean_db, "WORKS_AT") == [("p1", "c1"), ("p1", "c1"), ("p3", "c2")]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_mixed_arity_endpoints(self, clean_db):
+        deleted = clean_db.bulk_delete_edges(
+            "WORKS_AT",
+            src_refs=[("p2", "srcA")],
+            dst_refs=["c1"],
+            src_label="DPerson",
+            dst_label="DCompany",
+            src_ref_prop=("id", "source"),
+        )
+        clean_db.commit()
+
+        assert deleted == 1
+        assert ("p2", "c1") not in self._pairs(clean_db, "WORKS_AT")
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_unmatched_pairs_and_unknown_labels_delete_nothing(self, clean_db):
+        assert (
+            clean_db.bulk_delete_edges(
+                "WORKS_AT", src_refs=["nobody"], dst_refs=["c1"], src_label="DPerson", dst_label="DCompany"
+            )
+            == 0
+        )
+        assert (
+            clean_db.bulk_delete_edges("WORKS_AT", src_refs=["p2"], dst_refs=["c2"], src_label="DPerson", dst_label="DCompany")
+            == 0
+        )
+        assert (
+            clean_db.bulk_delete_edges(
+                "NO_SUCH_EDGE", src_refs=["p1"], dst_refs=["c1"], src_label="DPerson", dst_label="DCompany"
+            )
+            == 0
+        )
+        assert (
+            clean_db.bulk_delete_edges("WORKS_AT", src_refs=["p1"], dst_refs=["c1"], src_label="NoSuchNode", dst_label="DCompany")
+            == 0
+        )
+        assert clean_db.bulk_delete_edges("WORKS_AT", src_refs=[], dst_refs=[], src_label="DPerson", dst_label="DCompany") == 0
+        clean_db.commit()
+        assert len(self._pairs(clean_db, "WORKS_AT")) == 4
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_batching(self, clean_db):
+        deleted = clean_db.bulk_delete_edges(
+            "WORKS_AT",
+            src_refs=["p1", "p2", "p3"],
+            dst_refs=["c1", "c1", "c2"],
+            src_label="DPerson",
+            dst_label="DCompany",
+            batch_size=1,
+        )
+        clean_db.commit()
+
+        assert deleted == 4
+        assert self._pairs(clean_db, "WORKS_AT") == []
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_unparallel_refs_raise(self, clean_db):
+        with pytest.raises(ValueError, match="parallel"):
+            clean_db.bulk_delete_edges("WORKS_AT", src_refs=["p1"], dst_refs=[], src_label="DPerson", dst_label="DCompany")
+
+
+class TestBulkUpdateNodes:
+    """bulk_update_nodes on both backends: inline literals on AGE, parameterized UNWIND on Memgraph."""
+
+    @pytest.fixture(autouse=True)
+    def setup_nodes(self, clean_db):
+        clean_db.bulk_create_nodes(
+            [{"sym": "a", "src": "s1", "rank": 0}, {"sym": "b", "src": "s1", "rank": 0}, {"sym": "a", "src": "s2", "rank": 0}],
+            label="UNode",
+        )
+        clean_db.create_property_index("UNode", "sym")
+        clean_db.commit()
+
+    def _nodes(self, db) -> list[tuple]:
+        return sorted(tuple(r) for r in db.execute("MATCH (n:UNode) RETURN n.sym, n.src, n.rank, n.tag"))
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_sets_properties_on_matched_nodes(self, clean_db):
+        updated = clean_db.bulk_update_nodes(
+            "UNode", refs=["b"], properties=[{"rank": 7, "tag": 'q"uote\\ and\nnewline'}], ref_prop="sym"
+        )
+        clean_db.commit()
+
+        assert updated == 1
+        assert ("b", "s1", 7, 'q"uote\\ and\nnewline') in self._nodes(clean_db)
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_composite_key_scopes_the_update(self, clean_db):
+        updated = clean_db.bulk_update_nodes(
+            "UNode", refs=[("a", "s2")], properties=[{"rank": 3, "tag": "x"}], ref_prop=("sym", "src")
+        )
+        clean_db.commit()
+
+        assert updated == 1
+        assert self._nodes(clean_db) == [("a", "s1", 0, None), ("a", "s2", 3, "x"), ("b", "s1", 0, None)]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_unmatched_refs_and_batching(self, clean_db):
+        updated = clean_db.bulk_update_nodes(
+            "UNode",
+            refs=["a", "b", "nope"],
+            properties=[{"rank": 1, "tag": "t"}, {"rank": 2, "tag": "t"}, {"rank": 9, "tag": "t"}],
+            ref_prop="sym",
+            batch_size=1,
+        )
+        clean_db.commit()
+
+        assert updated == 3  # "a" matches a node in each source
+        assert [r[2] for r in self._nodes(clean_db)] == [1, 1, 2]
+        assert clean_db.bulk_update_nodes("UNode", refs=[], properties=[], ref_prop="sym") == 0
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    def test_invalid_arguments_raise(self, clean_db):
+        with pytest.raises(ValueError, match="parallel"):
+            clean_db.bulk_update_nodes("UNode", refs=["a"], properties=[], ref_prop="sym")
+        with pytest.raises(ValueError, match="same keys"):
+            clean_db.bulk_update_nodes("UNode", refs=["a", "b"], properties=[{"rank": 1}, {"tag": "x"}], ref_prop="sym")
+        with pytest.raises(ValueError, match="reserved"):
+            clean_db.bulk_update_nodes("UNode", refs=["a"], properties=[{"ref": 1}], ref_prop="sym")
+
+
 # ── Composite endpoint keys ───────────────────────────────────────────────────
 
 
