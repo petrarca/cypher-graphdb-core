@@ -78,8 +78,8 @@ class CypherBackend(abc.ABC):
         # overwrites this with its own provider right after construction.
         self._model_provider = kwargs.get("model_provider") or modelprovider.ModelProvider()
 
-        # Concrete connection type varies per backend (psycopg for AGE, mgclient
-        # for Memgraph); subclasses re-declare this with their own precise type.
+        # Concrete connection type varies per backend (psycopg for AGE, the Neo4j
+        # driver's Bolt connection for Memgraph); subclasses re-declare this with their own precise type.
         self._connection: Any = None
 
     @property

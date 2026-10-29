@@ -53,7 +53,7 @@ def _seed_star(db) -> int:
     return _center_id(db, "Alice")
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_both_returns_all_neighbors(clean_db):
     center = _seed_star(clean_db)
 
@@ -68,7 +68,7 @@ def test_expand_both_returns_all_neighbors(clean_db):
     assert result.has_more is False
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_out_only(clean_db):
     center = _seed_star(clean_db)
 
@@ -78,7 +78,7 @@ def test_expand_out_only(clean_db):
     assert names == {"Bob", "Carol"}
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_in_only(clean_db):
     center = _seed_star(clean_db)
 
@@ -88,7 +88,7 @@ def test_expand_in_only(clean_db):
     assert names == {"Dave"}
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_rel_type_filter(clean_db):
     center = _seed_star(clean_db)
 
@@ -99,7 +99,7 @@ def test_expand_rel_type_filter(clean_db):
     assert all(e.label_ == "MANAGES" for e in result.edges)
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_limit_sets_has_more(clean_db):
     center = _seed_star(clean_db)
 
@@ -109,7 +109,7 @@ def test_expand_limit_sets_has_more(clean_db):
     assert result.has_more is True
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_expand_node_without_neighbors_is_empty(clean_db):
     clean_db.execute("CREATE (a:Person {name: 'Loner'})")
     clean_db.commit()

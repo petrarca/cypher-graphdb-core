@@ -125,37 +125,48 @@ class TestMemgraphQueryTimeout:
         db._graph_name = "memgraph"
         return db
 
-    def test_set_database_setting_called_with_timeout(self):
-        """query_timeout_s=30 -> SET DATABASE SETTING 'query.timeout' TO '30000' called."""
+    @staticmethod
+    def _transport(name: str) -> MagicMock:
+        transport = MagicMock()
+        transport.name = name
+        return transport
+
+    def test_pymgclient_sets_the_server_timeout(self):
+        """pymgclient cannot send a transaction timeout: query_timeout_s=30 -> SET DATABASE SETTING 'query.timeout' TO '30000'."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
+        transport = self._transport("pymgclient")
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
-            db.connect(cinfo="bolt://localhost:7687", query_timeout_s=30)
+        with patch.object(db, "_open", return_value=transport):
+            db.connect(cinfo="bolt://localhost:7687?transport=pymgclient", query_timeout_s=30)
 
-        mock_cursor.execute.assert_called_once_with("SET DATABASE SETTING 'query.timeout' TO '30000'")
-        mock_cursor.close.assert_called_once()
+        transport.run_implicit.assert_called_once_with("SET DATABASE SETTING 'query.timeout' TO '30000'")
+
+    def test_the_neo4j_driver_sends_the_timeout_per_transaction(self):
+        """The Neo4j driver sends it as the Bolt transaction timeout: no server-wide setting."""
+        db = self._make_memgraph()
+        transport = self._transport("neo4j")
+
+        with patch.object(db, "_open", return_value=transport) as opened:
+            db.connect(cinfo="bolt://localhost:7687?transport=neo4j", query_timeout_s=30)
+
+        transport.run_implicit.assert_not_called()
+        assert opened.call_args.args[0] == "neo4j"
 
     def test_no_timeout_no_set_database_setting(self):
-        """query_timeout_s=None -> SET DATABASE SETTING not called."""
+        """query_timeout_s=None -> SET DATABASE SETTING not called, on either transport."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
+        transport = self._transport("pymgclient")
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
-            db.connect(cinfo="bolt://localhost:7687")
+        with patch.object(db, "_open", return_value=transport):
+            db.connect(cinfo="bolt://localhost:7687", transport="pymgclient")
 
-        # cursor() should not have been called for timeout setup
-        mock_conn.cursor.assert_not_called()
+        transport.run_implicit.assert_not_called()
 
     def test_timeout_stored_on_backend(self):
         """query_timeout_s value is stored on the backend instance."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = MagicMock()
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
+        with patch.object(db, "_open", return_value=self._transport("neo4j")):
             db.connect(cinfo="bolt://localhost:7687", query_timeout_s=45)
 
         assert db._query_timeout_s == 45

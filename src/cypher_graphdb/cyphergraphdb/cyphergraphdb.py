@@ -1254,7 +1254,7 @@ class CypherGraphDB(
 
         This is the single chokepoint for ``backend.execute_cypher``. Backend
         drivers raise backend-specific exceptions (e.g. Memgraph's
-        ``mgclient.DatabaseError`` or AGE's ``AGEExecutionError``); those must
+        ``neo4j.exceptions.Neo4jError`` or AGE's ``AGEExecutionError``); those must
         never escape the library. Any such failure is re-raised as the
         backend-agnostic ``QueryExecutionError`` so callers can catch one type.
 

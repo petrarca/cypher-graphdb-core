@@ -51,7 +51,7 @@ class QueryExecutionError(Exception):
 
     This is the backend-agnostic wrapper for execution-time failures such as
     Cypher syntax errors or other database errors raised by the underlying
-    driver (e.g. Memgraph's ``mgclient.DatabaseError`` or AGE's
+    driver (e.g. Memgraph's ``neo4j.exceptions.Neo4jError`` or AGE's
     ``AGEExecutionError``). The facade wraps those backend-specific exceptions
     so consumers can catch a single type without importing any backend driver.
 

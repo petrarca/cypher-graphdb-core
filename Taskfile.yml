@@ -123,6 +123,23 @@ tasks:
     cmds:
       - .venv/bin/pytest -m integration_memgraph
 
+  test:integration:neo4j:
+    desc: "Run the integration tests for the Neo4j backend only"
+    cmds:
+      - .venv/bin/pytest -m integration_neo4j
+
+  test:integration:memgraph-neo4j:
+    desc: "Run the Memgraph integration tests through the Neo4j driver transport"
+    env:
+      CGDB_MEMGRAPH_TRANSPORT: neo4j
+    cmds:
+      - .venv/bin/pytest -m integration_memgraph
+
+  bench:
+    desc: "Benchmark a Bolt backend (usage: task bench -- bolt://localhost:7687 [memgraph|neo4j])"
+    cmds:
+      - .venv/bin/python scripts/bench_bolt.py {{.CLI_ARGS}}
+
   test:integration:age:
     desc: "Run the integration tests for Apache AGE backend only"
     cmds:

@@ -8,17 +8,25 @@ status: stable
 
 # Connecting and configuring
 
-## The two backends
+## The three backends
 
 | Backend | Transport | Connection string | Graph means |
 |---|---|---|---|
 | `age` | PostgreSQL (`psycopg`) | `postgresql://user:pass@host:5432/db` | a PostgreSQL **schema**; labels are tables inside it |
-| `memgraph` | Bolt (`pymgclient`) | `bolt://[user:pass@]host:7687` | the single active database |
+| `memgraph` | Bolt: pymgclient (default), or the Neo4j Python driver | `bolt://[user:pass@]host:7687[?transport=neo4j]` | the single active database |
+| `neo4j` | Bolt: the Neo4j Python driver (with its Rust extension) | `bolt://` or `neo4j://[user:pass@]host:7687[/database]` | a Neo4j **database** (`neo4j` by default) |
 
-Both drivers are regular dependencies — there is no per-backend extra to install.
+All drivers are regular dependencies. Memgraph speaks Bolt through pymgclient by default (faster
+on large reads) or through the Neo4j driver (`?transport=neo4j`, or `connect_params={"transport":
+...}`: per-transaction timeouts, metadata, cluster routing); the URL's scheme goes to the
+transport -- `bolt+s://` for TLS, `neo4j://` for cluster routing.
+
+Memgraph and Neo4j share the Bolt foundation (statements, pages, streams, bulk writes); each is a
+dialect on it -- index DDL, catalog queries, how a graph is selected.
 
 Because an AGE graph is a schema, AGE connections take a **graph name** and can
-create it on demand. Memgraph connections generally do not.
+create it on demand. Memgraph connections generally do not; a Neo4j connection's graph name is
+its database.
 
 ## Ways to connect
 
