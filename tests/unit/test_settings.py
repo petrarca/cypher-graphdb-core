@@ -60,7 +60,7 @@ class TestDefaultPrefix:
         assert s.graph is None
         assert s.read_only is False
         assert s.create_graph is False
-        assert s.query_timeout_s == 30
+        assert s.query_timeout_s == 600
 
     def test_get_settings_returns_cached_instance(self, monkeypatch):
         monkeypatch.setenv("CGDB_BACKEND", "memgraph")
@@ -140,7 +140,7 @@ class TestWithPrefix:
         assert s.graph is None
         assert s.read_only is False
         assert s.create_graph is False
-        assert s.query_timeout_s == 30
+        assert s.query_timeout_s == 600
 
     def test_empty_prefix_reads_all_unprefixed(self, monkeypatch):
         # Empty prefix means read BACKEND/CINFO/GRAPH directly.

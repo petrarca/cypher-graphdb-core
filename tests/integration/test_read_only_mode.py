@@ -28,7 +28,7 @@ class TestReadOnlyMode:
         """Test that read_only property is accessible and correct."""
         assert test_db_readonly.read_only is True
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_regular_connection_not_readonly(self, test_db):
         """Test that regular connections are not read-only by default."""
         assert test_db.read_only is False

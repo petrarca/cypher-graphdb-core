@@ -58,12 +58,12 @@ def clean_db(test_db):
 class TestCapabilities:
     """Test BackendCapability detection for index-related features."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_property_index_capability(self, test_db):
         """Both backends should support PROPERTY_INDEX."""
         assert test_db.has_capability(BackendCapability.PROPERTY_INDEX) is True
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_unique_constraint_not_supported(self, test_db):
         """Neither backend currently declares UNIQUE_CONSTRAINT support."""
         assert test_db.has_capability(BackendCapability.UNIQUE_CONSTRAINT) is False
@@ -75,7 +75,7 @@ class TestCapabilities:
 class TestIndexManagement:
     """Test create_property_index, drop_index, list_indexes."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_create_property_index(self, clean_db):
         """Creating an index should succeed without error."""
         # Create nodes so label table exists (needed for AGE)
@@ -85,7 +85,7 @@ class TestIndexManagement:
         # Should not raise
         clean_db.create_property_index("TestLabel", "id", "name")
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_create_index_idempotent(self, clean_db):
         """Creating the same index twice should not raise."""
         clean_db.execute("CREATE (n:IdxLabel {id: '1'})")
@@ -94,13 +94,13 @@ class TestIndexManagement:
         clean_db.create_property_index("IdxLabel", "id")
         clean_db.create_property_index("IdxLabel", "id")  # second call -- no error
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_list_indexes_empty(self, clean_db):
         """list_indexes on a fresh graph should return only internal/no indexes."""
         indexes = clean_db.list_indexes()
         assert isinstance(indexes, list)
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_list_indexes_after_create(self, clean_db):
         """list_indexes should return created indexes."""
         clean_db.execute("CREATE (n:ListLabel {id: '1', name: 'foo'})")
@@ -112,7 +112,7 @@ class TestIndexManagement:
         labels = [idx.label for idx in indexes]
         assert "ListLabel" in labels
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_drop_index(self, clean_db):
         """Dropping an index should remove it from list_indexes."""
         clean_db.execute("CREATE (n:DropLabel {id: '1'})")
@@ -133,7 +133,7 @@ class TestIndexManagement:
 class TestBulkCreateNodes:
     """Test bulk_create_nodes for both backends."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_basic(self, clean_db):
         """bulk_create_nodes should create all nodes."""
         rows = [{"id": f"node_{i}", "name": f"Node {i}", "value": i} for i in range(10)]
@@ -145,13 +145,13 @@ class TestBulkCreateNodes:
         result = clean_db.execute("MATCH (n:BulkNode) RETURN count(n)", unnest_result=True)
         assert result == 10
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_empty(self, clean_db):
         """bulk_create_nodes with empty list should return 0."""
         count = clean_db.bulk_create_nodes([], label="BulkNode")
         assert count == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_batching(self, clean_db):
         """bulk_create_nodes should correctly batch large inputs."""
         rows = [{"id": f"n{i}", "name": f"Name {i}"} for i in range(250)]
@@ -162,7 +162,7 @@ class TestBulkCreateNodes:
         result = clean_db.execute("MATCH (n:BatchNode) RETURN count(n)", unnest_result=True)
         assert result == 250
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_special_chars(self, clean_db):
         """bulk_create_nodes should handle special characters in string values."""
         rows = [
@@ -208,7 +208,7 @@ class TestBulkCreateEdges:
         clean_db.create_property_index("Company", "id")
         clean_db.commit()
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_basic(self, clean_db):
         """bulk_create_edges should create all edges."""
         edges = [
@@ -223,7 +223,7 @@ class TestBulkCreateEdges:
         result = clean_db.execute("MATCH ()-[r:WORKS_AT]->() RETURN count(r)", unnest_result=True)
         assert result == 3
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_with_properties(self, clean_db):
         """bulk_create_edges should set extra keys as edge properties."""
         edges = [
@@ -240,13 +240,13 @@ class TestBulkCreateEdges:
         )
         assert len(result) == 2
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_empty(self, clean_db):
         """bulk_create_edges with empty list should return 0."""
         count = clean_db.bulk_create_edges([], label="KNOWS", src_label="Person", dst_label="Person")
         assert count == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_custom_ref_prop(self, clean_db):
         """bulk_create_edges should support custom src_ref_prop/dst_ref_prop."""
         edges = [{"src": "Alice", "dst": "Acme"}]
@@ -264,7 +264,7 @@ class TestBulkCreateEdges:
         result = clean_db.execute("MATCH ()-[r:WORKS_AT]->() RETURN count(r)", unnest_result=True)
         assert result == 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_no_match(self, clean_db):
         """bulk_create_edges with no matching src/dst should create 0 edges in the graph."""
         edges = [{"src": "nonexistent_1", "dst": "nonexistent_2"}]
@@ -294,7 +294,7 @@ class TestBulkDeleteEdges:
     def _pairs(self, db, label: str) -> list[tuple]:
         return sorted(tuple(r) for r in db.execute(f"MATCH (a)-[:{label}]->(b) RETURN a.id, b.id"))
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_deletes_every_edge_between_each_pair(self, clean_db):
         deleted = clean_db.bulk_delete_edges(
             "WORKS_AT", src_refs=["p1", "p3"], dst_refs=["c1", "c2"], src_label="DPerson", dst_label="DCompany"
@@ -305,7 +305,7 @@ class TestBulkDeleteEdges:
         assert self._pairs(clean_db, "WORKS_AT") == [("p2", "c1")]
         assert self._pairs(clean_db, "KNOWS") == [("p1", "p2")]  # other labels untouched
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_scopes_the_delete(self, clean_db):
         deleted = clean_db.bulk_delete_edges(
             "WORKS_AT",
@@ -321,7 +321,7 @@ class TestBulkDeleteEdges:
         assert deleted == 1  # p3 is in srcB, so ("p3", "srcA") matches nothing
         assert self._pairs(clean_db, "WORKS_AT") == [("p1", "c1"), ("p1", "c1"), ("p3", "c2")]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_mixed_arity_endpoints(self, clean_db):
         deleted = clean_db.bulk_delete_edges(
             "WORKS_AT",
@@ -336,7 +336,7 @@ class TestBulkDeleteEdges:
         assert deleted == 1
         assert ("p2", "c1") not in self._pairs(clean_db, "WORKS_AT")
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_unmatched_pairs_and_unknown_labels_delete_nothing(self, clean_db):
         assert (
             clean_db.bulk_delete_edges(
@@ -362,7 +362,7 @@ class TestBulkDeleteEdges:
         clean_db.commit()
         assert len(self._pairs(clean_db, "WORKS_AT")) == 4
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_batching(self, clean_db):
         deleted = clean_db.bulk_delete_edges(
             "WORKS_AT",
@@ -377,7 +377,7 @@ class TestBulkDeleteEdges:
         assert deleted == 4
         assert self._pairs(clean_db, "WORKS_AT") == []
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_unparallel_refs_raise(self, clean_db):
         with pytest.raises(ValueError, match="parallel"):
             clean_db.bulk_delete_edges("WORKS_AT", src_refs=["p1"], dst_refs=[], src_label="DPerson", dst_label="DCompany")
@@ -398,7 +398,7 @@ class TestBulkUpdateNodes:
     def _nodes(self, db) -> list[tuple]:
         return sorted(tuple(r) for r in db.execute("MATCH (n:UNode) RETURN n.sym, n.src, n.rank, n.tag"))
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_sets_properties_on_matched_nodes(self, clean_db):
         updated = clean_db.bulk_update_nodes(
             "UNode", refs=["b"], properties=[{"rank": 7, "tag": 'q"uote\\ and\nnewline'}], ref_prop="sym"
@@ -408,7 +408,7 @@ class TestBulkUpdateNodes:
         assert updated == 1
         assert ("b", "s1", 7, 'q"uote\\ and\nnewline') in self._nodes(clean_db)
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_scopes_the_update(self, clean_db):
         updated = clean_db.bulk_update_nodes(
             "UNode", refs=[("a", "s2")], properties=[{"rank": 3, "tag": "x"}], ref_prop=("sym", "src")
@@ -418,7 +418,7 @@ class TestBulkUpdateNodes:
         assert updated == 1
         assert self._nodes(clean_db) == [("a", "s1", 0, None), ("a", "s2", 3, "x"), ("b", "s1", 0, None)]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_unmatched_refs_and_batching(self, clean_db):
         updated = clean_db.bulk_update_nodes(
             "UNode",
@@ -433,7 +433,7 @@ class TestBulkUpdateNodes:
         assert [r[2] for r in self._nodes(clean_db)] == [1, 1, 2]
         assert clean_db.bulk_update_nodes("UNode", refs=[], properties=[], ref_prop="sym") == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_invalid_arguments_raise(self, clean_db):
         with pytest.raises(ValueError, match="parallel"):
             clean_db.bulk_update_nodes("UNode", refs=["a"], properties=[], ref_prop="sym")
@@ -474,7 +474,7 @@ class TestBulkCreateEdgesCompositeKey:
         clean_db.create_property_index("CKFn", "source_key")
         clean_db.commit()
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_binds_within_source(self, clean_db):
         """Each source's edge stays within that source -- no cross-source leak."""
         edges = [
@@ -500,7 +500,7 @@ class TestBulkCreateEdgesCompositeKey:
         )
         assert leaked == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_crossing_sources_is_explicit(self, clean_db):
         """A deliberately cross-source edge is still expressible via the composite key."""
         edges = [{"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcB")}]
@@ -518,7 +518,7 @@ class TestBulkCreateEdgesCompositeKey:
         pairs = clean_db.execute("MATCH (a:CKFn)-[:CALLS]->(b:CKFn) RETURN a.source_key, b.source_key")
         assert [tuple(r) for r in pairs] == [("srcA", "srcB")]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_with_edge_properties(self, clean_db):
         """Edge properties are preserved alongside a composite endpoint key."""
         edges = [{"src": ("pkg.foo", "srcA"), "dst": ("pkg.bar", "srcA"), "confidence": "EXTRACTED", "line": 7}]
@@ -536,7 +536,7 @@ class TestBulkCreateEdgesCompositeKey:
         assert len(result) == 1
         assert tuple(result[0]) == ("EXTRACTED", 7)
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_single_prop_key_still_matches_scalar(self, clean_db):
         """The scalar (single-property) form is accepted and matches as before.
 
@@ -561,7 +561,7 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH ()-[r:LINKS]->() RETURN count(r)", unnest_result=True)
         assert total >= 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_three_property_composite_key(self, clean_db):
         """A key of three properties matches only the node agreeing on all three."""
         # Same qualified_name+source_key in two langs: only the 3-key disambiguates.
@@ -591,7 +591,7 @@ class TestBulkCreateEdgesCompositeKey:
         pairs = clean_db.execute("MATCH (a:CK3)-[:CALLS]->(b:CK3) RETURN a.lang, b.lang")
         assert [tuple(r) for r in pairs] == [("py", "py")]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_typed_edges_parallel_refs(self, clean_db):
         """The typed GraphEdge path carries composite values via src_refs/dst_refs."""
         edges = [_ITFriendsWith(since=2020), _ITFriendsWith(since=2021)]
@@ -612,7 +612,7 @@ class TestBulkCreateEdgesCompositeKey:
         )
         assert [tuple(r) for r in pairs] == [("srcA", "srcA"), ("srcB", "srcB")]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_no_match_creates_nothing(self, clean_db):
         """A composite key resolving to no node creates 0 edges (no stray scalar match)."""
         # qualified_name exists, but source_key 'ghost' does not -- must not match.
@@ -629,7 +629,7 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH ()-[r:CALLS]->() RETURN count(r)", unnest_result=True)
         assert total == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_batching(self, clean_db):
         """Composite matching holds across multiple batches (graphid cache extend path)."""
         nodes = [{"qualified_name": f"n{i}", "source_key": "srcA", "name": f"n{i}"} for i in range(250)]
@@ -653,7 +653,7 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH (:CKBatch)-[r:NEXT]->(:CKBatch) RETURN count(r)", unnest_result=True)
         assert total == 249
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_composite_key_special_characters(self, clean_db):
         """Composite values with quotes/backslashes are escaped on both paths."""
         clean_db.bulk_create_nodes(
@@ -679,7 +679,7 @@ class TestBulkCreateEdgesCompositeKey:
         total = clean_db.execute("MATCH (:CKSpec)-[r:CALLS]->(:CKSpec) RETURN count(r)", unnest_result=True)
         assert total == 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     @pytest.mark.parametrize("composite_side", ["src", "dst"])
     def test_mixed_arity_composite_and_scalar_endpoints(self, clean_db, composite_side):
         """One endpoint on a composite key, the other on a single property.
@@ -777,7 +777,7 @@ class TestBulkTransactional:
     that rollback is still a safe no-op on an autocommit connection.
     """
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_rollback_does_not_raise(self, clean_db):
         """Rollback after bulk_create_nodes should not raise on an autocommit connection."""
         clean_db.bulk_create_nodes([{"id": f"t{i}"} for i in range(10)], label="TempNode")
@@ -790,7 +790,7 @@ class TestBulkTransactional:
 class TestBulkCreateTyped:
     """Test bulk writes with typed GraphNode / GraphEdge instances for both backends."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_nodes_typed(self, clean_db):
         """bulk_create_nodes with GraphNode instances should derive label and persist properties."""
         people = [_ITPerson(id=f"t{i}", name=f"Typed {i}", age=20 + i) for i in range(5)]
@@ -804,7 +804,7 @@ class TestBulkCreateTyped:
         ages = sorted(p.age for p in fetched)
         assert ages == [20, 21, 22, 23, 24]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_bulk_create_edges_typed(self, clean_db):
         """bulk_create_edges with GraphEdge instances + parallel refs should persist edge properties."""
         # Seed nodes via typed path
@@ -832,7 +832,7 @@ class TestBulkCreateTyped:
         assert all(isinstance(e, _ITFriendsWith) for e in fetched)
         assert sorted(e.since for e in fetched) == [2020, 2021]
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_typed_nodes_roundtrip_preserves_all_fields(self, clean_db):
         """Typed node write -> read should preserve all model fields including defaults."""
         p = _ITPerson(id="alice", name="Alice", age=30)
@@ -868,7 +868,7 @@ class TestBulkDataCorrectness:
         test_db.execute("MATCH (n) DETACH DELETE n")
         test_db.commit()
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_node_string_properties_preserved(self, clean_db):
         """String values are preserved exactly, including empty strings."""
         rows = [
@@ -883,7 +883,7 @@ class TestBulkDataCorrectness:
         assert result[0] == ("s1", "Alice", "")
         assert result[1] == ("s2", "Bob", "A developer")
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_node_numeric_types_preserved(self, clean_db):
         """Integer and float property values are preserved with correct types."""
         rows = [{"id": "n1", "qty": 42, "score": 3.14, "zero": 0, "neg": -7}]
@@ -896,7 +896,7 @@ class TestBulkDataCorrectness:
         assert result[2] == 0
         assert result[3] == -7
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_node_boolean_properties_preserved(self, clean_db):
         """Boolean values are stored and retrieved as booleans, not ints."""
         rows = [{"id": "b1", "active": True, "deleted": False}]
@@ -907,7 +907,7 @@ class TestBulkDataCorrectness:
         assert result[0] is True
         assert result[1] is False
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_node_special_characters_in_strings(self, clean_db):
         """Special characters (quotes, backslash, newline, tab) survive round-trip."""
         rows = [
@@ -928,7 +928,7 @@ class TestBulkDataCorrectness:
         assert result[3][1] == "tab\there"
         assert result[4][1] == "single 'quote' here"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_edge_properties_preserved(self, clean_db):
         """Edge properties (confidence, line number) survive round-trip."""
         clean_db.bulk_create_nodes([{"id": "m1"}, {"id": "m2"}], label="Meth")
@@ -947,7 +947,7 @@ class TestBulkDataCorrectness:
         assert result[1] == 42
         assert abs(result[2] - 0.95) < 0.001
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_edge_without_properties(self, clean_db):
         """Edges with no properties (structural edges) work correctly."""
         clean_db.bulk_create_nodes([{"id": "a"}, {"id": "b"}], label="Node")
@@ -962,7 +962,7 @@ class TestBulkDataCorrectness:
         result = clean_db.execute("MATCH (a:Node {id: 'a'})-[:LINKS]->(b:Node {id: 'b'}) RETURN b.id", unnest_result=True)
         assert result == "b"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_many_nodes_all_queryable(self, clean_db):
         """Bulk insert of 500 nodes should all be individually queryable."""
         rows = [{"id": f"bulk_{i}", "value": i * 10} for i in range(500)]
@@ -974,7 +974,7 @@ class TestBulkDataCorrectness:
             result = clean_db.execute(f"MATCH (n:BulkQ {{id: 'bulk_{i}'}}) RETURN n.value", unnest_result=True)
             assert result == i * 10, f"Node bulk_{i} should have value {i * 10}"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_edge_direction_correct(self, clean_db):
         """Edges go from src to dst, not the other way around."""
         clean_db.bulk_create_nodes([{"id": "src_node"}, {"id": "dst_node"}], label="DirNode")
@@ -1000,7 +1000,7 @@ class TestBulkDataCorrectness:
 class TestBulkDeleteNodes:
     """Test bulk_delete_nodes for both backends."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_by_single_filter(self, clean_db):
         """bulk_delete_nodes should remove only matching nodes."""
         clean_db.bulk_create_nodes(
@@ -1020,7 +1020,7 @@ class TestBulkDeleteNodes:
         remaining = clean_db.execute("MATCH (n:DelNode) RETURN count(n)", unnest_result=True)
         assert remaining == 3
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_by_multiple_filters(self, clean_db):
         """bulk_delete_nodes with multiple filters should AND them."""
         clean_db.bulk_create_nodes(
@@ -1040,7 +1040,7 @@ class TestBulkDeleteNodes:
         remaining = clean_db.execute("MATCH (n:MFNode) RETURN count(n)", unnest_result=True)
         assert remaining == 3
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_cascades_to_edges(self, clean_db):
         """bulk_delete_nodes should also remove edges referencing deleted nodes."""
         clean_db.bulk_create_nodes(
@@ -1078,7 +1078,7 @@ class TestBulkDeleteNodes:
         remaining = clean_db.execute("MATCH (n:CascNode) RETURN count(n)", unnest_result=True)
         assert remaining == 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_no_match_returns_zero(self, clean_db):
         """bulk_delete_nodes with no matching nodes should return 0."""
         clean_db.bulk_create_nodes([{"id": "z1", "source_key": "keep"}], label="NoMatch")
@@ -1090,7 +1090,7 @@ class TestBulkDeleteNodes:
         remaining = clean_db.execute("MATCH (n:NoMatch) RETURN count(n)", unnest_result=True)
         assert remaining == 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_empty_filters_raises(self, clean_db):
         """bulk_delete_nodes with empty filters should raise ValueError."""
         with pytest.raises(ValueError, match="filters must not be empty"):
@@ -1135,7 +1135,7 @@ class TestBulkDeleteOrphans:
         )
         clean_db.commit()
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_deletes_only_orphans(self, clean_db):
         """Only nodes with no incoming HAS_DEP edge should be deleted."""
         self._seed_referenced_and_orphans(clean_db)
@@ -1147,7 +1147,7 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:OrphDependency) RETURN count(n)", unnest_result=True)
         assert remaining == 2  # dep0, dep1 still referenced
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_preserves_referenced_nodes(self, clean_db):
         """Referenced nodes must survive and keep their edges."""
         self._seed_referenced_and_orphans(clean_db)
@@ -1158,7 +1158,7 @@ class TestBulkDeleteOrphans:
         edge_count = clean_db.execute("MATCH ()-[r:HAS_DEP]->() RETURN count(r)", unnest_result=True)
         assert edge_count == 2
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_all_orphans_deleted_when_no_edges(self, clean_db):
         """When no edges exist, every node of the label is an orphan."""
         clean_db.bulk_create_nodes(
@@ -1174,7 +1174,7 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:AllOrphan) RETURN count(n)", unnest_result=True)
         assert remaining == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_no_orphans_returns_zero(self, clean_db):
         """When every node is referenced, nothing is deleted."""
         clean_db.bulk_create_nodes([{"id": "c1"}], label="RefComp")
@@ -1198,7 +1198,7 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:RefDep) RETURN count(n)", unnest_result=True)
         assert remaining == 2
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_outgoing_direction(self, clean_db):
         """incoming=False should check outgoing edges instead."""
         clean_db.bulk_create_nodes([{"id": "s1"}, {"id": "s2"}], label="OutSrc")
@@ -1223,13 +1223,13 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:OutSrc) RETURN count(n)", unnest_result=True)
         assert remaining == 1  # s1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_missing_label_returns_zero(self, clean_db):
         """Orphan delete on a never-created label returns 0 without error."""
         deleted = clean_db.bulk_delete_orphans("NeverCreatedLabel", "NEVER_REL", incoming=True)
         assert deleted == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_filters_scope_orphan_deletion(self, clean_db):
         """filters should restrict orphan deletion to matching nodes only."""
         # Two sources of orphaned decorators; only 'src_a' should be cleaned.
@@ -1251,7 +1251,7 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:ScopedDec) RETURN count(n)", unnest_result=True)
         assert remaining == 2  # src_b untouched
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_filters_with_referenced_nodes(self, clean_db):
         """filters + edge presence: only filtered orphans deleted, referenced kept."""
         clean_db.bulk_create_nodes([{"id": "tgt1"}], label="DecTarget")

@@ -6,8 +6,9 @@ CypherBackend: Abstract base class for implementing graph database backends.
 """
 
 import abc
+import contextlib
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from enum import Enum, auto
 from typing import Any
 
@@ -73,18 +74,40 @@ class CypherBackend(abc.ABC):
         # Maximum seconds a single query may run before the backend cancels it.
         # None means no timeout (backend default). Set via connect(query_timeout_s=N).
         self._query_timeout_s: int | None = kwargs.get("query_timeout_s")
+        # A statement's own timeout, while statement_timeout() is active: overrides the connection's default.
+        self._statement_timeout_s: float | None = None
 
         # An empty, backend-local provider unless one is injected. CypherGraphDB
         # overwrites this with its own provider right after construction.
         self._model_provider = kwargs.get("model_provider") or modelprovider.ModelProvider()
 
-        # Concrete connection type varies per backend (psycopg for AGE, mgclient
-        # for Memgraph); subclasses re-declare this with their own precise type.
+        # Concrete connection type varies per backend (psycopg for AGE, the Neo4j
+        # driver's Bolt connection for Memgraph); subclasses re-declare this with their own precise type.
         self._connection: Any = None
 
     @property
     def connection(self):
         return self._connection
+
+    @contextlib.contextmanager
+    def statement_timeout(self, timeout_s: float | None) -> Iterator[None]:
+        """The statements run inside get ``timeout_s`` instead of the connection's default (0: none).
+
+        A backend that cannot apply it to a statement logs a warning and keeps the connection's default.
+        """
+        previous, self._statement_timeout_s = self._statement_timeout_s, timeout_s
+        try:
+            yield
+        finally:
+            self._statement_timeout_s = previous
+            self._end_statement_timeout()
+
+    def _end_statement_timeout(self) -> None:  # noqa: B027 -- a hook: most backends have nothing to clean up
+        """A backend's cleanup when a statement timeout ends (AGE: back to the session's default)."""
+
+    def is_timeout_error(self, error: Exception) -> bool:
+        """Whether ``error`` is the backend cancelling a statement for running out of time."""
+        return False
 
     @property
     def graph_name(self) -> str | None:

@@ -181,6 +181,8 @@ size around 1000 objects is a reasonable starting point.
 | Exception | Raised when |
 |---|---|
 | `QueryExecutionError` | The backend rejected or failed the query |
+| `QueryTimeoutError` | The query ran past its timeout (a `QueryExecutionError`) |
+| `PathLengthExceededError` | The query's paths are longer than its `max_path_length` (it did not run) |
 | `ReadOnlyModeError` | A write was attempted on a read-only connection |
 | `LabelNotFoundError` | The referenced label does not exist |
 | `ConnectionGuardError` | An installed connection guard vetoed the connection |
@@ -203,3 +205,19 @@ otherwise.
 `parse_cypher_query()` returns a `ParsedCypherQuery` describing the operations
 and labels a statement touches. This is what read-only mode uses, and it is
 available for your own checks — per-label authorization, for instance.
+
+### Path length
+
+`ParsedCypherQuery.max_path_length` is the most relationships one pattern can
+match: a plain relationship counts 1, a variable-length one its upper bound
+(`*1..5`: 5), summed along the pattern; 0 without relationships, `None` when a
+pattern is unbounded (`*`, `*2..`). To refuse such queries before they run —
+from users or an LLM, say — pass a limit; there is none by default:
+
+```python
+db.execute("MATCH (a)-[:CALLS*]->(b) RETURN b", max_path_length=10)
+# PathLengthExceededError: Query rejected: it has an unbounded variable-length
+# relationship, the limit is 10; bound its variable-length relationships, e.g. [:REL*1..10]
+```
+
+`execute`, `execute_with_stats` and `execute_cypher_page` take it.

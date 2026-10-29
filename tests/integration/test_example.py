@@ -10,7 +10,7 @@ def test_integration_example():
     assert True  # Placeholder test
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_connection(test_db):
     """Test basic connection to graph database (Memgraph and Apache AGE)."""
     # Test that we can execute a simple query (no CREATE, just RETURN)
@@ -22,7 +22,7 @@ def test_connection(test_db):
     assert result == 1
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_crud_operations(test_db):
     """Test basic CRUD operations (Memgraph and Apache AGE)."""
     # First create test data
@@ -47,7 +47,7 @@ def test_crud_operations(test_db):
     assert result[2] == "alice@example.com"  # email
 
 
-@pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+@pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
 def test_relationships(test_db):
     """Test querying relationships (Memgraph and Apache AGE)."""
     # Create test data

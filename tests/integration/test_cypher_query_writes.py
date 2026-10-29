@@ -23,7 +23,7 @@ def clean_db(request):
 class TestBuilderCreateMergeSet:
     """CREATE / MERGE / SET via the builder against real backends."""
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_create_and_read_back(self, clean_db):
         clean_db.execute(CypherQuery().create("(p:Product {name: $name, price: $price})", name="Widget", price=100))
         result = clean_db.execute(
@@ -46,14 +46,14 @@ class TestBuilderCreateMergeSet:
         result = clean_db.execute(q, unnest_result="rc")
         assert result == "Gadget"
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_set_updates_property(self, clean_db):
         clean_db.execute("CREATE (p:Product {key: 'k1', price: 100})")
         clean_db.execute(CypherQuery().match("(p:Product)").where_eq("p.key", "k1").set("p.price = $price", price=250))
         result = clean_db.execute("MATCH (p:Product {key: 'k1'}) RETURN p.price", unnest_result="rc")
         assert result == 250
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_detach_delete(self, clean_db):
         node_id = clean_db.execute("CREATE (p:Person {name: 'Temp'}) RETURN id(p)", unnest_result="rc")
         clean_db.execute(CypherQuery().match("(p)").where_id("p", node_id).delete("p", detach=True))
@@ -64,7 +64,7 @@ class TestBuilderCreateMergeSet:
 class TestBuilderTypedPatterns:
     """Typed node/rel patterns against real backends."""
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_typed_pattern_match_with_predicate(self, clean_db):
         clean_db.execute("""
             CREATE (a:Person {name: 'Alice', age: 30})
@@ -75,7 +75,7 @@ class TestBuilderTypedPatterns:
         result = clean_db.execute(q, unnest_result="rc")
         assert result == "Alice"
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_typed_relationship_pattern(self, clean_db):
         clean_db.execute("""
             CREATE (a:Person {name: 'Alice'})
@@ -88,7 +88,7 @@ class TestBuilderTypedPatterns:
         result = clean_db.execute(q, unnest_result="rc")
         assert result == "Bob"
 
-    @pytest.mark.parametrize("clean_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("clean_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_typed_in_predicate(self, clean_db):
         clean_db.execute("""
             CREATE (a:Person {name: 'Alice'})

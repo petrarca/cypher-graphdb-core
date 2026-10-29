@@ -51,7 +51,7 @@ class QueryExecutionError(Exception):
 
     This is the backend-agnostic wrapper for execution-time failures such as
     Cypher syntax errors or other database errors raised by the underlying
-    driver (e.g. Memgraph's ``mgclient.DatabaseError`` or AGE's
+    driver (e.g. Memgraph's ``neo4j.exceptions.Neo4jError`` or AGE's
     ``AGEExecutionError``). The facade wraps those backend-specific exceptions
     so consumers can catch a single type without importing any backend driver.
 
@@ -65,3 +65,37 @@ class QueryExecutionError(Exception):
         ... except QueryExecutionError as e:
         ...     print(e)  # "Error on line 1 position 10. ..."
     """
+
+
+class QueryTimeoutError(QueryExecutionError):
+    """Raised when the backend cancels a query for running longer than its timeout.
+
+    The timeout is the connection's default (``query_timeout_s``) or a statement's own
+    (``execute(..., timeout_s=)``, ``with cdb.query_timeout(...)``). A subclass of
+    ``QueryExecutionError``: callers catching that one still catch it.
+    """
+
+
+class PathLengthExceededError(Exception):
+    """Raised, before it runs, for a query whose patterns can match more relationships than the caller allows.
+
+    The limit is the caller's (``execute(..., max_path_length=)``); the query's longest path is
+    ``ParsedCypherQuery.max_path_length`` (None: unbounded). The message says how to bound it.
+    """
+
+    def __init__(self, max_path_length: int | None, limit: int):
+        self.max_path_length = max_path_length
+        self.limit = limit
+        found = (
+            "an unbounded variable-length relationship"
+            if max_path_length is None
+            else f"a path of up to {max_path_length} relationships"
+        )
+        hint = f"bound its variable-length relationships, e.g. [:REL*1..{limit}]"
+        super().__init__(f"Query rejected: it has {found}, the limit is {limit}; {hint}")
+
+
+def check_path_length(max_path_length: int | None, limit: int | None) -> None:
+    """Raise PathLengthExceededError when a query's longest path (None: unbounded) exceeds ``limit`` (None: no limit)."""
+    if limit is not None and (max_path_length is None or max_path_length > limit):
+        raise PathLengthExceededError(max_path_length, limit)

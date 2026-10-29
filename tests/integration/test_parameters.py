@@ -31,7 +31,7 @@ def db_with_data(request):
 class TestParameterBinding:
     """Test parameter binding in execute queries."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_single_parameter(self, test_db):
         """Test query with a single parameter."""
         # Create test data
@@ -48,7 +48,7 @@ class TestParameterBinding:
         assert result[0] == "TestProduct"
         assert result[1] == 99
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_multiple_parameters(self, test_db):
         """Test query with multiple parameters."""
         # Create test data
@@ -63,7 +63,7 @@ class TestParameterBinding:
 
         assert result == 150
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_parameter_in_where_clause(self, test_db):
         """Test parameter in WHERE clause."""
         # Clean up any existing Product nodes first
@@ -86,7 +86,7 @@ class TestParameterBinding:
         assert result[0][0] == "Medium"
         assert result[1][0] == "Expensive"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_string_parameter(self, test_db):
         """Test string parameter binding."""
         test_db.execute("CREATE (p:Person {name: 'Alice', city: 'New York'})")
@@ -99,7 +99,7 @@ class TestParameterBinding:
 
         assert result == "New York"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_integer_parameter(self, test_db):
         """Test integer parameter binding."""
         test_db.execute("CREATE (p:Person {name: 'Bob', age: 30})")
@@ -112,7 +112,7 @@ class TestParameterBinding:
 
         assert result == "Bob"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_no_params_still_works(self, test_db):
         """Test that queries without params still work (backward compatibility)."""
         test_db.execute("CREATE (p:Product {name: 'NoParamProduct'})")
@@ -124,7 +124,7 @@ class TestParameterBinding:
 
         assert result == "NoParamProduct"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_empty_params_dict(self, test_db):
         """Test that empty params dict works."""
         test_db.execute("CREATE (p:Product {name: 'EmptyParamsProduct'})")
@@ -141,7 +141,7 @@ class TestParameterBinding:
 class TestParameterBindingWithStats:
     """Test parameter binding with execute_with_stats."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_execute_with_stats_and_params(self, test_db):
         """Test execute_with_stats with parameters."""
         test_db.execute("CREATE (p:Product {key: 'stats-key', name: 'StatsProduct', price: 250})")
@@ -162,7 +162,7 @@ class TestParameterBindingWithStats:
 class TestParameterTypes:
     """Test various parameter types."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_boolean_parameter(self, test_db):
         """Test boolean parameter binding."""
         test_db.execute("CREATE (p:Item {name: 'ActiveItem', active: true})")
@@ -176,7 +176,7 @@ class TestParameterTypes:
 
         assert result == "ActiveItem"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_float_parameter(self, test_db):
         """Test float parameter binding."""
         test_db.execute("CREATE (p:Product {name: 'FloatProduct', rating: 4.5})")
@@ -189,7 +189,7 @@ class TestParameterTypes:
 
         assert result == "FloatProduct"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_null_parameter(self, test_db):
         """Test null parameter binding."""
         test_db.execute("CREATE (p:Product {name: 'NullProduct', description: null})")
@@ -207,7 +207,7 @@ class TestParameterTypes:
 class TestParameterCaching:
     """Test prepared statement caching performance."""
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)  # pylint: disable=redefined-outer-name
     def test_loop_same_query_cache_performance(self, test_db):
         """Test executing same query multiple times to verify cache performance."""
         # Create test data

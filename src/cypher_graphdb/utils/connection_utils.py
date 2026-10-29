@@ -6,7 +6,7 @@ parameters, and sanitizing sensitive information for safe logging.
 
 import os
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
@@ -103,6 +103,10 @@ def _parse_uri_format(uri: str) -> dict[str, Any]:
     # Extract database name (path without leading slash)
     if parsed.path and parsed.path != "/":
         params["database"] = parsed.path.lstrip("/")
+
+    # Options as query parameters: bolt://host:7687?transport=pymgclient
+    for key, values in parse_qs(parsed.query).items():
+        params[key] = values[-1]
 
     return params
 

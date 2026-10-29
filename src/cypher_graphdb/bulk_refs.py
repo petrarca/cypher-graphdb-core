@@ -61,7 +61,7 @@ def ref_param(value: Any, n_props: int) -> Any:
     """Coerce one endpoint's match value to a driver-friendly query parameter.
 
     A single-prop key stays a scalar; a composite key becomes a list (some drivers,
-    e.g. mgclient, reject tuples as parameters). Decided per endpoint from that
+    e.g. pymgclient, reject tuples as parameters). Decided per endpoint from that
     endpoint's own key arity: source and destination may differ (a composite caller
     matched to a single-prop target), and coercing both on one endpoint's arity would
     split a scalar string into characters.

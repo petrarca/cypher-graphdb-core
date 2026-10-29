@@ -13,7 +13,7 @@ From nothing to a working query, in four steps.
 ## 1. Install
 
 Requires **Python 3.14+**. Both backend drivers (`psycopg` for Apache AGE,
-`pymgclient` for Memgraph) ship as regular dependencies — there is nothing extra
+pymgclient and the Neo4j Python driver for Memgraph and Neo4j) ship as regular dependencies — there is nothing extra
 to install per backend.
 
 ```bash

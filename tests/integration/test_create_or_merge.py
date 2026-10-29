@@ -28,7 +28,7 @@ class RelationEdge(GraphEdge):
     role: str | None = None
 
 
-@pytest.fixture(params=["memgraph_db", "age_db"])
+@pytest.fixture(params=["memgraph_db", "neo4j_db", "age_db"])
 def test_db(request):
     """Parametrized fixture providing both Memgraph and AGE database connections.
 

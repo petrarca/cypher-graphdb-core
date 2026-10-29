@@ -66,6 +66,9 @@ class ParsedCypherQuery(BaseModel):
         return_arguments: Dictionary of return clause arguments.
         var_to_labels: Mapping of variables to their labels.
         parameters: List of parameter names found in the query (e.g., ['$name', '$age']).
+        max_path_length: The most relationships one pattern can match: a plain relationship counts 1,
+            a variable-length one its upper bound (``*1..5``: 5); summed along a pattern, the largest
+            pattern wins; 0 without relationships. None: some pattern is unbounded (``*``, ``*2..``).
         parse_tree: The ANTLR parse tree (excluded from serialization).
 
     """
@@ -77,6 +80,7 @@ class ParsedCypherQuery(BaseModel):
     parameters: list[str] = []
     has_limit: bool = False
     has_skip: bool = False
+    max_path_length: int | None = 0
     # ANTLR-generated parse tree context; antlr4 ships no type stubs
     # (ignore_missing_imports = true, see pyproject.toml [tool.mypy]).
     parse_tree: Any = Field(exclude=True)
@@ -247,6 +251,10 @@ class CypherQueryListener(CypherListener):
         self.has_limit = False
         self.has_skip = False
 
+        # Longest path per pattern: one running length per open pattern (None: unbounded).
+        self.max_path_length: int | None = 0
+        self._path_lengths: list[int | None] = []
+
         self._inside_return = False
         self._expression = ""
         self._var_counter = 0
@@ -262,6 +270,43 @@ class CypherQueryListener(CypherListener):
     def enterOC_Skip(self, ctx: CypherParser.OC_SkipContext):  # noqa: N802 (ANTLR-generated name)
         """Record that the query contains an explicit SKIP clause."""
         self.has_skip = True
+
+    def enterOC_PatternElement(self, ctx: CypherParser.OC_PatternElementContext):  # noqa: N802 (ANTLR-generated name)
+        self._path_lengths.append(0)
+
+    def exitOC_PatternElement(self, ctx: CypherParser.OC_PatternElementContext):  # noqa: N802 (ANTLR-generated name)
+        self._end_path()
+
+    def enterOC_RelationshipsPattern(self, ctx: CypherParser.OC_RelationshipsPatternContext):  # noqa: N802 (ANTLR-generated name)
+        self._path_lengths.append(0)
+
+    def exitOC_RelationshipsPattern(self, ctx: CypherParser.OC_RelationshipsPatternContext):  # noqa: N802 (ANTLR-generated name)
+        self._end_path()
+
+    def enterOC_RelationshipPattern(self, ctx: CypherParser.OC_RelationshipPatternContext):  # noqa: N802 (ANTLR-generated name)
+        """A relationship is one hop -- unless its range literal says otherwise."""
+        self._add_path_length(1)
+
+    def enterOC_RangeLiteral(self, ctx: CypherParser.OC_RangeLiteralContext):  # noqa: N802 (ANTLR-generated name)
+        """``*n``: n hops; ``*..m``, ``*n..m``: m; ``*``, ``*n..``: unbounded (replaces the relationship's 1)."""
+        bounds = [int(i.getText()) for i in ctx.oC_IntegerLiteral()]
+        text = ctx.getText().rstrip()
+        if ".." in text:
+            upper = None if text.endswith("..") else bounds[-1]
+        else:
+            upper = bounds[0] if bounds else None
+        self._add_path_length(None if upper is None else upper - 1)
+
+    def _add_path_length(self, hops: int | None) -> None:
+        if self._path_lengths and (length := self._path_lengths[-1]) is not None:
+            self._path_lengths[-1] = None if hops is None else length + hops
+
+    def _end_path(self) -> None:
+        length = self._path_lengths.pop()
+        if length is None or self.max_path_length is None:
+            self.max_path_length = None
+        else:
+            self.max_path_length = max(self.max_path_length, length)
 
     @property
     def inside_return(self):
@@ -413,6 +458,7 @@ def parse_cypher_query(cypher_str: str, listener: CypherQueryListener | None = N
         return_arguments=listener.return_arguments,
         has_limit=listener.has_limit,
         has_skip=listener.has_skip,
+        max_path_length=listener.max_path_length,
         parse_tree=tree,
     )
     result.resolve()

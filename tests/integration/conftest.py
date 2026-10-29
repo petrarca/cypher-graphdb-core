@@ -1,4 +1,11 @@
-"""Shared fixtures and utilities for integration tests."""
+"""Shared fixtures and utilities for integration tests.
+
+The Bolt backends: Memgraph through the transport ``CGDB_MEMGRAPH_TRANSPORT`` names (``pymgclient``,
+the default, or ``neo4j``) -- the suite runs once per transport (``task test:integration:memgraph-neo4j``);
+Neo4j through the Neo4j driver.
+"""
+
+import os
 
 import pytest
 from testcontainers.community.postgres import PostgresContainer
@@ -15,6 +22,8 @@ def pytest_collection_modifyitems(config, items):  # noqa: ARG001
             backend = item.callspec.params["test_db"]
             if "memgraph" in backend:
                 item.add_marker(pytest.mark.integration_memgraph)
+            elif "neo4j" in backend:
+                item.add_marker(pytest.mark.integration_neo4j)
             elif "age" in backend:
                 item.add_marker(pytest.mark.integration_age)
 
@@ -41,6 +50,45 @@ def memgraph_container(request):
         "port": bolt_port,
         "uri": f"bolt://{host}:{bolt_port}",
     }
+
+
+@pytest.fixture(scope="session")
+def neo4j_container(request):
+    """Provide a Neo4j (Community) container for integration tests, without authentication."""
+    container = DockerContainer("neo4j:5-community")
+    container.with_exposed_ports(7687)
+    container.with_env("NEO4J_AUTH", "none")
+    container.start()
+    request.addfinalizer(container.stop)
+    host, port = container.get_container_host_ip(), container.get_exposed_port(7687)
+    from tenacity import retry, stop_after_delay, wait_fixed
+
+    @retry(stop=stop_after_delay(90), wait=wait_fixed(2), reraise=True)
+    def _ready():
+        import neo4j
+
+        with neo4j.GraphDatabase.driver(f"bolt://{host}:{port}") as driver:
+            driver.verify_connectivity()
+
+    _ready()
+    yield {"host": host, "port": port, "uri": f"bolt://{host}:{port}"}
+
+
+@pytest.fixture(scope="module")
+def neo4j_db(neo4j_container):
+    """Provide a CypherGraphDB instance connected to test Neo4j."""
+    db = CypherGraphDB(
+        backend="neo4j",
+        connect_params={
+            "host": neo4j_container["host"],
+            "port": neo4j_container["port"],
+            "graph_name": "neo4j",
+            "read_only": False,
+        },
+    )
+    db.execute("MATCH (n) DETACH DELETE n")
+    yield db
+    db.disconnect()
 
 
 @pytest.fixture(scope="session")
@@ -88,6 +136,7 @@ def memgraph_db(memgraph_container):  # noqa: ARG001
         "host": container_info["host"],
         "port": container_info["port"],
         "read_only": False,  # Explicitly set to false
+        "transport": os.environ.get("CGDB_MEMGRAPH_TRANSPORT", "pymgclient"),
     }
 
     db = CypherGraphDB(

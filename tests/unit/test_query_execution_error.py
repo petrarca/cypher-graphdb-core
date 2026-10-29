@@ -1,7 +1,7 @@
 """Facade wraps backend execution failures in backend-agnostic QueryExecutionError.
 
 Backend drivers raise backend-specific exceptions (e.g. Memgraph's
-``mgclient.DatabaseError`` or AGE's ``AGEExecutionError``). Those must never
+``neo4j.exceptions.Neo4jError`` or AGE's ``AGEExecutionError``). Those must never
 escape the library: the facade re-raises them as ``QueryExecutionError`` so
 consumers can catch a single type. Already-agnostic exceptions
 (``ReadOnlyModeError``, ``LabelNotFoundError``) pass through unchanged.
@@ -29,7 +29,7 @@ class _RaisingBackend(MockBackend):
 
 
 class _FakeDriverError(Exception):
-    """Stand-in for a backend driver exception (e.g. mgclient.DatabaseError)."""
+    """Stand-in for a backend driver exception (e.g. neo4j.exceptions.Neo4jError)."""
 
 
 def _db(exc: Exception) -> CypherGraphDB:

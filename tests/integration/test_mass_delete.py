@@ -48,14 +48,14 @@ def _seed(db):
 
 
 class TestNodeLabels:
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_node_labels(self, clean_db):
         _seed(clean_db)
         labels = clean_db.node_labels()
         for expected in ("Product", "Component", "Technology", "_GraphModel"):
             assert expected in labels, f"{expected} missing from {labels}"
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_edge_types(self, clean_db):
         _seed(clean_db)
         types = clean_db.edge_types()
@@ -64,7 +64,7 @@ class TestNodeLabels:
 
 
 class TestMassDelete:
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_all_nodes(self, clean_db):
         _seed(clean_db)
         deleted = clean_db.mass_delete()
@@ -72,7 +72,7 @@ class TestMassDelete:
         assert deleted == 5
         assert clean_db.execute("MATCH (n) RETURN count(n)", unnest_result=True) == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_exclude_preserves_infra(self, clean_db):
         """The key behaviour: wipe domain nodes, keep _-prefixed infra node."""
         _seed(clean_db)
@@ -88,7 +88,7 @@ class TestMassDelete:
         # Domain nodes gone.
         assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_include_only(self, clean_db):
         """Only the included labels are deleted; others remain untouched."""
         _seed(clean_db)
@@ -101,7 +101,7 @@ class TestMassDelete:
         assert clean_db.execute("MATCH (n:Technology) RETURN count(n)", unnest_result=True) == 1
         assert clean_db.execute("MATCH (m:_GraphModel) RETURN count(m)", unnest_result=True) == 1
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_include_intersect_exclude(self, clean_db):
         """exclude is applied after include."""
         _seed(clean_db)
@@ -112,7 +112,7 @@ class TestMassDelete:
         assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
         assert clean_db.execute("MATCH (n:Component) RETURN count(n)", unnest_result=True) == 2
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_include_unknown_label_noop(self, clean_db):
         """Including a label not present in the graph deletes nothing."""
         _seed(clean_db)
@@ -121,7 +121,7 @@ class TestMassDelete:
         assert deleted == 0
         assert clean_db.execute("MATCH (n) RETURN count(n)", unnest_result=True) == 5
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_empty_graph_noop(self, clean_db):
         """mass_delete on an empty graph returns 0 and does not error."""
         deleted = clean_db.mass_delete()
@@ -129,7 +129,7 @@ class TestMassDelete:
         assert deleted == 0
         assert clean_db.execute("MATCH (n) RETURN count(n)", unnest_result=True) == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_exclude_empty_list_means_no_exclusions(self, clean_db):
         """exclude=[] is treated as 'exclude nothing' -- all included labels are deleted."""
         _seed(clean_db)
@@ -138,7 +138,7 @@ class TestMassDelete:
         assert deleted == 1
         assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_exclude_absent_label_is_silent_noop(self, clean_db):
         """Excluding a label not in the graph is silently ignored."""
         _seed(clean_db)
@@ -147,7 +147,7 @@ class TestMassDelete:
         assert deleted == 1
         assert clean_db.execute("MATCH (n:Product) RETURN count(n)", unnest_result=True) == 0
 
-    @pytest.mark.parametrize("test_db", ["memgraph_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_include_mixed_known_and_unknown(self, clean_db):
         """include with a mix of present and absent labels deletes only the present ones."""
         _seed(clean_db)

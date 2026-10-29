@@ -54,7 +54,8 @@ The same operations can be performed with the untyped approach, but without
 the benefits of type safety and validation.
 """
 
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Iterator
 from typing import Any, Literal
 
 from loguru import logger
@@ -65,7 +66,7 @@ from ..backendprovider import backend_provider
 from ..cypherbuilder import CypherBuilder
 from ..cypherparser import ParsedCypherQuery
 from ..cypherquery import CypherQuery
-from ..exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
+from ..exceptions import LabelNotFoundError, QueryExecutionError, QueryTimeoutError, ReadOnlyModeError, check_path_length
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from ..settings import Settings
 from .batch import BatchMixin
@@ -812,6 +813,7 @@ class CypherGraphDB(
         raw_data: bool = False,
         params: dict | None = None,
         max_rows: int = DEFAULT_MAX_MATERIALIZED_ROWS,
+        max_path_length: int | None = None,
     ):
         """Execute a windowed page query, accepting a ``CypherQuery`` builder.
 
@@ -828,6 +830,7 @@ class CypherGraphDB(
             raw_data=raw_data,
             params=params,
             max_rows=max_rows,
+            max_path_length=max_path_length,
         )
 
     def parse(self, cypher_cmd: str) -> ParsedCypherQuery:
@@ -880,8 +883,15 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        timeout_s: float | None = None,
+        max_path_length: int | None = None,
     ) -> Any | TabularResult:
         """Execute a Cypher command and return results with flexible formatting options.
+
+        ``timeout_s``: this statement's timeout instead of the connection's default (0: none); a
+        statement running longer is cancelled with ``QueryTimeoutError``. ``max_path_length``: a
+        query whose patterns can match more relationships (``ParsedCypherQuery.max_path_length``)
+        is rejected with ``PathLengthExceededError`` before it runs (None: no limit).
 
         Provides the primary interface for executing raw Cypher queries with extensive
         result formatting and optimization options.
@@ -953,9 +963,24 @@ class CypherGraphDB(
         assert self._backend
 
         logger.debug("Execute cypher (unnest_result={}, fetch_one={}): {}", unnest_result, fetch_one, cypher_cmd)
-        result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
+        with self._statement_timeout(timeout_s):
+            result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params, max_path_length)
 
         return utils.unnest_result(result, unnest_result)
+
+    @contextlib.contextmanager
+    def query_timeout(self, timeout_s: float | None) -> Iterator[None]:
+        """Every statement inside -- queries, pages, streams, bulk writes -- gets ``timeout_s`` instead of the
+        connection's default (0: none). On a backend that cannot apply it per statement (Memgraph through
+        pymgclient) a warning is logged and the connection's default holds; AGE applies it to queries, its
+        bulk writes keep the connection's default.
+        """
+        assert self._backend
+        with self._backend.statement_timeout(timeout_s):
+            yield
+
+    def _statement_timeout(self, timeout_s: float | None) -> contextlib.AbstractContextManager[None]:
+        return self.query_timeout(timeout_s) if timeout_s is not None else contextlib.nullcontext()
 
     def execute_with_stats(
         self,
@@ -964,8 +989,12 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        timeout_s: float | None = None,
+        max_path_length: int | None = None,
     ) -> QueryResult:
         """Execute a Cypher command and return immutable QueryResult with statistics.
+
+        ``timeout_s``, ``max_path_length``: as for ``execute``.
 
         Provides complete query execution information without mutable state,
         ensuring thread safety and clean state ownership.
@@ -1013,9 +1042,11 @@ class CypherGraphDB(
             parsed_query = cypher_cmd
         else:
             parsed_query = self._parse_cypher(cypher_cmd)
+        check_path_length(parsed_query.max_path_length, max_path_length)
 
         # Execute the query and get statistics
-        result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+        with self._statement_timeout(timeout_s):
+            result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         # Create immutable QueryResult
         return QueryResult(
@@ -1254,7 +1285,7 @@ class CypherGraphDB(
 
         This is the single chokepoint for ``backend.execute_cypher``. Backend
         drivers raise backend-specific exceptions (e.g. Memgraph's
-        ``mgclient.DatabaseError`` or AGE's ``AGEExecutionError``); those must
+        ``neo4j.exceptions.Neo4jError`` or AGE's ``AGEExecutionError``); those must
         never escape the library. Any such failure is re-raised as the
         backend-agnostic ``QueryExecutionError`` so callers can catch one type.
 
@@ -1267,6 +1298,8 @@ class CypherGraphDB(
         except ReadOnlyModeError, LabelNotFoundError:
             raise
         except Exception as e:
+            if self._backend.is_timeout_error(e):
+                raise QueryTimeoutError(str(e)) from e
             raise QueryExecutionError(str(e)) from e
 
     def _parse_and_execute(
@@ -1275,6 +1308,7 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        max_path_length: int | None = None,
     ) -> TabularResult | None:
         cypher_cmd, params = _resolve_cypher_input(cypher_cmd, params)
 
@@ -1284,6 +1318,7 @@ class CypherGraphDB(
         else:
             assert isinstance(cypher_cmd, ParsedCypherQuery)
             parsed_query = cypher_cmd
+        check_path_length(parsed_query.max_path_length, max_path_length)
 
         if not self._before_execute(parsed_query):
             logger.debug("Cancelled execution due failure of before_execute hook!")

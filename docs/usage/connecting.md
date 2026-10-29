@@ -8,17 +8,25 @@ status: stable
 
 # Connecting and configuring
 
-## The two backends
+## The three backends
 
 | Backend | Transport | Connection string | Graph means |
 |---|---|---|---|
 | `age` | PostgreSQL (`psycopg`) | `postgresql://user:pass@host:5432/db` | a PostgreSQL **schema**; labels are tables inside it |
-| `memgraph` | Bolt (`pymgclient`) | `bolt://[user:pass@]host:7687` | the single active database |
+| `memgraph` | Bolt: pymgclient (default), or the Neo4j Python driver | `bolt://[user:pass@]host:7687[?transport=neo4j]` | the single active database |
+| `neo4j` | Bolt: the Neo4j Python driver (with its Rust extension) | `bolt://` or `neo4j://[user:pass@]host:7687[/database]` | a Neo4j **database** (`neo4j` by default) |
 
-Both drivers are regular dependencies — there is no per-backend extra to install.
+All drivers are regular dependencies. Memgraph speaks Bolt through pymgclient by default (faster
+on large reads) or through the Neo4j driver (`?transport=neo4j`, or `connect_params={"transport":
+...}`: per-transaction timeouts, metadata, cluster routing); the URL's scheme goes to the
+transport -- `bolt+s://` for TLS, `neo4j://` for cluster routing.
+
+Memgraph and Neo4j share the Bolt foundation (statements, pages, streams, bulk writes); each is a
+dialect on it -- index DDL, catalog queries, how a graph is selected.
 
 Because an AGE graph is a schema, AGE connections take a **graph name** and can
-create it on demand. Memgraph connections generally do not.
+create it on demand. Memgraph connections generally do not; a Neo4j connection's graph name is
+its database.
 
 ## Ways to connect
 
@@ -75,12 +83,34 @@ Configuration is read by a pydantic-settings `Settings` model.
 
 | Setting | Env var | CLI flag | Default | Meaning |
 |---|---|---|---|---|
-| `backend` | `CGDB_BACKEND` | `-b / --backend` | – | `age` or `memgraph` |
+| `backend` | `CGDB_BACKEND` | `-b / --backend` | – | `age`, `memgraph` or `neo4j` |
 | `cinfo` | `CGDB_CINFO` | `-c / --cinfo` | – | Connection string / DSN |
 | `graph` | `CGDB_GRAPH` | `-g / --graph` | – | Graph name (backend-specific) |
 | `read_only` | `CGDB_READ_ONLY` | `-r / --read-only` | `False` | Reject write clauses |
 | `create_graph` | `CGDB_CREATE_GRAPH_IF_NOT_EXISTS` | – | `False` | Auto-create the graph (AGE) |
-| `query_timeout_s` | `CGDB_QUERY_TIMEOUT_S` | – | – | Per-query timeout in seconds |
+| `query_timeout_s` | `CGDB_QUERY_TIMEOUT_S` | – | `600` | The connection's query timeout in seconds (`0`: none) |
+
+## Query timeouts
+
+Every connection has a timeout for its queries: `query_timeout_s`, 600 s by default -- generous for
+real work, and a runaway query ends instead of running for hours. A query running longer is
+cancelled with `QueryTimeoutError` (a `QueryExecutionError`). A statement may set its own:
+
+```python
+db.execute("MATCH (n) RETURN count(n)", timeout_s=30)
+
+with db.query_timeout(5):          # every statement inside: queries, pages, streams, bulk writes
+    db.execute(...)
+```
+
+| Backend | Connection default | A statement's own |
+|---|---|---|
+| `age` | the session's `statement_timeout` | `SET LOCAL statement_timeout` in its transaction (queries; bulk writes keep the default) |
+| `neo4j`, `memgraph` via the Neo4j driver | the Bolt transaction timeout of each transaction | the Bolt transaction timeout |
+| `memgraph` via pymgclient | the server-wide setting `query.timeout` | not possible: a warning is logged, the default holds |
+
+With autocommit, a statement cancelled for its timeout leaves no aborted transaction behind: the
+connection is usable for the next one.
 
 **Precedence:** CLI arguments → environment variables → `.env` → constructor
 arguments → defaults.

@@ -125,37 +125,48 @@ class TestMemgraphQueryTimeout:
         db._graph_name = "memgraph"
         return db
 
-    def test_set_database_setting_called_with_timeout(self):
-        """query_timeout_s=30 -> SET DATABASE SETTING 'query.timeout' TO '30000' called."""
+    @staticmethod
+    def _transport(name: str) -> MagicMock:
+        transport = MagicMock()
+        transport.name = name
+        return transport
+
+    def test_pymgclient_sets_the_server_timeout(self):
+        """pymgclient cannot send a transaction timeout: query_timeout_s=30 -> SET DATABASE SETTING 'query.timeout' TO '30000'."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
+        transport = self._transport("pymgclient")
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
-            db.connect(cinfo="bolt://localhost:7687", query_timeout_s=30)
+        with patch.object(db, "_open", return_value=transport):
+            db.connect(cinfo="bolt://localhost:7687?transport=pymgclient", query_timeout_s=30)
 
-        mock_cursor.execute.assert_called_once_with("SET DATABASE SETTING 'query.timeout' TO '30000'")
-        mock_cursor.close.assert_called_once()
+        transport.run_implicit.assert_called_once_with("SET DATABASE SETTING 'query.timeout' TO '30000'")
+
+    def test_the_neo4j_driver_sends_the_timeout_per_transaction(self):
+        """The Neo4j driver sends it as the Bolt transaction timeout: no server-wide setting."""
+        db = self._make_memgraph()
+        transport = self._transport("neo4j")
+
+        with patch.object(db, "_open", return_value=transport) as opened:
+            db.connect(cinfo="bolt://localhost:7687?transport=neo4j", query_timeout_s=30)
+
+        transport.run_implicit.assert_not_called()
+        assert opened.call_args.args[0] == "neo4j"
 
     def test_no_timeout_no_set_database_setting(self):
-        """query_timeout_s=None -> SET DATABASE SETTING not called."""
+        """query_timeout_s=None -> SET DATABASE SETTING not called, on either transport."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
+        transport = self._transport("pymgclient")
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
-            db.connect(cinfo="bolt://localhost:7687")
+        with patch.object(db, "_open", return_value=transport):
+            db.connect(cinfo="bolt://localhost:7687", transport="pymgclient")
 
-        # cursor() should not have been called for timeout setup
-        mock_conn.cursor.assert_not_called()
+        transport.run_implicit.assert_not_called()
 
     def test_timeout_stored_on_backend(self):
         """query_timeout_s value is stored on the backend instance."""
         db = self._make_memgraph()
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = MagicMock()
 
-        with patch.object(db, "_connect_with_retry", return_value=mock_conn):
+        with patch.object(db, "_open", return_value=self._transport("neo4j")):
             db.connect(cinfo="bolt://localhost:7687", query_timeout_s=45)
 
         assert db._query_timeout_s == 45
@@ -168,10 +179,10 @@ class TestMemgraphQueryTimeout:
 
 @pytest.mark.unit
 class TestQueryTimeoutSettings:
-    def test_default_is_30(self):
-        """Default query_timeout_s is 30s -- safe for shared graph pools."""
+    def test_default_is_600(self):
+        """Default query_timeout_s is 600s -- generous for real work, ends runaway queries."""
         s = Settings()
-        assert s.query_timeout_s == 30
+        assert s.query_timeout_s == 600
 
     def test_env_var_sets_value(self, monkeypatch):
         """CGDB_QUERY_TIMEOUT_S env var is picked up."""
@@ -180,7 +191,7 @@ class TestQueryTimeoutSettings:
         assert s.query_timeout_s == 30
 
     def test_unset_env_var_uses_default(self, monkeypatch):
-        """Unset env var falls back to the 30s default."""
+        """Unset env var falls back to the 600s default."""
         monkeypatch.delenv("CGDB_QUERY_TIMEOUT_S", raising=False)
         s = Settings()
-        assert s.query_timeout_s == 30
+        assert s.query_timeout_s == 600

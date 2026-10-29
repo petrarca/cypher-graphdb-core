@@ -113,14 +113,15 @@ class Settings(BaseSettings):
         validation_alias=f"{DEFAULT_ENV_PREFIX}{_ENV_SUFFIXES['create_graph']}",
     )
     query_timeout_s: int | None = Field(
-        default=30,
+        default=600,
         description=(
-            "Maximum seconds a single query may run before the backend cancels it. "
-            "Default is 30s -- enough for any legitimate graph query while preventing "
-            "runaway queries from exhausting the connection pool. "
+            "Maximum seconds a single query may run before the backend cancels it (QueryTimeoutError): "
+            "the connection's default, generous enough for real work, ending runaway queries. "
+            "A statement may set its own (execute(..., timeout_s=), query_timeout()). "
             "Set to 0 or None to disable. "
-            "AGE: sets PostgreSQL statement_timeout at connection time. "
-            "Memgraph: sets database setting query.timeout after connecting."
+            "AGE: PostgreSQL statement_timeout of the session. "
+            "Neo4j, and Memgraph through the Neo4j driver: the Bolt transaction timeout of each transaction. "
+            "Memgraph through pymgclient: the server-wide database setting query.timeout."
         ),
         validation_alias=f"{DEFAULT_ENV_PREFIX}{_ENV_SUFFIXES['query_timeout_s']}",
     )
