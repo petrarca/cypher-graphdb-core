@@ -1354,5 +1354,10 @@ class AGEGraphDB(CypherBackend):
             if not aginfo:
                 raise RuntimeError("Missing agtype information!")
 
+        # Commit the setup: a SET inside a transaction is undone by the caller's
+        # next rollback, which would leave the session without ag_catalog on its
+        # search_path (graphid operators, cypher() unresolved) for the rest of its life.
+        connection.commit()
+
         connection.adapters.register_loader(aginfo.oid, AgTypeLoader)
         connection.adapters.register_loader(aginfo.array_oid, AgTypeLoader)
