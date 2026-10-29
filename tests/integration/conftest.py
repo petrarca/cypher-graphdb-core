@@ -91,12 +91,18 @@ def neo4j_db(neo4j_container):
     db.disconnect()
 
 
+# Pinned, never "latest": a moving tag runs whatever was pulled last (AGE 1.7.0 locally while Docker
+# Hub's latest had become a development build). 1.8.0 fixes a label cache corruption that made Cypher
+# resolve garbled label names ('relation "<graph>.<garbage>" does not exist') after direct SQL.
+AGE_IMAGE = "apache/age:release_PG18_1.8.0"
+
+
 @pytest.fixture(scope="session")
 def age_container(request):
     """Provide an Apache AGE (PostgreSQL) container for integration tests."""
     # Use PostgresContainer for proper health checks - no sleep needed!
     container = PostgresContainer(
-        image="apache/age:latest",
+        image=AGE_IMAGE,
         username="postgres",
         password="postgres",
         dbname="test_db",
