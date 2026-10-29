@@ -565,7 +565,7 @@ class CypherBackend(abc.ABC):
         """
         raise NotImplementedError(f"Backend {self.name} does not support bulk_update_nodes")
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.
 
         Removes nodes where all specified property key=value pairs match, plus
@@ -579,6 +579,11 @@ class CypherBackend(abc.ABC):
             label: Node label to delete from (e.g. "Method", "Class").
             filters: Property filters to match. All must match (AND semantics).
                      Example: {"source_key": "nais-platform", "lang": "ts"}
+            batch_size: None: one statement. A number: statements of at most that many nodes
+                (and their edges), each committed -- what Memgraph and Neo4j recommend for large
+                deletes: a single one holds every change in memory until it ends, and runs as
+                long as the whole delete. Work pending on the connection is committed with the
+                first batch. AGE overrides it with batches in SQL.
 
         Returns:
             Number of nodes deleted.
@@ -593,6 +598,8 @@ class CypherBackend(abc.ABC):
             if not _SAFE_FILTER_VAL_RE.match(v):
                 raise ValueError(f"filter value must be alphanumeric/underscore/hyphen/dot/colon, got: {v!r}")
         where_parts = " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
+        if batch_size:
+            return self._delete_in_batches(f"MATCH (n:{label}) WHERE {where_parts}", batch_size)
         count_cypher = f"MATCH (n:{label}) WHERE {where_parts} RETURN count(n)"
         parsed = self.parse_cypher(count_cypher)
         result, _ = self.execute_cypher(parsed)
@@ -603,8 +610,26 @@ class CypherBackend(abc.ABC):
             self.execute_cypher(parsed)
         return count
 
+    def _delete_in_batches(self, match: str, batch_size: int) -> int:
+        """DETACH DELETE the nodes ``n`` that ``match`` finds, ``batch_size`` per statement, committing each."""
+        parsed = self.parse_cypher(f"{match} WITH n LIMIT {int(batch_size)} DETACH DELETE n RETURN count(*)")
+        total = 0
+        while True:
+            result, _ = self.execute_cypher(parsed)
+            self.commit()
+            deleted = result[0][0] if result else 0
+            total += deleted
+            if deleted < batch_size:
+                return total
+
     def bulk_delete_orphans(
-        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+        self,
+        label: str,
+        edge_label: str,
+        *,
+        incoming: bool = True,
+        filters: dict[str, str] | None = None,
+        batch_size: int | None = None,
     ) -> int:
         """Delete nodes of ``label`` that have no ``edge_label`` edge attached.
 
@@ -630,6 +655,8 @@ class CypherBackend(abc.ABC):
                 restrict the orphan scan to a subset of nodes (e.g.
                 ``{"source_key": "my-source"}``). When omitted, all nodes of
                 the label are considered.
+            batch_size: As for ``bulk_delete_nodes``. In batches, a node whose last such edge
+                came from an orphan deleted by an earlier batch is an orphan, and deleted, too.
 
         Returns:
             Number of orphan nodes deleted.
@@ -649,6 +676,10 @@ class CypherBackend(abc.ABC):
             where_parts = "WHERE " + " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
 
         arrow = f"<-[r:{edge_label}]-" if incoming else f"-[r:{edge_label}]->"
+        if batch_size:
+            return self._delete_in_batches(
+                f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL", batch_size
+            )
         count_cypher = f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL RETURN count(n)"
         parsed = self.parse_cypher(count_cypher)
         result, _ = self.execute_cypher(parsed)

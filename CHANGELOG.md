@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path length limits: the parser reports a query's longest path (`ParsedCypherQuery.max_path_length`,
   None when unbounded); `execute`, `execute_with_stats` and `execute_cypher_page` take `max_path_length=`
   and reject a longer query with `PathLengthExceededError` before it runs (no limit by default).
+- Batched bulk deletes: `bulk_delete_nodes(..., batch_size=)` and `bulk_delete_orphans(..., batch_size=)`
+  delete in statements of at most that many nodes and their edges, each committed: on Memgraph and Neo4j
+  their recommendation for large deletes (memory stays flat), on AGE short transactions in SQL (brief row
+  locks, vacuum not held back, edges deleted through the start_id/end_id indexes). Each statement stays
+  far below a statement timeout. Without it, one statement as before.
 
 ### Changed
 - Memgraph and the new Neo4j backend share a Bolt foundation (`backends/bolt`): each is a dialect on it.

@@ -102,7 +102,7 @@ class IndexingMixin(_Host):
         assert self._backend
         return self._backend.list_indexes(include_internal=include_internal)
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.
 
         Delegates to the backend's ``bulk_delete_nodes``. Backends that declare
@@ -113,15 +113,26 @@ class IndexingMixin(_Host):
             label: Node label to delete from (e.g. "Method", "Class").
             filters: Property key=value filters (AND semantics).
                      Example: {"source_key": "nais-platform", "lang": "ts"}
+            batch_size: None: one statement. A number: statements of at most that many nodes
+                (and their edges), each committed -- on Memgraph and Neo4j their recommendation
+                for large deletes (flat memory), on AGE short transactions (brief row locks,
+                vacuum not held back). Work pending on the connection is committed with the
+                first batch.
 
         Returns:
             Number of nodes deleted.
         """
         assert self._backend
-        return self._backend.bulk_delete_nodes(label, filters)
+        return self._backend.bulk_delete_nodes(label, filters, batch_size=batch_size)
 
     def bulk_delete_orphans(
-        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+        self,
+        label: str,
+        edge_label: str,
+        *,
+        incoming: bool = True,
+        filters: dict[str, str] | None = None,
+        batch_size: int | None = None,
     ) -> int:
         """Delete nodes of a label that have no edge of ``edge_label`` attached.
 
@@ -141,12 +152,13 @@ class IndexingMixin(_Host):
                 ``(n)<-[:edge_label]-()``. If False, outgoing.
             filters: Optional property key=value filters (AND semantics) to
                 restrict the orphan scan (e.g. ``{"source_key": "my-source"}``).
+            batch_size: As for ``bulk_delete_nodes``.
 
         Returns:
             Number of orphan nodes deleted.
         """
         assert self._backend
-        return self._backend.bulk_delete_orphans(label, edge_label, incoming=incoming, filters=filters)
+        return self._backend.bulk_delete_orphans(label, edge_label, incoming=incoming, filters=filters, batch_size=batch_size)
 
     def bulk_create_nodes(
         self,

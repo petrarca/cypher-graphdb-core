@@ -1091,6 +1091,29 @@ class TestBulkDeleteNodes:
         assert remaining == 1
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("count", [25, 20])  # a partial last batch, an exact multiple of the batch size
+    def test_delete_in_batches(self, clean_db, count):
+        """With batch_size, every matching node and its edges go, batch by batch."""
+        clean_db.bulk_create_nodes([{"id": f"m{i}", "source_key": "s"} for i in range(count)], label="BatchNode")
+        clean_db.bulk_create_nodes([{"id": "keep", "source_key": "other"}], label="BatchNode")
+        clean_db.create_property_index("BatchNode", "id")
+        clean_db.commit()
+        clean_db.bulk_create_edges(  # both directions: the deleted nodes as start and as end of an edge
+            [{"src": f"m{i}", "dst": "keep"} for i in range(count)] + [{"src": "keep", "dst": f"m{i}"} for i in range(count)],
+            label="BATCH_LINK",
+            src_label="BatchNode",
+            dst_label="BatchNode",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_nodes("BatchNode", {"source_key": "s"}, batch_size=10)
+        clean_db.rollback()  # every batch is committed: nothing comes back
+
+        assert deleted == count
+        assert clean_db.execute("MATCH ()-[r:BATCH_LINK]->() RETURN count(r)", unnest_result=True) == 0
+        assert clean_db.execute("MATCH (n:BatchNode) RETURN n.id", unnest_result=True) == "keep"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_delete_empty_filters_raises(self, clean_db):
         """bulk_delete_nodes with empty filters should raise ValueError."""
         with pytest.raises(ValueError, match="filters must not be empty"):
@@ -1136,11 +1159,12 @@ class TestBulkDeleteOrphans:
         clean_db.commit()
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
-    def test_deletes_only_orphans(self, clean_db):
+    @pytest.mark.parametrize("batch_size", [None, 2])  # 2: three orphans take a full and a partial batch
+    def test_deletes_only_orphans(self, clean_db, batch_size):
         """Only nodes with no incoming HAS_DEP edge should be deleted."""
         self._seed_referenced_and_orphans(clean_db)
 
-        deleted = clean_db.bulk_delete_orphans("OrphDependency", "HAS_DEP", incoming=True)
+        deleted = clean_db.bulk_delete_orphans("OrphDependency", "HAS_DEP", incoming=True, batch_size=batch_size)
         clean_db.commit()
 
         assert deleted == 3  # dep2, dep3, dep4

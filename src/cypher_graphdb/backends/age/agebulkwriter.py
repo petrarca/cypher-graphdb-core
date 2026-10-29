@@ -265,7 +265,7 @@ class AGEBulkWriter:
         logger.debug("Direct SQL: {} {} edges deleted ({} pairs resolved of {})", total, label, len(pairs), len(edges))
         return total
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
         """Delete nodes matching property filters via direct SQL, cascading to edges.
 
         Uses server-side joined DELETEs -- PostgreSQL resolves the node filter
@@ -278,12 +278,16 @@ class AGEBulkWriter:
         Args:
             label: Vertex label to delete from (e.g. "Method").
             filters: Property key=value filters (AND semantics).
+            batch_size: None: the two-step delete below, in the caller's transaction. A number:
+                ``_delete_in_batches`` -- at most that many vertices per statement, each committed.
 
         Returns:
             Number of nodes deleted.
         """
         if not filters:
             raise ValueError("filters must not be empty (would delete all nodes of the label)")
+        if batch_size:
+            return self._delete_in_batches(label, SQL(_build_agtype_conditions(filters, alias="n")), batch_size)
 
         # Build filter conditions in two forms:
         # - with alias "n." for the USING join (edge DELETE references vertex as n)
@@ -330,7 +334,13 @@ class AGEBulkWriter:
         return deleted
 
     def bulk_delete_orphans(
-        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+        self,
+        label: str,
+        edge_label: str,
+        *,
+        incoming: bool = True,
+        filters: dict[str, str] | None = None,
+        batch_size: int | None = None,
     ) -> int:
         """Delete orphan nodes via a direct SQL anti-join, cascading to edges.
 
@@ -351,6 +361,7 @@ class AGEBulkWriter:
                 ``edge.start_id``.
             filters: Optional property key=value filters (AND semantics) that
                 restrict the orphan scan to matching nodes only.
+            batch_size: As for ``bulk_delete_nodes``.
 
         Returns:
             Number of orphan nodes deleted.
@@ -385,6 +396,9 @@ class AGEBulkWriter:
             )
         else:
             orphan_pred = no_edge_pred
+
+        if batch_size:
+            return self._delete_in_batches(label, orphan_pred, batch_size)
 
         try:
             with self._conn.cursor() as cursor:
@@ -424,6 +438,53 @@ class AGEBulkWriter:
         self.invalidate_graphid_cache(label)
         logger.debug("Direct SQL: {} orphaned {} nodes deleted (no {} edge)", deleted, label, edge_label)
         return deleted
+
+    def _delete_in_batches(self, label: str, vertex_pred: SQL | Composed, batch_size: int) -> int:
+        """Delete the vertices of ``label`` matching ``vertex_pred`` (alias ``n``) and their edges, ``batch_size`` per statement.
+
+        Each batch is one statement, committed: a CTE locks the next vertex ids, deletes their
+        edges in every edge table -- driven from the batch, so the start_id/end_id indexes are
+        used -- then the vertices. Short transactions keep row locks brief and let vacuum
+        proceed; each statement stays far below a statement timeout.
+        """
+        graph = Identifier(self._graph_name)
+        steps = [
+            SQL(
+                "{name} AS (DELETE FROM {graph}.{etable} e USING batch b "
+                "WHERE e.start_id OPERATOR(ag_catalog.=) b.id OR e.end_id OPERATOR(ag_catalog.=) b.id)"
+            ).format(name=Identifier(f"e{i}"), graph=graph, etable=Identifier(elabel))
+            for i, elabel in enumerate(self._list_edge_labels())
+        ]
+        statement = SQL(
+            "WITH batch AS (SELECT n.id FROM {graph}.{vtable} n WHERE {pred} LIMIT {size} FOR UPDATE), {steps}"
+            "v AS (DELETE FROM {graph}.{vtable} n USING batch b WHERE n.id OPERATOR(ag_catalog.=) b.id RETURNING 1) "
+            "SELECT count(*) FROM v"
+        ).format(
+            graph=graph,
+            vtable=Identifier(label),
+            pred=vertex_pred,
+            size=SQLLiteral(int(batch_size)),
+            steps=SQL("").join(SQL("{}, ").format(step) for step in steps),
+        )
+        total = 0
+        try:
+            with self._conn.cursor() as cursor:
+                while True:
+                    cursor.execute(statement)
+                    row = cursor.fetchone()
+                    self._conn.commit()
+                    deleted = row[0] if row else 0
+                    total += deleted
+                    if deleted < batch_size:
+                        break
+        except psycopg.errors.UndefinedTable:
+            # Label table does not exist (fresh graph, never written to).
+            self._conn.rollback()
+            return 0
+
+        self.invalidate_graphid_cache(label)
+        logger.debug("Direct SQL: {} {} nodes deleted in batches of {}", total, label, batch_size)
+        return total
 
     def _list_edge_labels(self) -> list[str]:
         """Return all edge label names in the graph, cached for the connection lifetime.

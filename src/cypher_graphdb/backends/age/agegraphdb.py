@@ -1004,10 +1004,10 @@ class AGEGraphDB(CypherBackend):
 
     # ── Bulk delete operations ─────────────────────────────────────────────
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
-        """Delete nodes matching property filters, cascading to edges."""
+    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
+        """Delete nodes matching property filters, cascading to edges (direct SQL; ``batch_size``: committed batches)."""
         self._require_connection()
-        return self._get_bulk_writer().bulk_delete_nodes(label, filters)
+        return self._get_bulk_writer().bulk_delete_nodes(label, filters, batch_size=batch_size)
 
     def bulk_delete_edges(
         self,
@@ -1050,11 +1050,19 @@ class AGEGraphDB(CypherBackend):
         return total
 
     def bulk_delete_orphans(
-        self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None
+        self,
+        label: str,
+        edge_label: str,
+        *,
+        incoming: bool = True,
+        filters: dict[str, str] | None = None,
+        batch_size: int | None = None,
     ) -> int:
-        """Delete orphan nodes (no edge of edge_label) via direct SQL anti-join."""
+        """Delete orphan nodes (no edge of edge_label) via direct SQL anti-join (``batch_size``: committed batches)."""
         self._require_connection()
-        return self._get_bulk_writer().bulk_delete_orphans(label, edge_label, incoming=incoming, filters=filters)
+        return self._get_bulk_writer().bulk_delete_orphans(
+            label, edge_label, incoming=incoming, filters=filters, batch_size=batch_size
+        )
 
     # ── Bulk write operations ─────────────────────────────────────────────
 
