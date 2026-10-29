@@ -159,6 +159,16 @@ class TestCommitRollback:
         clean_db.execute("CREATE (p:Person {name: 'Test'})")
         clean_db.rollback()  # should not raise
 
+    def test_age_session_setup_survives_a_rollback_after_reconnect(self, age_db):
+        """A rollback right after a reconnect keeps the AGE session setup (search_path with ag_catalog).
+
+        Error recovery reconnects, and the caller then rolls back: the setup of the new
+        connection must not be part of that transaction.
+        """
+        age_db.backend.reconnect()
+        age_db.rollback()
+        assert age_db.execute("MATCH (n:NoSuchLabel) RETURN count(n)", unnest_result=True) == 0
+
 
 # ── Labels ────────────────────────────────────────────────────────────────────
 
