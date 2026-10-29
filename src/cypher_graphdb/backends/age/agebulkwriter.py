@@ -208,6 +208,63 @@ class AGEBulkWriter:
             logger.debug("Direct SQL: {} {} edges inserted", total, label)
         return total
 
+    def bulk_delete_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str,
+        dst_label: str,
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Delete edges via direct SQL DELETE on the AGE edge label table.
+
+        The counterpart of :meth:`bulk_insert_edges`: resolves the source and
+        destination graphids with one SQL query per label, then deletes by
+        ``(start_id, end_id)`` -- no Cypher MATCH ... DELETE, which is slow on AGE
+        for large sets. Graphids are looked up fresh, not from the insert cache:
+        nodes deleted and recreated since would otherwise resolve to stale ids.
+
+        Pairs whose src or dst reference cannot be resolved are skipped, and a
+        label whose table does not exist yet deletes nothing.
+
+        Returns:
+            Total number of edges deleted.
+        """
+        if (
+            not edges
+            or not self._label_exists(label, "e")
+            or not self._label_exists(src_label)
+            or not self._label_exists(dst_label)
+        ):
+            return 0
+
+        src_props = as_ref_props(src_ref_prop)
+        dst_props = as_ref_props(dst_ref_prop)
+        src_map = self._query_graphids(src_label, src_props, {ref_key(e["src"], len(src_props)) for e in edges})
+        dst_map = self._query_graphids(dst_label, dst_props, {ref_key(e["dst"], len(dst_props)) for e in edges})
+        pairs = {
+            (src_map[s], dst_map[d])
+            for s, d in ((ref_key(e["src"], len(src_props)), ref_key(e["dst"], len(dst_props))) for e in edges)
+            if s in src_map and d in dst_map
+        }
+
+        total = 0
+        with self._conn.cursor() as cursor:
+            for batch in chunk_list(sorted(pairs), batch_size):
+                values = ", ".join(f"('{src}'::ag_catalog.graphid, '{dst}'::ag_catalog.graphid)" for src, dst in batch)
+                cursor.execute(
+                    SQL("DELETE FROM {schema}.{table} WHERE (start_id, end_id) IN (VALUES {vals})").format(
+                        schema=Identifier(self._graph_name),
+                        table=Identifier(label),
+                        vals=SQL(values),
+                    )
+                )
+                total += cursor.rowcount
+        logger.debug("Direct SQL: {} {} edges deleted ({} pairs resolved of {})", total, label, len(pairs), len(edges))
+        return total
+
     def bulk_delete_nodes(self, label: str, filters: dict[str, str]) -> int:
         """Delete nodes matching property filters via direct SQL, cascading to edges.
 
@@ -469,6 +526,40 @@ class AGEBulkWriter:
         inner = inner.replace("'", "''")
         return "'" + inner + "'"
 
+    def _query_graphids(self, label: str, props: Sequence[str], ref_values: set[tuple] | None) -> dict[tuple, int]:
+        """Query {ref_key_tuple: graphid} for nodes of a label, uncached.
+
+        ``ref_values`` limits the query to those keys (an empty set queries
+        nothing); None loads the whole label table. Values returned by
+        agtype_access_operator are agtype-quoted strings (e.g. '"mth:foo.bar"'),
+        so the surrounding quotes are stripped.
+        """
+        if ref_values is not None and not ref_values:
+            return {}
+        if ref_values is not None:
+            sql_stmt = SQLBuilder.lookup_node_graphids_filtered_sql(self._graph_name, label, props, ref_values)
+        else:
+            sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, props)
+
+        with self._conn.cursor() as cursor:
+            cursor.execute(sql_stmt)
+            rows = cursor.fetchall()
+        # Each row is (val_0, ..., val_n, graphid); the key is the tuple of values.
+        n = len(props)
+        return {tuple(str(v).strip('"') for v in r[:n]): r[n] for r in rows}
+
+    def _label_exists(self, label: str, kind: Literal["v", "e"] = "v") -> bool:
+        """Whether the graph has a label table of this kind (checked without risking a failed statement)."""
+        with self._conn.cursor() as cursor:
+            cursor.execute(
+                SQL(
+                    "SELECT 1 FROM ag_catalog.ag_label "
+                    "WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = %s) AND name = %s AND kind = %s"
+                ),
+                (self._graph_name, label, kind),
+            )
+            return cursor.fetchone() is not None
+
     def invalidate_graphid_cache(self, label: str | None = None) -> None:
         """Drop cached graphid maps so the next lookup re-reads from the database.
 
@@ -522,17 +613,7 @@ class AGEBulkWriter:
             # Only query the missing keys
             ref_values = missing
 
-        if ref_values is not None and ref_values:
-            sql_stmt = SQLBuilder.lookup_node_graphids_filtered_sql(self._graph_name, label, props, ref_values)
-        else:
-            sql_stmt = SQLBuilder.lookup_node_graphids_sql(self._graph_name, label, props)
-
-        with self._conn.cursor() as cursor:
-            cursor.execute(sql_stmt)
-            rows = cursor.fetchall()
-        # Each row is (val_0, ..., val_n, graphid); the key is the tuple of values.
-        n = len(props)
-        result = {tuple(str(v).strip('"') for v in r[:n]): r[n] for r in rows}
+        result = self._query_graphids(label, props, ref_values or None)
 
         # Merge into cache
         if cached is not None:

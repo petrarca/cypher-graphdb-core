@@ -26,8 +26,9 @@ do not exist**.
    importing a module has no process-wide effect and two graphs can use the same
    label for different things.
 
-4. **Built for bulk.** `bulk_create_nodes` / `bulk_create_edges` batch through
-   `UNWIND` (or a direct SQL path), and property indexing is first-class —
+4. **Built for bulk.** `bulk_create_nodes` / `bulk_create_edges`,
+   `bulk_update_nodes` and `bulk_delete_edges` batch through `UNWIND` (or a
+   direct SQL path), and property indexing is first-class —
    because a graph load that ignores indexes is a graph load that never
    finishes.
 

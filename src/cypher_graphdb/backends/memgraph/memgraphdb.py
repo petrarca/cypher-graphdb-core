@@ -721,6 +721,74 @@ class MemgraphDB(CypherBackend):
 
         return total
 
+    def bulk_delete_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str,
+        dst_label: str,
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Delete edges between matched endpoint pairs in batches using parameterized UNWIND.
+
+        Every ``label`` edge from each matched source to its matched destination is
+        deleted; pairs that match no node delete nothing. Composite keys work as
+        for :meth:`bulk_create_edges`.
+
+        Returns:
+            Total number of edges deleted.
+        """
+        self._require_connection()
+        if not edges:
+            return 0
+
+        src_props = as_ref_props(src_ref_prop)
+        dst_props = as_ref_props(dst_ref_prop)
+        src_pat = edge_match_pattern("a", src_label, src_props, "src")
+        dst_pat = edge_match_pattern("b", dst_label, dst_props, "dst")
+        cypher = f"UNWIND $edges AS e MATCH {src_pat}-[r:{label}]->{dst_pat} DELETE r RETURN count(r) AS deleted"
+
+        pairs = [{"src": ref_param(e["src"], len(src_props)), "dst": ref_param(e["dst"], len(dst_props))} for e in edges]
+
+        total = 0
+        for batch in chunk_list(pairs, batch_size):
+            cursor = self._conn.cursor()
+            cursor.execute(cypher, {"edges": batch})
+            row = cursor.fetchone()
+            cursor.close()
+            if self.autocommit:
+                self._conn.commit()
+            total += row[0] if row else 0
+
+        return total
+
+    def bulk_update_nodes(self, label: str, rows: list[dict], ref_prop: str | Sequence[str] = "id", batch_size: int = 500) -> int:
+        """Set properties on matched nodes in batches using parameterized UNWIND."""
+        self._require_connection()
+        if not rows:
+            return 0
+        props = as_ref_props(ref_prop)
+        set_keys = [k for k in rows[0] if k != "ref"]
+        if not set_keys:
+            return 0
+        match = edge_match_pattern("n", label, props, "ref")
+        set_clause = ", ".join(f"n.{k} = e.{k}" for k in set_keys)
+        cypher = f"UNWIND $rows AS e MATCH {match} SET {set_clause} RETURN count(n) AS updated"
+        params = [{**r, "ref": ref_param(r["ref"], len(props))} for r in rows]
+
+        total = 0
+        for batch in chunk_list(params, batch_size):
+            cursor = self._conn.cursor()
+            cursor.execute(cypher, {"rows": batch})
+            row = cursor.fetchone()
+            cursor.close()
+            if self.autocommit:
+                self._conn.commit()
+            total += row[0] if row else 0
+        return total
+
     @contextlib.contextmanager
     def _autocommit_mode(self):
         """Temporarily enable autocommit on the connection.

@@ -26,7 +26,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 # Import directly from the main package
 from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
-from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern
+from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern, ref_param
 
 # Deferred at module level to avoid a circular import:
 # agegraphdb -> pagination (cyphergraphdb package) -> cyphergraphdb -> agegraphdb
@@ -49,6 +49,15 @@ from .agtype import AgTypeLoader
 # Property name inside an AGE btree expression index, e.g.
 #   agtype_access_operator(VARIADIC ARRAY[properties, '"qualified_name"'::agtype])
 _AGTYPE_PROPERTY_RE = re.compile(r"'\"(?P<prop>[^\"]+)\"'::agtype")
+
+
+def _first_int(result: Any) -> int:
+    """The scalar of a single-row, single-column result (``[[n]]`` or ``[n]``), or 0 when there is no row."""
+    while isinstance(result, list | tuple):
+        if not result:
+            return 0
+        result = result[0]
+    return int(result) if result is not None else 0
 
 
 class AGEExecutionError(Exception):
@@ -984,6 +993,46 @@ class AGEGraphDB(CypherBackend):
         """Delete nodes matching property filters, cascading to edges."""
         self._require_connection()
         return self._get_bulk_writer().bulk_delete_nodes(label, filters)
+
+    def bulk_delete_edges(
+        self,
+        label: str,
+        edges: list[dict],
+        src_label: str,
+        dst_label: str,
+        src_ref_prop: str | Sequence[str] = "id",
+        dst_ref_prop: str | Sequence[str] = "id",
+        batch_size: int = 500,
+    ) -> int:
+        """Delete edges between matched endpoint pairs via direct SQL (no Cypher MATCH ... DELETE)."""
+        self._require_connection()
+        return self._get_bulk_writer().bulk_delete_edges(
+            label, edges, src_label, dst_label, src_ref_prop, dst_ref_prop, batch_size
+        )
+
+    def bulk_update_nodes(self, label: str, rows: list[dict], ref_prop: str | Sequence[str] = "id", batch_size: int = 500) -> int:
+        """Set properties on matched nodes via Cypher UNWIND over inline literals.
+
+        AGE cannot bind parameters inside UNWIND, so each batch is serialized as an
+        escaped Cypher list literal -- the same path as the bulk-create fallback.
+        """
+        self._require_connection()
+        if not rows:
+            return 0
+        props = as_ref_props(ref_prop)
+        set_keys = [k for k in rows[0] if k != "ref"]
+        if not set_keys:
+            return 0
+        match = edge_match_pattern("n", label, props, "ref")
+        set_clause = ", ".join(f"n.{k} = e.{k}" for k in set_keys)
+        total = 0
+        for batch in chunk_list(rows, batch_size):
+            literal = to_cypher_list([{**r, "ref": ref_param(r["ref"], len(props))} for r in batch])
+            result, _ = self.execute_cypher(
+                self.parse_cypher(f"UNWIND {literal} AS e MATCH {match} SET {set_clause} RETURN count(n)"), fetch_one=True
+            )
+            total += _first_int(result)
+        return total
 
     def bulk_delete_orphans(
         self, label: str, edge_label: str, *, incoming: bool = True, filters: dict[str, str] | None = None

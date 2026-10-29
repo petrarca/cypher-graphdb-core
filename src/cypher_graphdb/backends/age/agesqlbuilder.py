@@ -314,11 +314,21 @@ class SQLBuilder:
         ``ref_props`` is the ordered list of key properties; ``ref_values`` is a
         set of value tuples (one element per prop, same order).
 
-        A single prop uses ``WHERE access IN (v, ...)`` -- the fast path that hits
-        the expression index. A composite key uses ``WHERE (a0 = v0 AND a1 = v1)
-        OR (...) OR ...``: AGE's agtype does not support SQL row-value comparison
+        Each prop becomes one ``access OPERATOR(ag_catalog.=) ANY (ARRAY[...])``
+        condition over that prop's distinct values, AND'd across props. Every
+        condition can use the prop's btree expression index, so the planner picks
+        the most selective one (typically the symbol) regardless of how stale the
+        table statistics are. The former per-tuple form -- ``(a0 = v0 AND a1 = v1)
+        OR (...)`` -- left that choice to the planner, which on freshly written
+        rows chose the low-selectivity index (e.g. source_key) and evaluated the
+        whole OR chain per row: seconds per batch on a label with a million rows.
+
+        For a composite key the result is a superset (any combination of the
+        per-prop values); callers match the returned value tuples against the
+        keys they asked for. agtype does not support SQL row-value comparison
         (``(a, b) IN ((x, y))`` raises "cannot cast agtype string to type
-        boolean"), so the key is expanded into per-tuple AND groups.
+        boolean"), and equality must use the ``ag_catalog.=`` operator explicitly
+        so it does not depend on the search path.
 
         Values are cast to ``::ag_catalog.agtype`` to match the expression index
         type. Values containing double quotes or backslashes are escaped for the
@@ -330,22 +340,14 @@ class SQLBuilder:
             return sql.SQL(sql.Literal('"' + escape_string_inner(v) + '"').as_string(None) + "::ag_catalog.agtype")
 
         value_cols = sql.SQL(", ").join(cls._prop_access(p) + sql.SQL("::text") for p in ref_props)
-
-        # Match each key tuple as an AND of per-prop equalities, OR'd across tuples.
-        # agtype equality must use the ag_catalog.= operator -- a plain "=" (or a
-        # ::text cast) raises "cannot cast agtype string to type boolean". This
-        # uniform form covers both the single-prop and composite cases.
-        accessors = [cls._prop_access(p) for p in ref_props]
-        groups = [
-            sql.SQL("(")
-            + sql.SQL(" AND ").join(
-                sql.SQL("{a} OPERATOR(ag_catalog.=) {v}").format(a=accessors[i], v=agtype_literal(v))
-                for i, v in enumerate(value_tuple)
+        conditions = [
+            sql.SQL("{a} OPERATOR(ag_catalog.=) ANY (ARRAY[{vals}])").format(
+                a=cls._prop_access(prop),
+                vals=sql.SQL(", ").join(agtype_literal(v) for v in sorted({str(t[i]) for t in ref_values})),
             )
-            + sql.SQL(")")
-            for value_tuple in ref_values
+            for i, prop in enumerate(ref_props)
         ]
-        where = sql.SQL(" OR ").join(groups)
+        where = sql.SQL(" AND ").join(conditions)
 
         return sql.SQL("SELECT {cols}, id FROM {schema}.{table} WHERE {where}").format(
             cols=value_cols,

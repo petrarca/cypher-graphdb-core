@@ -1,7 +1,7 @@
 ---
 type: Guide
 title: Bulk writes, indexes and backend capabilities
-description: Loading data at volume with bulk_create_nodes/bulk_create_edges, creating property indexes, and checking what a backend actually supports.
+description: Loading and maintaining data at volume with bulk_create_nodes/bulk_create_edges, bulk_update_nodes and bulk_delete_edges, creating property indexes, and checking what a backend actually supports.
 tags: [cypher-graphdb, bulk, indexes, capabilities, performance, age, memgraph]
 status: stable
 ---
@@ -78,6 +78,49 @@ db.bulk_create_edges(
 target a single label table instead of scanning the whole graph, which is the
 difference between a fast load and an unusable one. `src_ref_prop` /
 `dst_ref_prop` default to `"id"`.
+
+A ref prop can also be a sequence of properties forming a composite key, e.g.
+`("symbol", "source_key")` when a symbol is only unique within one source of a
+shared graph; each ref is then a tuple of values in the same order.
+
+## Bulk updating nodes
+
+Setting properties on many existing nodes takes the nodes' references and,
+parallel to them, the properties to set — every entry sets the same keys:
+
+```python
+db.bulk_update_nodes(
+    "Class",
+    refs=[("cls:app.Foo", "svc-a"), ("cls:app.Bar", "svc-a")],
+    properties=[{"community": 3}, {"community": 5}],
+    ref_prop=("symbol", "source_key"),
+)
+```
+
+Nodes no ref matches are skipped; the return value counts the nodes updated.
+
+## Bulk deleting edges
+
+Deleting many edges takes the same parallel references as creating them. Every
+edge of the label from a matched source to its matched destination is deleted,
+parallel edges included:
+
+```python
+db.bulk_delete_edges(
+    "CALLS",
+    src_refs=[("mod.foo.bar", "svc-a")],
+    dst_refs=[("mod.target.a", "svc-a")],
+    src_label="Method",
+    dst_label="Method",
+    src_ref_prop=("qualified_name", "source_key"),
+    dst_ref_prop=("qualified_name", "source_key"),
+)
+```
+
+On AGE this resolves the endpoints with one SQL query per label and deletes by
+`(start_id, end_id)`, without a Cypher `MATCH ... DELETE` — the form that gets
+slow on AGE for large sets. Pairs that match no node, and labels that do not
+exist yet, delete nothing.
 
 ## Property indexes
 
@@ -159,6 +202,7 @@ a chunked implementation, so the loop above works either way. Pagination via
 Apache AGE cannot bind query parameters inside `UNWIND`. A portable
 `UNWIND $rows` write therefore has to be rewritten as inline Cypher literals for
 AGE, with all the escaping that implies. `bulk_create_nodes` and
-`bulk_create_edges` own that difference — and take the direct SQL path where the
-backend allows it — so consumer code stays the same across backends. See
+`bulk_create_edges`, `bulk_update_nodes` and `bulk_delete_edges` own that
+difference — and take the direct SQL path where the backend allows it — so
+consumer code stays the same across backends. See
 [queries.md](queries.md) for the parameter caveat in its general form.
