@@ -66,7 +66,7 @@ from ..backendprovider import backend_provider
 from ..cypherbuilder import CypherBuilder
 from ..cypherparser import ParsedCypherQuery
 from ..cypherquery import CypherQuery
-from ..exceptions import LabelNotFoundError, QueryExecutionError, QueryTimeoutError, ReadOnlyModeError
+from ..exceptions import LabelNotFoundError, QueryExecutionError, QueryTimeoutError, ReadOnlyModeError, check_path_length
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from ..settings import Settings
 from .batch import BatchMixin
@@ -813,6 +813,7 @@ class CypherGraphDB(
         raw_data: bool = False,
         params: dict | None = None,
         max_rows: int = DEFAULT_MAX_MATERIALIZED_ROWS,
+        max_path_length: int | None = None,
     ):
         """Execute a windowed page query, accepting a ``CypherQuery`` builder.
 
@@ -829,6 +830,7 @@ class CypherGraphDB(
             raw_data=raw_data,
             params=params,
             max_rows=max_rows,
+            max_path_length=max_path_length,
         )
 
     def parse(self, cypher_cmd: str) -> ParsedCypherQuery:
@@ -882,11 +884,14 @@ class CypherGraphDB(
         raw_data: bool = False,
         params: dict | None = None,
         timeout_s: float | None = None,
+        max_path_length: int | None = None,
     ) -> Any | TabularResult:
         """Execute a Cypher command and return results with flexible formatting options.
 
         ``timeout_s``: this statement's timeout instead of the connection's default (0: none); a
-        statement running longer is cancelled with ``QueryTimeoutError``.
+        statement running longer is cancelled with ``QueryTimeoutError``. ``max_path_length``: a
+        query whose patterns can match more relationships (``ParsedCypherQuery.max_path_length``)
+        is rejected with ``PathLengthExceededError`` before it runs (None: no limit).
 
         Provides the primary interface for executing raw Cypher queries with extensive
         result formatting and optimization options.
@@ -959,7 +964,7 @@ class CypherGraphDB(
 
         logger.debug("Execute cypher (unnest_result={}, fetch_one={}): {}", unnest_result, fetch_one, cypher_cmd)
         with self._statement_timeout(timeout_s):
-            result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
+            result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params, max_path_length)
 
         return utils.unnest_result(result, unnest_result)
 
@@ -985,8 +990,11 @@ class CypherGraphDB(
         raw_data: bool = False,
         params: dict | None = None,
         timeout_s: float | None = None,
+        max_path_length: int | None = None,
     ) -> QueryResult:
-        """Execute a Cypher command and return immutable QueryResult with statistics (``timeout_s``: as for ``execute``).
+        """Execute a Cypher command and return immutable QueryResult with statistics.
+
+        ``timeout_s``, ``max_path_length``: as for ``execute``.
 
         Provides complete query execution information without mutable state,
         ensuring thread safety and clean state ownership.
@@ -1034,6 +1042,7 @@ class CypherGraphDB(
             parsed_query = cypher_cmd
         else:
             parsed_query = self._parse_cypher(cypher_cmd)
+        check_path_length(parsed_query.max_path_length, max_path_length)
 
         # Execute the query and get statistics
         with self._statement_timeout(timeout_s):
@@ -1299,6 +1308,7 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        max_path_length: int | None = None,
     ) -> TabularResult | None:
         cypher_cmd, params = _resolve_cypher_input(cypher_cmd, params)
 
@@ -1308,6 +1318,7 @@ class CypherGraphDB(
         else:
             assert isinstance(cypher_cmd, ParsedCypherQuery)
             parsed_query = cypher_cmd
+        check_path_length(parsed_query.max_path_length, max_path_length)
 
         if not self._before_execute(parsed_query):
             logger.debug("Cancelled execution due failure of before_execute hook!")

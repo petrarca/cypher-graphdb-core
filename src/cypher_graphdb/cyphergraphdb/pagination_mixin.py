@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..backend import BackendCapability
 from ..cypherparser import ParsedCypherQuery, parse_cypher_query
+from ..exceptions import check_path_length
 from ..utils.column_utils import resolve_column_names
 from .pagination import Page
 
@@ -66,6 +67,7 @@ class PaginationMixin(_Host):
         raw_data: bool = False,
         params: dict | None = None,
         max_rows: int = DEFAULT_MAX_MATERIALIZED_ROWS,
+        max_path_length: int | None = None,
     ) -> Page:
         """Execute a Cypher query and return a single windowed ``Page`` of rows.
 
@@ -84,6 +86,7 @@ class PaginationMixin(_Host):
             max_rows: Hard cap on rows materialized by the fallback path.
                 Queries that exceed this cap set ``Page.truncated = True``.
                 Not used by backends with native pagination.
+            max_path_length: Reject the query when a pattern can match more relationships (None: no limit).
 
         Returns:
             A ``Page`` with the row window plus pagination metadata.
@@ -91,6 +94,7 @@ class PaginationMixin(_Host):
         Raises:
             ValueError: If ``offset < 0``, ``limit < 0``, or ``params``
                 contains reserved pagination keys.
+            PathLengthExceededError: If the query exceeds ``max_path_length``.
 
         Notes:
             The fallback slices a single materialized result, so order is
@@ -108,6 +112,7 @@ class PaginationMixin(_Host):
         assert self._backend
 
         parsed_query = parse_cypher_query(cypher_query) if isinstance(cypher_query, str) else cypher_query
+        check_path_length(parsed_query.max_path_length, max_path_length)
 
         # Honour on_before_execute hook (e.g. read-only enforcement, audit).
         if not self._before_execute(parsed_query):

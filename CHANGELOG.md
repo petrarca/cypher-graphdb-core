@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `with db.query_timeout(...)` override the connection's default; a cancelled query raises
   `QueryTimeoutError` (a `QueryExecutionError`) on every backend. Memgraph through pymgclient cannot
   apply one per statement and logs a warning.
+- Path length limits: the parser reports a query's longest path (`ParsedCypherQuery.max_path_length`,
+  None when unbounded); `execute`, `execute_with_stats` and `execute_cypher_page` take `max_path_length=`
+  and reject a longer query with `PathLengthExceededError` before it runs (no limit by default).
 
 ### Changed
 - Memgraph and the new Neo4j backend share a Bolt foundation (`backends/bolt`): each is a dialect on it.
