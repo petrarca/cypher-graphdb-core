@@ -54,7 +54,8 @@ The same operations can be performed with the untyped approach, but without
 the benefits of type safety and validation.
 """
 
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Iterator
 from typing import Any, Literal
 
 from loguru import logger
@@ -65,7 +66,7 @@ from ..backendprovider import backend_provider
 from ..cypherbuilder import CypherBuilder
 from ..cypherparser import ParsedCypherQuery
 from ..cypherquery import CypherQuery
-from ..exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
+from ..exceptions import LabelNotFoundError, QueryExecutionError, QueryTimeoutError, ReadOnlyModeError
 from ..models import Graph, GraphEdge, GraphNode, GraphObject, TabularResult
 from ..settings import Settings
 from .batch import BatchMixin
@@ -880,8 +881,12 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        timeout_s: float | None = None,
     ) -> Any | TabularResult:
         """Execute a Cypher command and return results with flexible formatting options.
+
+        ``timeout_s``: this statement's timeout instead of the connection's default (0: none); a
+        statement running longer is cancelled with ``QueryTimeoutError``.
 
         Provides the primary interface for executing raw Cypher queries with extensive
         result formatting and optimization options.
@@ -953,9 +958,24 @@ class CypherGraphDB(
         assert self._backend
 
         logger.debug("Execute cypher (unnest_result={}, fetch_one={}): {}", unnest_result, fetch_one, cypher_cmd)
-        result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
+        with self._statement_timeout(timeout_s):
+            result = self._parse_and_execute(cypher_cmd, fetch_one, raw_data, params)
 
         return utils.unnest_result(result, unnest_result)
+
+    @contextlib.contextmanager
+    def query_timeout(self, timeout_s: float | None) -> Iterator[None]:
+        """Every statement inside -- queries, pages, streams, bulk writes -- gets ``timeout_s`` instead of the
+        connection's default (0: none). On a backend that cannot apply it per statement (Memgraph through
+        pymgclient) a warning is logged and the connection's default holds; AGE applies it to queries, its
+        bulk writes keep the connection's default.
+        """
+        assert self._backend
+        with self._backend.statement_timeout(timeout_s):
+            yield
+
+    def _statement_timeout(self, timeout_s: float | None) -> contextlib.AbstractContextManager[None]:
+        return self.query_timeout(timeout_s) if timeout_s is not None else contextlib.nullcontext()
 
     def execute_with_stats(
         self,
@@ -964,8 +984,9 @@ class CypherGraphDB(
         fetch_one: bool = False,
         raw_data: bool = False,
         params: dict | None = None,
+        timeout_s: float | None = None,
     ) -> QueryResult:
-        """Execute a Cypher command and return immutable QueryResult with statistics.
+        """Execute a Cypher command and return immutable QueryResult with statistics (``timeout_s``: as for ``execute``).
 
         Provides complete query execution information without mutable state,
         ensuring thread safety and clean state ownership.
@@ -1015,7 +1036,8 @@ class CypherGraphDB(
             parsed_query = self._parse_cypher(cypher_cmd)
 
         # Execute the query and get statistics
-        result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+        with self._statement_timeout(timeout_s):
+            result, exec_stats = self._execute_on_backend(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
         # Create immutable QueryResult
         return QueryResult(
@@ -1267,6 +1289,8 @@ class CypherGraphDB(
         except ReadOnlyModeError, LabelNotFoundError:
             raise
         except Exception as e:
+            if self._backend.is_timeout_error(e):
+                raise QueryTimeoutError(str(e)) from e
             raise QueryExecutionError(str(e)) from e
 
     def _parse_and_execute(

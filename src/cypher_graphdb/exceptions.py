@@ -65,3 +65,12 @@ class QueryExecutionError(Exception):
         ... except QueryExecutionError as e:
         ...     print(e)  # "Error on line 1 position 10. ..."
     """
+
+
+class QueryTimeoutError(QueryExecutionError):
+    """Raised when the backend cancels a query for running longer than its timeout.
+
+    The timeout is the connection's default (``query_timeout_s``) or a statement's own
+    (``execute(..., timeout_s=)``, ``with cdb.query_timeout(...)``). A subclass of
+    ``QueryExecutionError``: callers catching that one still catch it.
+    """

@@ -20,7 +20,7 @@ import psycopg
 import psycopg.conninfo as conninfo
 from loguru import logger
 from psycopg.client_cursor import ClientCursor
-from psycopg.sql import SQL, Composed, Identifier
+from psycopg.sql import SQL, Composed, Identifier, Literal
 from psycopg.types import TypeInfo
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -229,15 +229,30 @@ class AGEGraphDB(CypherBackend):
         # Validate read-only mode FIRST
         self._validate_read_only(cypher_query)
 
-        if params:
-            # Use prepared statement for parameterized queries
-            (result, execute_stats, _) = self._execute_prepared(cypher_query, fetch_one, raw_data, params)
-        else:
-            # Use regular execution for non-parameterized queries
-            sql, sql_params = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query, params)
-            (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data, sql_params)
+        try:
+            if params:
+                # Use prepared statement for parameterized queries
+                (result, execute_stats, _) = self._execute_prepared(cypher_query, fetch_one, raw_data, params)
+            else:
+                # Use regular execution for non-parameterized queries
+                sql, sql_params = SQLBuilder.create_cypher_sql(self._graph_name, cypher_query, params)
+                (result, execute_stats, _) = self._execute_sql(sql, fetch_one, raw_data, sql_params)
+        except Exception:
+            self._end_failed_statement()
+            raise
 
         return (result, execute_stats)
+
+    def _end_failed_statement(self) -> None:
+        """With autocommit, a failed statement (cancelled for its timeout, say) leaves no aborted transaction behind."""
+        connection = self._connection
+        if (
+            self.autocommit
+            and connection is not None
+            and not connection.closed
+            and connection.info.transaction_status == psycopg.pq.TransactionStatus.INERROR
+        ):
+            connection.rollback()
 
     def execute_cypher_page(
         self,
@@ -1297,7 +1312,27 @@ class AGEGraphDB(CypherBackend):
         # reconnect if necessary
         self._require_connection()
 
-        return self._conn.cursor(row_factory=row_factory)
+        cursor = self._conn.cursor(row_factory=row_factory)
+        if self._statement_timeout_s is not None:
+            # A statement's own timeout, for the rest of this transaction (statement_timeout() resets it).
+            cursor.execute(SQL("SET LOCAL statement_timeout = {}").format(Literal(int(self._statement_timeout_s * 1000))))
+        return cursor
+
+    def _end_statement_timeout(self) -> None:
+        """Back to the session's statement_timeout for what the open transaction still runs."""
+        connection = self._connection
+        if connection is not None and connection.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS:
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL statement_timeout TO DEFAULT")
+
+    def is_timeout_error(self, error: Exception) -> bool:
+        """PostgreSQL cancelled the statement for its statement_timeout (QueryCanceled), also when wrapped."""
+        cause: BaseException | None = error
+        while cause is not None:
+            if isinstance(cause, psycopg.errors.QueryCanceled) and "statement timeout" in str(cause):
+                return True
+            cause = cause.__cause__
+        return False
 
     def _check_connection(self) -> bool:
         """Verify AGE connection by executing SELECT 1."""

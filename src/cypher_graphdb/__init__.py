@@ -27,7 +27,7 @@ from .cyphergraphdb.pagination import Page
 from .cypherjson import GraphJSONEncoder
 from .cypherparser import ParsedCypherQuery, parse_cypher_query
 from .dbpool import CypherGraphDBPool
-from .exceptions import LabelNotFoundError, QueryExecutionError, ReadOnlyModeError
+from .exceptions import LabelNotFoundError, QueryExecutionError, QueryTimeoutError, ReadOnlyModeError
 from .formatprovider import FormatProvider, FormatSpec, data_format, format_provider
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, validate_node_properties
@@ -70,6 +70,7 @@ __all__ = [
     "ReadOnlyModeError",
     "LabelNotFoundError",
     "QueryExecutionError",
+    "QueryTimeoutError",
     "ConnectionGuardError",
     "install_connection_guard",
     "clear_connection_guard",

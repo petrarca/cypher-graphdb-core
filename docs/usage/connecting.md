@@ -83,12 +83,34 @@ Configuration is read by a pydantic-settings `Settings` model.
 
 | Setting | Env var | CLI flag | Default | Meaning |
 |---|---|---|---|---|
-| `backend` | `CGDB_BACKEND` | `-b / --backend` | – | `age` or `memgraph` |
+| `backend` | `CGDB_BACKEND` | `-b / --backend` | – | `age`, `memgraph` or `neo4j` |
 | `cinfo` | `CGDB_CINFO` | `-c / --cinfo` | – | Connection string / DSN |
 | `graph` | `CGDB_GRAPH` | `-g / --graph` | – | Graph name (backend-specific) |
 | `read_only` | `CGDB_READ_ONLY` | `-r / --read-only` | `False` | Reject write clauses |
 | `create_graph` | `CGDB_CREATE_GRAPH_IF_NOT_EXISTS` | – | `False` | Auto-create the graph (AGE) |
-| `query_timeout_s` | `CGDB_QUERY_TIMEOUT_S` | – | – | Per-query timeout in seconds |
+| `query_timeout_s` | `CGDB_QUERY_TIMEOUT_S` | – | `600` | The connection's query timeout in seconds (`0`: none) |
+
+## Query timeouts
+
+Every connection has a timeout for its queries: `query_timeout_s`, 600 s by default -- generous for
+real work, and a runaway query ends instead of running for hours. A query running longer is
+cancelled with `QueryTimeoutError` (a `QueryExecutionError`). A statement may set its own:
+
+```python
+db.execute("MATCH (n) RETURN count(n)", timeout_s=30)
+
+with db.query_timeout(5):          # every statement inside: queries, pages, streams, bulk writes
+    db.execute(...)
+```
+
+| Backend | Connection default | A statement's own |
+|---|---|---|
+| `age` | the session's `statement_timeout` | `SET LOCAL statement_timeout` in its transaction (queries; bulk writes keep the default) |
+| `neo4j`, `memgraph` via the Neo4j driver | the Bolt transaction timeout of each transaction | the Bolt transaction timeout |
+| `memgraph` via pymgclient | the server-wide setting `query.timeout` | not possible: a warning is logged, the default holds |
+
+With autocommit, a statement cancelled for its timeout leaves no aborted transaction behind: the
+connection is usable for the next one.
 
 **Precedence:** CLI arguments → environment variables → `.env` → constructor
 arguments → defaults.

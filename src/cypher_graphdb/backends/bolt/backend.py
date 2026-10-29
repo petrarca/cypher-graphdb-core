@@ -26,7 +26,7 @@ from cypher_graphdb.models import GraphObject, GraphObjectType, TabularResult
 from cypher_graphdb.statistics import LabelStatistics
 from cypher_graphdb.utils import chunk_list, parse_connection_uri, validate_protocol
 
-from .transport import BoltTransport, open_transport
+from .transport import BoltTransport, Rows, open_transport
 
 _SCHEMES = ["bolt", "bolt+s", "bolt+ssc", "neo4j", "neo4j+s", "neo4j+ssc"]
 
@@ -135,7 +135,7 @@ class BoltBackend(CypherBackend):
         self.connect(self._cinfo, **self._ckwargs)
 
     def _check_connection(self) -> bool:
-        rows = self._conn.run("RETURN 1").fetch(1)
+        rows = self._run("RETURN 1").fetch(1)
         return bool(rows) and rows[0][0] == 1
 
     def _require_connection(self) -> None:
@@ -229,7 +229,7 @@ class BoltBackend(CypherBackend):
         self._require_connection()
         query = cypher_query.parsed_query
         logger.debug("{} execute stream (chunk_size={}): {}", self.name, chunk_size, query)
-        rows = self._conn.run(query, params)
+        rows = self._run(query, params)
         row = self._conn.row_factory(ExecStatistics(), self._model_provider)
         try:
             while chunk := rows.fetch(chunk_size):
@@ -246,7 +246,7 @@ class BoltBackend(CypherBackend):
         logger.debug("{} execute: {}", self.name, query)
         exec_stats = ExecStatistics()
         try:
-            rows = self._conn.run(query, params)
+            rows = self._run(query, params)
             fetched = rows.fetch(1) if fetch_one else rows.all()
             rows.discard()  # the rest, when only one row was asked for
         except Exception as e:
@@ -262,6 +262,20 @@ class BoltBackend(CypherBackend):
         if result and isinstance(result[0], tuple):
             exec_stats.col_count = len(result[0])
         return (result, exec_stats)
+
+    def _run(self, query: str, params: dict | None = None) -> Rows:
+        """A statement through the transport, with the statement timeout when one is active."""
+        return self._conn.run(query, params, self._statement_timeout_s)
+
+    def is_timeout_error(self, error: Exception) -> bool:
+        """The server aborted the transaction for its timeout: Neo4j's ``...TransactionTimedOut...`` code, Memgraph's message."""
+        for cause in (error, error.__cause__):
+            if cause is None:
+                continue
+            message = str(cause).lower()
+            if "TimedOut" in (getattr(cause, "code", "") or "") or ("abort" in message and "timeout" in message):
+                return True
+        return False
 
     def _run_implicit(self, statement: str) -> Sequence[Sequence[Any]]:
         """A statement in an implicit transaction of its own (DDL, settings, catalog queries)."""
@@ -299,7 +313,7 @@ class BoltBackend(CypherBackend):
         self._require_connection()
         total = 0
         for batch in chunk_list(rows, batch_size):
-            self._conn.run(f"UNWIND $rows AS props CREATE (n:{label}) SET n = props", {"rows": batch}).discard()
+            self._run(f"UNWIND $rows AS props CREATE (n:{label}) SET n = props", {"rows": batch}).discard()
             total += len(batch)
         return total
 
@@ -327,7 +341,7 @@ class BoltBackend(CypherBackend):
         edges = [{**e, "src": ref_param(e["src"], len(src_props)), "dst": ref_param(e["dst"], len(dst_props))} for e in edges]
         total = 0
         for batch in chunk_list(edges, batch_size):
-            self._conn.run(cypher, {"edges": batch}).discard()
+            self._run(cypher, {"edges": batch}).discard()
             total += len(batch)
         return total
 
@@ -367,7 +381,7 @@ class BoltBackend(CypherBackend):
         return sum(self._count(cypher, {"rows": batch}) for batch in chunk_list(params, batch_size))
 
     def _count(self, cypher: str, params: dict) -> int:
-        rows = self._conn.run(cypher, params)
+        rows = self._run(cypher, params)
         first = rows.fetch(1)
         rows.discard()
         return first[0][0] if first else 0
