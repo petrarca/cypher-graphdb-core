@@ -7,12 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
 ### Added
-- Initial project structure
-- Core functionality for Cypher query language support
-- ORM-like interface for graph databases
-- CLI tool for interactive sessions
-- Documentation system with MkDocs
 - Neo4j backend (`backend="neo4j"`): the graph name selects the database; named range indexes.
 - Query timeouts per statement: `execute(..., timeout_s=)`, `execute_with_stats(..., timeout_s=)` and
   `with db.query_timeout(...)` override the connection's default; a cancelled query raises
@@ -26,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their recommendation for large deletes (memory stays flat), on AGE short transactions in SQL (brief row
   locks, vacuum not held back, edges deleted through the start_id/end_id indexes). Each statement stays
   far below a statement timeout. Without it, one statement as before.
+- `bulk_delete_edges` and `bulk_update_nodes`, with a direct SQL delete path on AGE.
 
 ### Changed
 - Memgraph and the new Neo4j backend share a Bolt foundation (`backends/bolt`): each is a dialect on it.
@@ -39,3 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AGE: with autocommit, a failed statement is rolled back, so the connection is usable for the next.
 
 ### Fixed
+- AGE: graphids are looked up with one `ANY` condition per key property instead of a per-tuple `OR`
+  chain, which made composite-key edge writes take seconds per batch.
+- AGE: the session setup is committed, so a rollback after a reconnect keeps `ag_catalog` on the
+  search path.
+- An undecorated base class is no longer treated as a parent in a model's schema (it raised
+  `AttributeError`).
+
+[Unreleased]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.7.3...v0.8.0
