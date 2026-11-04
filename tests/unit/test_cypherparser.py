@@ -452,3 +452,13 @@ def test_order_by_with_limit_detected():
     parsed = parse_cypher_query("MATCH (n) RETURN n.x ORDER BY n.x LIMIT 5")
     assert parsed.has_limit is True
     assert parsed.has_pagination_clause() is True
+
+
+def test_a_pattern_in_a_return_expression_parses():
+    """A pattern outside a clause -- a pattern comprehension in RETURN -- is no clause part, and no error."""
+    from cypher_graphdb.cypherparser import parse_cypher_query
+
+    query = "MATCH (r:Root)-[:HAS*1..6]->(c) WITH c RETURN c.name, size([(c)-[:USES]->() | 1]) AS n"
+    parsed = parse_cypher_query(query)
+    assert parsed.is_valid_syntax()
+    assert not parsed.has_updating_clause()

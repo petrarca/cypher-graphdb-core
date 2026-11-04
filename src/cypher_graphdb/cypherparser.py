@@ -363,16 +363,18 @@ class CypherQueryListener(CypherListener):
             self._current_clause_part = CypherClausePart(part_type="NODE", query_part=ctx.getText())
 
     def exitOC_NodePattern(self, ctx: CypherParser.OC_NodePatternContext):
-        assert self._current_clause and self._current_clause_part
-        self._exit_clause_part()
+        # Only where its enter made a part: a pattern outside a clause -- in a RETURN
+        # expression, a pattern comprehension -- makes none.
+        if self._current_clause and self._current_clause_part:
+            self._exit_clause_part()
 
     def enterOC_RelationshipDetail(self, ctx: CypherParser.OC_RelationshipDetailContext):
         if self._current_clause:
             self._current_clause_part = CypherClausePart(part_type="EDGE", query_part=ctx.getText())
 
     def exitOC_RelationshipDetail(self, ctx: CypherParser.OC_RelationshipDetailContext):
-        assert self._current_clause and self._current_clause_part
-
+        if not (self._current_clause and self._current_clause_part):
+            return  # outside a clause, as its enter: no part
         self._exit_clause_part()
 
     def exitOC_RelTypeName(self, ctx: CypherParser.OC_RelTypeNameContext):
