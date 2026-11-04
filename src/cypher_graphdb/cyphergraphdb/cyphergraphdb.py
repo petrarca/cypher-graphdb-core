@@ -1278,29 +1278,37 @@ class CypherGraphDB(
     def _parse_cypher(self, cmd: str) -> ParsedCypherQuery:
         return self._backend.parse_cypher(cmd)
 
-    def _execute_on_backend(
-        self, parsed_query: ParsedCypherQuery, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
-    ):
-        """Run a parsed query on the backend, normalizing execution failures.
+    @contextlib.contextmanager
+    def _backend_errors(self) -> Iterator[None]:
+        """Normalize what the backend raises while running a Cypher query -- the one place it is done.
 
-        This is the single chokepoint for ``backend.execute_cypher``. Backend
-        drivers raise backend-specific exceptions (e.g. Memgraph's
+        Backend drivers raise backend-specific exceptions (e.g. Memgraph's
         ``neo4j.exceptions.Neo4jError`` or AGE's ``AGEExecutionError``); those must
         never escape the library. Any such failure is re-raised as the
-        backend-agnostic ``QueryExecutionError`` so callers can catch one type.
+        backend-agnostic ``QueryExecutionError`` (``QueryTimeoutError`` for a
+        cancelled statement) so callers can catch one type, whichever way the
+        query runs -- whole, paged or streamed.
 
         Already-agnostic exceptions raised intentionally by the backend
         (``ReadOnlyModeError``, ``LabelNotFoundError``) are passed through
         unchanged, as they carry meaningful semantics for callers.
         """
+        assert self._backend
         try:
-            return self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
+            yield
         except ReadOnlyModeError, LabelNotFoundError:
             raise
         except Exception as e:
             if self._backend.is_timeout_error(e):
                 raise QueryTimeoutError(str(e)) from e
             raise QueryExecutionError(str(e)) from e
+
+    def _execute_on_backend(
+        self, parsed_query: ParsedCypherQuery, fetch_one: bool = False, raw_data: bool = False, params: dict | None = None
+    ):
+        """Run a parsed query on the backend, its failures normalized (``_backend_errors``)."""
+        with self._backend_errors():
+            return self._backend.execute_cypher(parsed_query, fetch_one=fetch_one, raw_data=raw_data, params=params)
 
     def _parse_and_execute(
         self,

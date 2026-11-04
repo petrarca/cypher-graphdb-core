@@ -128,14 +128,15 @@ class PaginationMixin(_Host):
             # For backends without EXACT_COUNT (e.g. Memgraph), suppress the
             # hint so backends don't waste effort on a count they can't produce.
             effective_want_total = want_total and self._backend.get_capability(BackendCapability.EXACT_COUNT)
-            page = self._backend.execute_cypher_page(
-                parsed_query,
-                offset=offset,
-                limit=limit,
-                want_total=effective_want_total,
-                raw_data=raw_data,
-                params=params,
-            )
+            with self._backend_errors():  # the backend's failures normalized, as for a whole query
+                page = self._backend.execute_cypher_page(
+                    parsed_query,
+                    offset=offset,
+                    limit=limit,
+                    want_total=effective_want_total,
+                    raw_data=raw_data,
+                    params=params,
+                )
         else:
             page = self._fallback_execute_cypher_page(
                 parsed_query,

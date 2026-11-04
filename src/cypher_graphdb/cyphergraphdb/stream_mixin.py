@@ -79,8 +79,9 @@ class StreamMixin(_Host):
             supports_streaming = self._backend.get_capability(BackendCapability.STREAMING_SUPPORT)
 
         if supports_streaming:
-            # Use native streaming
-            yield from self._backend.execute_cypher_stream(parsed_query, chunk_size=chunk_size, raw_data=raw_data)
+            # Use native streaming -- the backend's failures normalized, as for a whole query
+            with self._backend_errors():
+                yield from self._backend.execute_cypher_stream(parsed_query, chunk_size=chunk_size, raw_data=raw_data)
         else:
             # Fallback: execute query and chunk results
             yield from self._fallback_execute_cypher_stream(parsed_query, chunk_size=chunk_size, raw_data=raw_data)

@@ -23,6 +23,7 @@ methods is known to provide this interface. At runtime ``_Host`` is plain
 ``object``, so this has zero effect on the MRO or behaviour.
 """
 
+from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
 from ..backend import CypherBackend
@@ -59,6 +60,8 @@ class CypherGraphDBHost(Protocol):
         raw_data: bool = False,
         params: dict | None = None,
     ) -> tuple[Any, Any]: ...
+
+    def _backend_errors(self) -> AbstractContextManager[None]: ...
 
     def _before_execute(self, parsed_query: ParsedCypherQuery) -> bool: ...
 

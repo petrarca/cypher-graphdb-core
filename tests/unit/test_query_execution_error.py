@@ -54,6 +54,38 @@ def test_wrapping_applies_to_execute_path_too():
         cdb.execute("MATCH (n) RETURN n")
 
 
+class _RaisingPagingBackend(_RaisingBackend):
+    """A backend that pages and streams natively -- and fails there too."""
+
+    def has_capability(self, capability):
+        return True
+
+    def get_capability(self, capability):
+        return True
+
+    def execute_cypher_page(self, cypher_query, offset=0, limit=100, want_total=True, raw_data=False, params=None):
+        raise self._exc
+
+    def execute_cypher_stream(self, cypher_query, chunk_size=1000, raw_data=False, params=None):
+        raise self._exc
+        yield  # a generator
+
+
+def test_a_paged_query_s_failure_is_wrapped_too():
+    cdb = CypherGraphDB(_RaisingPagingBackend(_FakeDriverError("could not find rte for p")))
+
+    with pytest.raises(QueryExecutionError, match="could not find rte for p") as ei:
+        cdb.execute_cypher_page("MATCH (prod:Product) RETURN p", offset=0, limit=10)
+    assert isinstance(ei.value.__cause__, _FakeDriverError)
+
+
+def test_a_streamed_query_s_failure_is_wrapped_too():
+    cdb = CypherGraphDB(_RaisingPagingBackend(_FakeDriverError("boom")))
+
+    with pytest.raises(QueryExecutionError):
+        list(cdb.execute_cypher_stream("MATCH (n) RETURN n"))
+
+
 def test_read_only_mode_error_passes_through_unwrapped():
     cdb = _db(ReadOnlyModeError("read only"))
 

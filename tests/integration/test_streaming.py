@@ -151,19 +151,23 @@ class TestMemgraphStreaming:
             memgraph_with_data.execute("MATCH (p:Person) WHERE p.name STARTS WITH 'Person' DELETE p")
 
     def test_stream_error_handling(self, memgraph_with_data):
-        """Test error handling in streaming operations: the transport's own database error."""
+        """A streamed query's failure is the library's QueryExecutionError, the transport's database error its cause."""
+        from cypher_graphdb import QueryExecutionError
+
         if memgraph_with_data._backend.transport == "pymgclient":
             from mgclient import DatabaseError as TransportError
         else:
             from neo4j.exceptions import Neo4jError as TransportError
 
-        # Test with invalid Cypher syntax
-        with pytest.raises(TransportError):  # Should raise parsing error
+        # Invalid Cypher syntax: a parsing error
+        with pytest.raises(QueryExecutionError) as error:
             list(memgraph_with_data.execute_cypher_stream("INVALID CYPHER SYNTAX", chunk_size=5))
+        assert isinstance(error.value.__cause__, TransportError)
 
-        # Test with division by zero error
-        with pytest.raises(TransportError):  # Should raise runtime error
+        # Division by zero: a runtime error
+        with pytest.raises(QueryExecutionError) as error:
             list(memgraph_with_data.execute_cypher_stream("MATCH (p:Person) RETURN 1/0", chunk_size=5))
+        assert isinstance(error.value.__cause__, TransportError)
 
     def test_stream_different_chunk_sizes(self, memgraph_with_data):
         """Test streaming with various chunk sizes."""
