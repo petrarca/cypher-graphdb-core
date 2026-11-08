@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 import psycopg
@@ -25,7 +25,7 @@ from psycopg.types import TypeInfo
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Import directly from the main package
-from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, SqlStatistics
+from cypher_graphdb.backend import BackendCapability, CypherBackend, ExecStatistics, FilterValue, SqlStatistics
 from cypher_graphdb.bulk_refs import as_ref_props, edge_match_pattern, ref_param
 
 # Deferred at module level to avoid a circular import:
@@ -1004,7 +1004,7 @@ class AGEGraphDB(CypherBackend):
 
     # ── Bulk delete operations ─────────────────────────────────────────────
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
+    def bulk_delete_nodes(self, label: str, filters: Mapping[str, FilterValue], batch_size: int | None = None) -> int:
         """Delete nodes matching property filters, cascading to edges (direct SQL; ``batch_size``: committed batches)."""
         self._require_connection()
         return self._get_bulk_writer().bulk_delete_nodes(label, filters, batch_size=batch_size)
@@ -1055,7 +1055,7 @@ class AGEGraphDB(CypherBackend):
         edge_label: str,
         *,
         incoming: bool = True,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, FilterValue] | None = None,
         batch_size: int | None = None,
     ) -> int:
         """Delete orphan nodes (no edge of edge_label) via direct SQL anti-join (``batch_size``: committed batches)."""

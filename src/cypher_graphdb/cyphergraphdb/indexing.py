@@ -1,9 +1,9 @@
 """Indexing and bulk write mixin for CypherGraphDB."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from ..backend import BackendCapability
+from ..backend import BackendCapability, FilterValue
 from ..models import GraphEdge, GraphNode
 from ..statistics import IndexInfo
 from .bulk_normalize import normalize_edges_input, normalize_nodes_input
@@ -102,7 +102,7 @@ class IndexingMixin(_Host):
         assert self._backend
         return self._backend.list_indexes(include_internal=include_internal)
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
+    def bulk_delete_nodes(self, label: str, filters: Mapping[str, FilterValue], batch_size: int | None = None) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.
 
         Delegates to the backend's ``bulk_delete_nodes``. Backends that declare
@@ -111,8 +111,8 @@ class IndexingMixin(_Host):
 
         Args:
             label: Node label to delete from (e.g. "Method", "Class").
-            filters: Property key=value filters (AND semantics).
-                     Example: {"source_key": "nais-platform", "lang": "ts"}
+            filters: Property filters (AND semantics): a value matches equality, a list of
+                     values any of them. Example: {"source_key": "nais-platform", "filepath": ["a.py", "b.py"]}
             batch_size: None: one statement. A number: statements of at most that many nodes
                 (and their edges), each committed -- on Memgraph and Neo4j their recommendation
                 for large deletes (flat memory), on AGE short transactions (brief row locks,
@@ -131,7 +131,7 @@ class IndexingMixin(_Host):
         edge_label: str,
         *,
         incoming: bool = True,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, FilterValue] | None = None,
         batch_size: int | None = None,
     ) -> int:
         """Delete nodes of a label that have no edge of ``edge_label`` attached.

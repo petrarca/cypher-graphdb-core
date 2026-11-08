@@ -14,7 +14,8 @@ committed immediately (DDL cannot run inside a user transaction in PostgreSQL)
 without affecting any surrounding data already written by the caller.
 """
 
-from collections.abc import Iterator, Sequence
+import json
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Literal
 
@@ -23,6 +24,7 @@ from loguru import logger
 from psycopg.sql import SQL, Composed, Identifier
 from psycopg.sql import Literal as SQLLiteral
 
+from cypher_graphdb.backend import FilterValue, filter_values
 from cypher_graphdb.bulk_refs import as_ref_props, ref_key
 from cypher_graphdb.utils import chunk_list
 
@@ -30,22 +32,30 @@ from .ageserializer import escape_value
 from .agesqlbuilder import SQLBuilder
 
 
-def _build_agtype_conditions(filters: dict[str, str], alias: str | None = None) -> str:
+def _build_agtype_conditions(filters: Mapping[str, FilterValue], alias: str | None = None) -> str:
     """Build a SQL WHERE expression matching AGE vertex properties.
 
-    Uses agtype_access_operator so the expression btree index is used.
-    Values are escaped via SQLLiteral to prevent injection.
+    Compares ``agtype_access_operator(properties, key)`` as agtype with an agtype string literal: the
+    expression the property indexes are built on (``create_property_index``), so PostgreSQL uses
+    them. A ``::text`` cast on it would be a different expression and force a full scan of the label
+    table. Values are JSON-quoted into agtype literals and escaped via SQLLiteral (no injection).
 
     Args:
-        filters: Property key=value pairs (all ANDed together).
+        filters: Property filters (all ANDed together): ``key: value`` matches equality,
+            ``key: [values]`` any of them (SQL ``IN``).
         alias: Optional table alias prefix (e.g. "n" produces "n.properties").
     """
     prefix = f"{alias}." if alias else ""
-    return " AND ".join(
-        f"ag_catalog.agtype_access_operator(VARIADIC ARRAY[{prefix}properties, "
-        f"{SQLLiteral(chr(34) + k + chr(34)).as_string(None)}::ag_catalog.agtype])::text = {SQLLiteral(v).as_string(None)}"
-        for k, v in filters.items()
-    )
+    conditions = []
+    for key, value in filters.items():
+        literals = [
+            f"{SQLLiteral(json.dumps(v, ensure_ascii=False)).as_string(None)}::ag_catalog.agtype"
+            for v in filter_values(key, value)
+        ]
+        prop = SQLLiteral(json.dumps(key)).as_string(None)
+        access = f"ag_catalog.agtype_access_operator(VARIADIC ARRAY[{prefix}properties, {prop}::ag_catalog.agtype])"
+        conditions.append(f"{access} = {literals[0]}" if isinstance(value, str) else f"{access} IN ({', '.join(literals)})")
+    return " AND ".join(conditions)
 
 
 class _NoLabelTable(Exception):
@@ -298,7 +308,7 @@ class AGEBulkWriter:
         logger.debug("Direct SQL: {} {} edges deleted ({} pairs resolved of {})", total, label, len(pairs), len(edges))
         return total
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
+    def bulk_delete_nodes(self, label: str, filters: Mapping[str, FilterValue], batch_size: int | None = None) -> int:
         """Delete nodes matching property filters via direct SQL, cascading to edges.
 
         Uses server-side joined DELETEs -- PostgreSQL resolves the node filter
@@ -370,7 +380,7 @@ class AGEBulkWriter:
         edge_label: str,
         *,
         incoming: bool = True,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, FilterValue] | None = None,
         batch_size: int | None = None,
     ) -> int:
         """Delete orphan nodes via a direct SQL anti-join, cascading to edges.

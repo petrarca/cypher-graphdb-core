@@ -8,7 +8,7 @@ CypherBackend: Abstract base class for implementing graph database backends.
 import abc
 import contextlib
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from enum import Enum, auto
 from typing import Any
 
@@ -24,7 +24,41 @@ from .statistics import GraphStatistics, IndexInfo, LabelStatistics
 # Regex for safe property names and values in the Cypher fallback.
 # Matches alphanumeric, underscore, hyphen — sufficient for source_key / lang values.
 _SAFE_FILTER_KEY_RE = re.compile(r"^[a-zA-Z0-9_]+$")
-_SAFE_FILTER_VAL_RE = re.compile(r"^[a-zA-Z0-9_.:\-]+$")
+
+FilterValue = str | Sequence[str]
+"""A property filter value of the bulk deletes: one value (equality) or several (the property is any of them)."""
+
+
+def filter_values(key: str, value: FilterValue) -> list[str]:
+    """The values a filter matches, validated: a safe key, one string or a non-empty sequence of strings.
+
+    Values are never interpolated into a query (Cypher parameters, escaped SQL literals), so any string is
+    allowed; a key becomes part of the query text and must be alphanumeric/underscore.
+    """
+    if not _SAFE_FILTER_KEY_RE.match(key):
+        raise ValueError(f"filter key must be alphanumeric/underscore, got: {key!r}")
+    values = [value] if isinstance(value, str) else list(value)
+    if not values:
+        raise ValueError(f"filter {key!r}: an empty list matches nothing")
+    if not all(isinstance(v, str) for v in values):
+        raise ValueError(f"filter {key!r}: values must be strings, got: {values!r}")
+    return values
+
+
+def cypher_filter(filters: Mapping[str, FilterValue], alias: str = "n") -> tuple[str, dict[str, Any]]:
+    """Cypher conditions on ``alias`` (ANDed) and their parameters: ``= $p`` for one value, ``IN $p`` for several."""
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+    for i, (key, value) in enumerate(filters.items()):
+        values = filter_values(key, value)
+        name = f"filter_{i}"
+        if isinstance(value, str):
+            conditions.append(f"{alias}.{key} = ${name}")
+            params[name] = value
+        else:
+            conditions.append(f"{alias}.{key} IN ${name}")
+            params[name] = values
+    return " AND ".join(conditions), params
 
 
 class BackendCapability(Enum):
@@ -565,7 +599,7 @@ class CypherBackend(abc.ABC):
         """
         raise NotImplementedError(f"Backend {self.name} does not support bulk_update_nodes")
 
-    def bulk_delete_nodes(self, label: str, filters: dict[str, str], batch_size: int | None = None) -> int:
+    def bulk_delete_nodes(self, label: str, filters: Mapping[str, FilterValue], batch_size: int | None = None) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.
 
         Removes nodes where all specified property key=value pairs match, plus
@@ -577,8 +611,9 @@ class CypherBackend(abc.ABC):
 
         Args:
             label: Node label to delete from (e.g. "Method", "Class").
-            filters: Property filters to match. All must match (AND semantics).
-                     Example: {"source_key": "nais-platform", "lang": "ts"}
+            filters: Property filters to match. All must match (AND semantics). A value matches
+                     equality, a list of values any of them (IN); values are passed as parameters,
+                     so any string is allowed. Example: {"source_key": "nais-platform", "filepath": ["a.py", "b.py"]}
             batch_size: None: one statement. A number: statements of at most that many nodes
                 (and their edges), each committed -- what Memgraph and Neo4j recommend for large
                 deletes: a single one holds every change in memory until it ends, and runs as
@@ -592,30 +627,25 @@ class CypherBackend(abc.ABC):
             raise ValueError("filters must not be empty (would delete all nodes of the label)")
         if not _SAFE_FILTER_KEY_RE.match(label):
             raise ValueError(f"label must be alphanumeric/underscore, got: {label!r}")
-        for k, v in filters.items():
-            if not _SAFE_FILTER_KEY_RE.match(k):
-                raise ValueError(f"filter key must be alphanumeric/underscore, got: {k!r}")
-            if not _SAFE_FILTER_VAL_RE.match(v):
-                raise ValueError(f"filter value must be alphanumeric/underscore/hyphen/dot/colon, got: {v!r}")
-        where_parts = " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
+        where_parts, params = cypher_filter(filters)
         if batch_size:
-            return self._delete_in_batches(f"MATCH (n:{label}) WHERE {where_parts}", batch_size)
+            return self._delete_in_batches(f"MATCH (n:{label}) WHERE {where_parts}", batch_size, params)
         count_cypher = f"MATCH (n:{label}) WHERE {where_parts} RETURN count(n)"
         parsed = self.parse_cypher(count_cypher)
-        result, _ = self.execute_cypher(parsed)
+        result, _ = self.execute_cypher(parsed, params=params)
         count = result[0][0] if result else 0
         if count > 0:
             delete_cypher = f"MATCH (n:{label}) WHERE {where_parts} DETACH DELETE n"
             parsed = self.parse_cypher(delete_cypher)
-            self.execute_cypher(parsed)
+            self.execute_cypher(parsed, params=params)
         return count
 
-    def _delete_in_batches(self, match: str, batch_size: int) -> int:
+    def _delete_in_batches(self, match: str, batch_size: int, params: dict[str, Any] | None = None) -> int:
         """DETACH DELETE the nodes ``n`` that ``match`` finds, ``batch_size`` per statement, committing each."""
         parsed = self.parse_cypher(f"{match} WITH n LIMIT {int(batch_size)} DETACH DELETE n RETURN count(*)")
         total = 0
         while True:
-            result, _ = self.execute_cypher(parsed)
+            result, _ = self.execute_cypher(parsed, params=params or None)
             self.commit()
             deleted = result[0][0] if result else 0
             total += deleted
@@ -628,7 +658,7 @@ class CypherBackend(abc.ABC):
         edge_label: str,
         *,
         incoming: bool = True,
-        filters: dict[str, str] | None = None,
+        filters: Mapping[str, FilterValue] | None = None,
         batch_size: int | None = None,
     ) -> int:
         """Delete nodes of ``label`` that have no ``edge_label`` edge attached.
@@ -667,29 +697,26 @@ class CypherBackend(abc.ABC):
             raise ValueError(f"edge_label must be alphanumeric/underscore, got: {edge_label!r}")
 
         where_parts = ""
+        params: dict[str, Any] = {}
         if filters:
-            for k, v in filters.items():
-                if not _SAFE_FILTER_KEY_RE.match(k):
-                    raise ValueError(f"filter key must be alphanumeric/underscore, got: {k!r}")
-                if not _SAFE_FILTER_VAL_RE.match(v):
-                    raise ValueError(f"filter value must be alphanumeric/underscore/hyphen/dot/colon, got: {v!r}")
-            where_parts = "WHERE " + " AND ".join(f"n.{k} = '{v}'" for k, v in filters.items())
+            conditions, params = cypher_filter(filters)
+            where_parts = f"WHERE {conditions}"
 
         arrow = f"<-[r:{edge_label}]-" if incoming else f"-[r:{edge_label}]->"
         if batch_size:
             return self._delete_in_batches(
-                f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL", batch_size
+                f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL", batch_size, params
             )
         count_cypher = f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL RETURN count(n)"
         parsed = self.parse_cypher(count_cypher)
-        result, _ = self.execute_cypher(parsed)
+        result, _ = self.execute_cypher(parsed, params=params or None)
         count = result[0][0] if result else 0
         if count > 0:
             delete_cypher = (
                 f"MATCH (n:{label}) {where_parts} OPTIONAL MATCH (n){arrow}() WITH n, r WHERE r IS NULL DETACH DELETE n"
             )
             parsed = self.parse_cypher(delete_cypher)
-            self.execute_cypher(parsed)
+            self.execute_cypher(parsed, params=params or None)
         return count
 
     @property

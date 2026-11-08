@@ -1119,6 +1119,41 @@ class TestBulkDeleteNodes:
         with pytest.raises(ValueError, match="filters must not be empty"):
             clean_db.bulk_delete_nodes("SomeLabel", {})
 
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    @pytest.mark.parametrize("batch_size", [None, 2])
+    def test_delete_by_a_list_of_values(self, clean_db, batch_size):
+        """A list value matches any of its values (IN), ANDed with the other filters; values may hold '/' and spaces."""
+        paths = ["src/a.py", "src/IMPORTED CONTROLS/b.cs", "src/c.py"]
+        clean_db.bulk_create_nodes(
+            [{"id": f"{src}{i}", "source_key": src, "filepath": path} for src in ("s", "t") for i, path in enumerate(paths)],
+            label="ListNode",
+        )
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_nodes("ListNode", {"source_key": "s", "filepath": paths[:2]}, batch_size=batch_size)
+        clean_db.commit()
+
+        assert deleted == 2
+        remaining = clean_db.execute("MATCH (n:ListNode) RETURN n.id ORDER BY n.id", unnest_result=True)
+        assert remaining == ["s2", "t0", "t1", "t2"]
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_a_single_value_with_slashes_and_spaces(self, clean_db):
+        """A single value is passed safely, whatever it holds -- a file path, say (no longer limited to [A-Za-z0-9_.:-])."""
+        path = 'PC/IMPORTED CONTROLS/O\'Brien \\ "Ä".cs'  # slash, space, quotes, backslash, non-ASCII
+        clean_db.bulk_create_nodes([{"id": "x", "filepath": path}, {"id": "y", "filepath": "z.cs"}], label="PathNode")
+        clean_db.commit()
+
+        assert clean_db.bulk_delete_nodes("PathNode", {"filepath": path}) == 1
+        clean_db.commit()
+        assert clean_db.execute("MATCH (n:PathNode) RETURN n.id", unnest_result=True) == "y"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_an_empty_list_raises(self, clean_db):
+        """An empty list would match nothing: it is a caller's mistake, not a silent no-op."""
+        with pytest.raises(ValueError, match="empty list"):
+            clean_db.bulk_delete_nodes("SomeLabel", {"filepath": []})
+
 
 # ── Bulk delete orphans ─────────────────────────────────────────────────────
 
@@ -1276,6 +1311,18 @@ class TestBulkDeleteOrphans:
         assert remaining == 2  # src_b untouched
 
     @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_orphans_scoped_by_a_list_of_values(self, clean_db):
+        """bulk_delete_orphans takes list filters too: orphans of the listed sources go, other orphans stay."""
+        clean_db.bulk_create_nodes([{"id": f"o{src}", "source_key": src} for src in ("a", "b", "c")], label="ListOrphan")
+        clean_db.commit()
+
+        deleted = clean_db.bulk_delete_orphans("ListOrphan", "NO_SUCH_REL", incoming=True, filters={"source_key": ["a", "b"]})
+        clean_db.commit()
+
+        assert deleted == 2
+        assert clean_db.execute("MATCH (n:ListOrphan) RETURN n.id", unnest_result=True) == "oc"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
     def test_filters_with_referenced_nodes(self, clean_db):
         """filters + edge presence: only filtered orphans deleted, referenced kept."""
         clean_db.bulk_create_nodes([{"id": "tgt1"}], label="DecTarget")
@@ -1331,3 +1378,31 @@ class TestMissingLabelTableKeepsTransaction:
         assert names == ["Bob"]
         age_db.execute("MATCH (n) DETACH DELETE n")
         age_db.commit()
+
+
+class TestAgeBulkDeleteUsesIndexes:
+    """AGE: the bulk delete's property filter is the expression the property indexes are built on."""
+
+    @pytest.mark.parametrize("test_db", ["age_db"], indirect=True)
+    @pytest.mark.parametrize("value", ["src", ["src", "other"]])
+    def test_the_filter_is_answered_from_the_property_index(self, clean_db, value):
+        """A ``::text`` cast on the property access was a different expression: a full scan of the label table."""
+        from cypher_graphdb.backends.age.agebulkwriter import _build_agtype_conditions
+
+        clean_db.bulk_create_nodes(
+            [{"id": f"i{i}", "source_key": "src" if i % 100 == 0 else f"s{i}"} for i in range(5000)], label="IdxNode"
+        )
+        clean_db.create_property_index("IdxNode", "source_key")
+        clean_db.commit()
+
+        where = _build_agtype_conditions({"source_key": value})
+        # A small table may be cheaper to scan; the question is whether the index applies at all.
+        clean_db.execute_sql("SELECT set_config('enable_seqscan', 'off', false)")
+        plan = " ".join(
+            str(row)
+            for row in clean_db.execute_sql(f'EXPLAIN SELECT count(*) FROM test_graph."IdxNode" WHERE {where}', raw_data=True)
+        )
+        clean_db.execute_sql("SELECT set_config('enable_seqscan', 'on', false)")
+
+        assert "IdxNode_source_key" in plan, plan
+        assert clean_db.bulk_delete_nodes("IdxNode", {"source_key": value}) == 50

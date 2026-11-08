@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- List filters in the bulk deletes: a filter value of `bulk_delete_nodes` and `bulk_delete_orphans` may be a
+  list, matching any of its values (`IN` in Cypher, `IN (...)` in SQL on AGE): one call deletes the nodes of
+  many files, say, instead of one call per value. A single value matches equality as before; an empty list
+  raises `ValueError`.
+
+### Fixed
+- AGE: the bulk deletes' property filters use the property indexes. The filter cast the property access to
+  `text`, a different expression than the one `create_property_index` indexes, so every bulk delete and
+  orphan delete scanned the whole label table (a label of 1 M nodes: 4.8 s for a delete matching nothing,
+  0.02 s now). Values are compared as agtype string literals.
+- Filter values of the bulk deletes on Memgraph and Neo4j are passed as query parameters instead of being
+  interpolated, so any string works -- a file path with `/` or spaces was rejected before (only
+  `[A-Za-z0-9_.:-]` passed). AGE already escaped them as SQL literals.
+- AGE: a missing label table in a bulk delete rolls back a savepoint, not the connection, so the deletes
+  made before it in the same transaction survive.
+
 ## [0.8.0] - 2026-11-08
 
 ### Added
