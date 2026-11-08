@@ -1306,3 +1306,28 @@ class TestBulkDeleteOrphans:
         remaining = clean_db.execute("MATCH (n:ScopedDec2) RETURN n.id ORDER BY n.id")
         ids = sorted(r[0] for r in remaining)
         assert ids == ["d1", "d3"]
+
+
+# ── AGE: a missing label table must not undo the transaction's earlier work ──
+
+
+@pytest.mark.integration_age
+class TestMissingLabelTableKeepsTransaction:
+    def test_bulk_delete_on_unknown_label_keeps_earlier_deletes(self, age_db):
+        """A delete on a label whose table does not exist yet is a no-op that leaves the earlier,
+        uncommitted deletes of the same transaction in place (a savepoint, not a connection rollback)."""
+        age_db.model_provider = mp
+        age_db.execute("MATCH (n) DETACH DELETE n")
+        age_db.commit()
+        age_db.bulk_create_nodes([_ITPerson(id="p1", name="Ada"), _ITPerson(id="p2", name="Bob")])
+        age_db.commit()
+
+        assert age_db.bulk_delete_nodes("_ITPerson", {"name": "Ada"}) == 1
+        assert age_db.bulk_delete_nodes("NoSuchLabelXyz", {"name": "x"}) == 0
+        assert age_db.bulk_delete_orphans("NoSuchLabelXyz", "FRIENDS_WITH", filters={"name": "x"}) == 0
+        age_db.commit()
+
+        names = sorted(r[0] for r in age_db.execute("MATCH (p:_ITPerson) RETURN p.name"))
+        assert names == ["Bob"]
+        age_db.execute("MATCH (n) DETACH DELETE n")
+        age_db.commit()

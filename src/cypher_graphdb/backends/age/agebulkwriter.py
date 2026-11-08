@@ -14,7 +14,8 @@ committed immediately (DDL cannot run inside a user transaction in PostgreSQL)
 without affecting any surrounding data already written by the caller.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Literal
 
 import psycopg
@@ -47,6 +48,10 @@ def _build_agtype_conditions(filters: dict[str, str], alias: str | None = None) 
     )
 
 
+class _NoLabelTable(Exception):
+    """The label table does not exist yet (a fresh graph, never written to): the operation is a no-op."""
+
+
 class AGEBulkWriter:
     """Direct SQL bulk writer for AGE label tables.
 
@@ -54,6 +59,34 @@ class AGEBulkWriter:
         connection: An open psycopg connection to the AGE database.
         graph_name: The AGE graph name (= PostgreSQL schema name).
     """
+
+    @contextmanager
+    def _optional_table(self) -> Iterator[None]:
+        """Run direct SQL that may address a label table which does not exist yet.
+
+        A missing table ends the block as a no-op (``_NoLabelTable``) without losing the
+        transaction's earlier statements: the block runs under a savepoint and only that
+        savepoint is rolled back. Rolling back the whole connection here discarded the
+        deletes a caller had made just before in the same transaction -- silently, since
+        the failing call reported 0 and the earlier ones had already reported their counts.
+        """
+        if self._conn.autocommit:
+            try:
+                yield
+            except psycopg.errors.UndefinedTable as e:
+                raise _NoLabelTable from e
+            return
+        with self._conn.cursor() as cur:
+            cur.execute("SAVEPOINT cg_bulk_table")
+        try:
+            yield
+        except psycopg.errors.UndefinedTable as e:
+            with self._conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT cg_bulk_table")
+                cur.execute("RELEASE SAVEPOINT cg_bulk_table")
+            raise _NoLabelTable from e
+        with self._conn.cursor() as cur:
+            cur.execute("RELEASE SAVEPOINT cg_bulk_table")
 
     def __init__(self, connection: psycopg.Connection, graph_name: str) -> None:
         self._conn = connection
@@ -297,7 +330,7 @@ class AGEBulkWriter:
         edge_labels = self._list_edge_labels()
 
         try:
-            with self._conn.cursor() as cursor:
+            with self._optional_table(), self._conn.cursor() as cursor:
                 # Step 1: delete edges via JOIN -- lets PG use expression indexes
                 # on the vertex table + start_id/end_id indexes on edge tables.
                 for elabel in edge_labels:
@@ -324,9 +357,7 @@ class AGEBulkWriter:
                     )
                 )
                 deleted = len(cursor.fetchall())
-        except psycopg.errors.UndefinedTable:
-            # Label table does not exist (fresh graph, never written to).
-            self._conn.rollback()
+        except _NoLabelTable:
             return 0
 
         self.invalidate_graphid_cache(label)
@@ -401,7 +432,7 @@ class AGEBulkWriter:
             return self._delete_in_batches(label, orphan_pred, batch_size)
 
         try:
-            with self._conn.cursor() as cursor:
+            with self._optional_table(), self._conn.cursor() as cursor:
                 # Step 1: delete edges attached to the soon-to-be-orphan nodes.
                 # A node is an orphan w.r.t. edge_label; other edge types may
                 # still reference it, so detach across all edge tables first.
@@ -430,9 +461,7 @@ class AGEBulkWriter:
                     )
                 )
                 deleted = len(cursor.fetchall())
-        except psycopg.errors.UndefinedTable:
-            # Vertex label table does not exist yet -- nothing to delete.
-            self._conn.rollback()
+        except _NoLabelTable:
             return 0
 
         self.invalidate_graphid_cache(label)
