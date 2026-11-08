@@ -7,14 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- A paged (`execute_cypher_page`) or streamed (`execute_cypher_stream`) query that the database refuses
-  raises `QueryExecutionError` (`QueryTimeoutError` when cancelled), the driver's error its cause -- as a
-  whole query always did. The native paths let the backend's own exception through (AGE's
-  `AGEExecutionError`, Memgraph's and Neo4j's driver errors), which a caller catching the library's types
-  did not catch.
-
-## [0.8.0] - 2026-10-29
+## [0.8.0] - 2026-11-08
 
 ### Added
 - Neo4j backend (`backend="neo4j"`): the graph name selects the database; named range indexes.
@@ -50,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search path.
 - An undecorated base class is no longer treated as a parent in a model's schema (it raised
   `AttributeError`).
+- A paged (`execute_cypher_page`) or streamed (`execute_cypher_stream`) query that the database refuses
+  raises `QueryExecutionError` (`QueryTimeoutError` when cancelled), the driver's error its cause -- as a
+  whole query always did. The native paths let the backend's own exception through (AGE's
+  `AGEExecutionError`, Memgraph's and Neo4j's driver errors), which a caller catching the library's types
+  did not catch.
+- The parser no longer trips an assert on a pattern outside a clause, such as a pattern comprehension
+  in `RETURN`.
 
 [Unreleased]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.7.3...v0.8.0
