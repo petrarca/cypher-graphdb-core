@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-09
+
 ### Added
 - List filters in the bulk deletes: a filter value of `bulk_delete_nodes` and `bulk_delete_orphans` may be a
   list, matching any of its values (`IN` in Cypher, `IN (...)` in SQL on AGE): one call deletes the nodes of
@@ -68,5 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The parser no longer trips an assert on a pattern outside a clause, such as a pattern comprehension
   in `RETURN`.
 
-[Unreleased]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/petrarca/cypher-graphdb-core/compare/v0.7.3...v0.8.0
