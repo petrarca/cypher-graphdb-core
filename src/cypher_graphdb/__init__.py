@@ -32,7 +32,7 @@ from .formatprovider import FormatProvider, FormatSpec, data_format, format_prov
 from .modelinfo import GraphEdgeInfo, GraphNodeInfo, GraphRelationInfo
 from .modelprovider import ModelProvider, validate_node_properties
 from .modelrelations import RelationSpec
-from .models import ExpandResult, Graph, GraphEdge, GraphNode, GraphObject, GraphPath, TabularResult
+from .models import ExpandResult, Graph, GraphEdge, GraphNode, GraphObject, GraphObjectType, GraphPath, TabularResult
 from .settings import Settings, get_settings
 from .statistics import GraphStatistics, IndexInfo, IndexType
 
@@ -42,6 +42,7 @@ __all__ = [
     "GraphEdge",
     "GraphPath",
     "GraphObject",
+    "GraphObjectType",
     "TabularResult",
     "GraphJSONEncoder",
     "ModelProvider",

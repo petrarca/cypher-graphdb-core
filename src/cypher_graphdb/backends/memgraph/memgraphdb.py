@@ -14,7 +14,7 @@ from __future__ import annotations
 from loguru import logger
 
 from cypher_graphdb.backends.bolt.backend import BoltBackend
-from cypher_graphdb.statistics import IndexInfo, IndexType
+from cypher_graphdb.statistics import GraphObjectType, IndexInfo, IndexType
 
 
 class MemgraphDB(BoltBackend):
@@ -55,16 +55,32 @@ class MemgraphDB(BoltBackend):
         logger.debug("Index(es) dropped for label '{}' in Memgraph", label)
 
     def list_indexes(self, include_internal: bool = False) -> list[IndexInfo]:  # noqa: ARG002 -- all of Memgraph's are user-created
-        indexes = []
-        # SHOW INDEX INFO: (index type, label, property list or None, count)
-        for index_type, label, prop_list, _count in self._run_implicit("SHOW INDEX INFO"):
-            props = list(prop_list) if prop_list else None
-            indexes.append(
-                IndexInfo(
-                    label=label,
-                    property_names=props,
-                    index_type=IndexType.UNIQUE if "unique" in str(index_type).lower() else IndexType.PROPERTY,
-                    index_name=f"{label}_{'_'.join(props)}" if props else label,
-                )
-            )
-        return indexes
+        # SHOW INDEX INFO: (index type, label or edge type, property or properties or None, count)
+        return [_index_info(*row) for row in self._run_implicit("SHOW INDEX INFO")]
+
+
+# Memgraph's index type -> what it is on, and its kind. "label+property" is keyed on its
+# properties, "label" on none; a type not listed here (point, ...) is OTHER, its own name
+# in ``details`` -- never mistaken for an index an equality lookup can use.
+_INDEX_KINDS: dict[str, tuple[GraphObjectType, IndexType]] = {
+    "label": (GraphObjectType.NODE, IndexType.PROPERTY),
+    "label+property": (GraphObjectType.NODE, IndexType.PROPERTY),
+    "edge-type": (GraphObjectType.EDGE, IndexType.PROPERTY),
+    "edge-type+property": (GraphObjectType.EDGE, IndexType.PROPERTY),
+    "text": (GraphObjectType.NODE, IndexType.FULLTEXT),
+    "vector": (GraphObjectType.NODE, IndexType.VECTOR),
+}
+
+
+def _index_info(index_type: str, label: str, properties: str | list[str] | None, count: int) -> IndexInfo:
+    """One SHOW INDEX INFO row, normalized. Memgraph reports one property as a list or as a bare string."""
+    props = [properties] if isinstance(properties, str) else list(properties) if properties else None
+    object_type, kind = _INDEX_KINDS.get(str(index_type), (GraphObjectType.NODE, IndexType.OTHER))
+    return IndexInfo(
+        label=label,
+        object_type=object_type,
+        property_names=props,
+        index_type=kind,
+        index_name=f"{label}_{'_'.join(props)}" if props else label,
+        details={"memgraph_index_type": index_type, "count": count},
+    )

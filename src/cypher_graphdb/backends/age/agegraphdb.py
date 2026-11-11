@@ -49,6 +49,10 @@ from .agtype import AgTypeLoader
 # Property name inside an AGE btree expression index, e.g.
 #   agtype_access_operator(VARIADIC ARRAY[properties, '"qualified_name"'::agtype])
 _AGTYPE_PROPERTY_RE = re.compile(r"'\"(?P<prop>[^\"]+)\"'::agtype")
+# The access method of an index definition: ``... USING btree (...)`` -> ``btree``.
+_INDEX_METHOD_RE = re.compile(r"\bUSING\s+(\w+)", re.IGNORECASE)
+# The access methods IndexInfo normalizes: btree and hash serve equality, GIN containment.
+_NORMALIZED_METHODS = frozenset({"btree", "hash", "gin"})
 
 
 def _first_int(result: Any) -> int:
@@ -875,7 +879,7 @@ class AGEGraphDB(CypherBackend):
                 cursor.execute(SQLBuilder.create_vlabel(resolved_graph_name, val))
             self._conn.commit()
 
-    def create_elabel(self, graph_name: str, elabel: str):
+    def create_elabel(self, graph_name: str, elabel: str | Sequence[str]) -> None:
         """Create edge label(s) in the graph.
 
         Args:
@@ -894,6 +898,22 @@ class AGEGraphDB(CypherBackend):
             for val in elabels:
                 cursor.execute(SQLBuilder.create_elabel(resolved_graph_name, val))
             self._conn.commit()
+
+    def create_labels(self, node_labels: Sequence[str] = (), edge_labels: Sequence[str] = ()) -> list[str]:
+        """Create the label tables that do not exist yet; ``create_vlabel`` fails on an existing one."""
+        self._require_connection()
+        graph_name = self._graph_name
+        assert graph_name, "Graph name is required to create labels"
+        existing = self._get_label_tables()
+        missing_nodes = [label for label in dict.fromkeys(node_labels) if label not in existing]
+        missing_edges = [label for label in dict.fromkeys(edge_labels) if label not in existing]
+        if missing_nodes:
+            self.create_vlabel(graph_name, missing_nodes)
+        if missing_edges:
+            self.create_elabel(graph_name, missing_edges)
+        if missing_nodes or missing_edges:
+            logger.debug("Labels created in graph '{}': {} node, {} edge", graph_name, len(missing_nodes), len(missing_edges))
+        return [*missing_nodes, *missing_edges]
 
     # ── Index management ────────────────────────────────────────────────
 
@@ -981,10 +1001,10 @@ class AGEGraphDB(CypherBackend):
             cursor.execute(SQLBuilder.list_indexes(graph_name), (graph_name,))
             rows = cursor.fetchall()
 
-        for tablename, indexname, indexdef in rows:
+        for tablename, indexname, indexdef, kind in rows:
             if not include_internal and self._is_age_internal_index(tablename, indexname):
                 continue
-            index_info = self._parse_index_def(tablename, indexname, indexdef or "")
+            index_info = self._parse_index_def(tablename, indexname, indexdef or "", kind)
             if index_info:
                 indexes.append(index_info)
 
@@ -1187,8 +1207,12 @@ class AGEGraphDB(CypherBackend):
             return {row[0] for row in cursor.fetchall()}
 
     @staticmethod
-    def _parse_index_def(tablename: str, indexname: str, indexdef: str) -> IndexInfo | None:
-        """Parse a pg_indexes row into an IndexInfo object."""
+    def _parse_index_def(tablename: str, indexname: str, indexdef: str, kind: str | None = None) -> IndexInfo | None:
+        """Parse a pg_indexes row into an IndexInfo object.
+
+        ``kind`` is the AGE label kind of the table: ``e`` for an edge label, else a vertex label.
+        The table, the full definition and the access method are kept in ``details``.
+        """
         # Determine index type from the definition
         indexdef_upper = indexdef.upper()
         if "UNIQUE" in indexdef_upper:
@@ -1213,12 +1237,18 @@ class AGEGraphDB(CypherBackend):
                     cols = indexdef[paren_start + 1 : paren_end]
                     prop_names = [c.strip().strip('"') for c in cols.split(",") if c.strip()] or None
 
+        match = _INDEX_METHOD_RE.search(indexdef)
+        method = match.group(1).lower() if match else None
+        if method not in _NORMALIZED_METHODS:
+            idx_type = IndexType.OTHER  # GiST, BRIN, ...: what it serves is in details["method"]
         return IndexInfo(
             label=tablename,
+            object_type=GraphObjectType.EDGE if kind == "e" else GraphObjectType.NODE,
             property_names=prop_names,
             index_type=idx_type,
             index_name=indexname,
             unique="UNIQUE" in indexdef_upper,
+            details={"table": tablename, "definition": indexdef, "method": method},
         )
 
     @retry(

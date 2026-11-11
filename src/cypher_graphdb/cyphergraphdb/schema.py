@@ -1,6 +1,7 @@
 """Schema and introspection mixin for CypherGraphDB."""
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
@@ -56,6 +57,27 @@ class SchemaMixin(_Host):
         """
         assert self._backend
         self._backend.create_graph(graph_name)
+
+    def create_labels(self, node_labels: Sequence[str] = (), edge_labels: Sequence[str] = ()) -> list[str]:
+        """Create the node labels and edge types that do not exist yet; return the ones created.
+
+        Idempotent. A no-op on backends whose labels exist implicitly (Memgraph,
+        Neo4j, FalkorDB); on AGE it creates the missing label tables, which AGE
+        otherwise creates on the first write of a label -- needed before a
+        label can be indexed.
+
+        Args:
+            node_labels: Node labels to create.
+            edge_labels: Edge types to create.
+
+        Raises:
+            ValueError: If a name is not a valid label identifier.
+        """
+        assert self._backend
+        for label in (*node_labels, *edge_labels):
+            if not _SAFE_LABEL_RE.match(label):
+                raise ValueError(f"Invalid label name: {label!r}")
+        return self._backend.create_labels(node_labels, edge_labels)
 
     def drop_graph(self, graph_name: str) -> None:
         """Drop a graph from the database backend.

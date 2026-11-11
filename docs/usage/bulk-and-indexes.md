@@ -131,8 +131,22 @@ db.list_indexes(include_internal=True)  # + backend internals
 db.drop_index("Component", "symbol")
 ```
 
-`list_indexes()` returns `IndexInfo` objects carrying the label, properties and
-`IndexType`.
+`list_indexes()` returns `IndexInfo` objects, normalized across backends: the
+label, whether the index is on nodes or edges (`object_type`), the properties it
+is keyed on in order, the `IndexType`, and in `details` what the backend itself
+reports -- Memgraph's index type and entry count, Neo4j's type, state and owning
+constraint, AGE's table, definition and access method -- so nothing is lost.
+
+`IndexInfo.lookup_property` names the one property an equality lookup
+(`MATCH (n:Label {prop: $v})`) uses the index for, or None: only an index keyed
+on exactly that property qualifies. `indexed_properties()` returns those
+`(label, property)` pairs for the whole graph -- the backend-neutral answer to
+"is this lookup index-backed":
+
+```python
+if ("ExternalCall", "symbol") not in db.indexed_properties():
+    ...
+```
 
 **Always pass the property names.** They are not decoration on any backend:
 
@@ -142,14 +156,36 @@ db.drop_index("Component", "symbol")
   compiles to an `agtype_access_operator` expression; without the named
   properties every such lookup is a sequential scan. Calling
   `create_property_index("Component")` with no properties is close to useless.
-- **Memgraph, Neo4j, FalkorDB** create one index per property.
+- **Memgraph, Neo4j, FalkorDB** create one index per property. (Neo4j created
+  one composite index over all of them up to 0.8.1; Neo4j plans a label scan for
+  a lookup on one property of a composite index, so it served none.)
 
 So `create_property_index("Component", "symbol", "name")` produces three indexes
 on AGE (one GIN + two btree) and two on Memgraph — and is the correct call on
 both.
 
 By default `list_indexes()` hides backend-internal indexes — AGE's `_pkey`,
-`_start_id_idx`, `_end_id_idx` and friends — so you see what you created.
+`_start_id_idx`, `_end_id_idx` and friends, Neo4j's token lookups — so you see
+what you created.
+
+## Provisioning a schema ahead of the writes
+
+On a graph that several writers share, create labels and indexes once, ahead of
+any write, and only check them afterwards:
+
+```python
+db.create_labels(node_labels, edge_labels)   # AGE: the label tables; others: nothing to do
+for label, props in indexes.items():
+    db.create_property_index(label, *props)
+```
+
+`create_labels` is idempotent. AGE otherwise creates a label's table on its
+first write, and a label without a table cannot be indexed. Index DDL is not
+safe next to concurrent writes: Memgraph refuses it while any other transaction
+is open (`Cannot get read-only access to the storage`), and AGE's
+`CREATE INDEX IF NOT EXISTS` waits for every open write on the table -- even
+when the index exists. Reading `list_indexes()` / `indexed_properties()` is safe
+at any time.
 
 ## Ordering a bulk load
 
@@ -170,7 +206,9 @@ write_edges(db)
 ```
 
 Creating the indexes *before* the nodes would mean paying to maintain them
-during the insert; creating them after the edges is too late to help.
+during the insert; creating them after the edges is too late to help. This
+ordering is for a load that has the graph to itself; on a shared graph, provision
+the indexes ahead instead (above).
 
 ## Transactions and commit cadence
 

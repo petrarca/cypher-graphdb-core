@@ -358,7 +358,9 @@ class SQLBuilder:
 
     @classmethod
     def list_indexes(cls, graph_name: str) -> sql.Composed:
-        """List all user-created indexes in the graph schema via pg_indexes."""
+        """List the indexes in the graph schema via pg_indexes, with the AGE label kind of their table ('v', 'e' or NULL)."""
         return sql.SQL(
-            "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = {graph_name} ORDER BY tablename, indexname"
+            "SELECT i.tablename, i.indexname, i.indexdef, l.kind FROM pg_indexes i "
+            "LEFT JOIN ag_catalog.ag_label l ON l.relation = format('%%I.%%I', i.schemaname, i.tablename)::regclass "
+            "WHERE i.schemaname = {graph_name} ORDER BY i.tablename, i.indexname"
         ).format(graph_name=sql.Placeholder())

@@ -6,7 +6,7 @@ and bulk_create_edges for both Memgraph and AGE backends.
 
 import pytest
 
-from cypher_graphdb import BackendCapability, GraphEdge, GraphNode, ModelProvider
+from cypher_graphdb import BackendCapability, GraphEdge, GraphNode, GraphObjectType, ModelProvider
 
 mp = ModelProvider()
 
@@ -125,6 +125,47 @@ class TestIndexManagement:
         clean_db.drop_index("DropLabel", "id")
         drop_label_indexes = [idx for idx in clean_db.list_indexes() if idx.label == "DropLabel"]
         assert not drop_label_indexes
+
+
+class TestNormalizedIndexInfo:
+    """``create_labels`` and ``indexed_properties``: the same answer on every backend."""
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_create_labels_is_idempotent(self, clean_db):
+        first = clean_db.create_labels(["LabNode"], ["LAB_EDGE"])
+        second = clean_db.create_labels(["LabNode"], ["LAB_EDGE"])
+        assert second == []
+        # AGE creates the label tables; the others have no labels to create.
+        assert first == (["LabNode", "LAB_EDGE"] if clean_db.backend.name == "AGE" else [])
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_an_index_on_a_label_without_nodes(self, clean_db):
+        """Provisioning ahead of any write: the label is created, then indexed."""
+        clean_db.create_labels(["EmptyLabel"])
+        clean_db.create_property_index("EmptyLabel", "symbol")
+        assert ("EmptyLabel", "symbol") in clean_db.indexed_properties()
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_one_lookup_index_per_property(self, clean_db):
+        """Each property is index-backed on its own -- Neo4j built one composite index before, which served none."""
+        clean_db.create_labels(["PerProp"])
+        clean_db.create_property_index("PerProp", "symbol", "name")
+        pairs = {pair for pair in clean_db.indexed_properties() if pair[0] == "PerProp"}
+        assert pairs == {("PerProp", "symbol"), ("PerProp", "name")}
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_index_info_is_normalized_and_keeps_details(self, clean_db):
+        clean_db.create_labels(["Detailed"])
+        clean_db.create_property_index("Detailed", "symbol")
+        infos = [idx for idx in clean_db.list_indexes() if idx.label == "Detailed" and idx.lookup_property == "symbol"]
+        assert len(infos) == 1
+        assert infos[0].object_type == GraphObjectType.NODE
+        assert infos[0].details, "the backend's own information is kept"
+
+    @pytest.mark.parametrize("test_db", ["memgraph_db", "neo4j_db", "age_db"], indirect=True)
+    def test_create_labels_rejects_invalid_names(self, clean_db):
+        with pytest.raises(ValueError, match="Invalid label name"):
+            clean_db.create_labels(["Bad Label"])
 
 
 # ── Bulk create nodes ─────────────────────────────────────────────────────────

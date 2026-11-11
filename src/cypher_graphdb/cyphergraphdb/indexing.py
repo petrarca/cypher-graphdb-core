@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..backend import BackendCapability, FilterValue
-from ..models import GraphEdge, GraphNode
+from ..models import GraphEdge, GraphNode, GraphObjectType
 from ..statistics import IndexInfo
 from .bulk_normalize import normalize_edges_input, normalize_nodes_input
 
@@ -101,6 +101,27 @@ class IndexingMixin(_Host):
         """
         assert self._backend
         return self._backend.list_indexes(include_internal=include_internal)
+
+    def indexed_properties(self, object_type: GraphObjectType = GraphObjectType.NODE) -> set[tuple[str, str]]:
+        """The (label, property) pairs an equality lookup is served by an index for, on any backend.
+
+        ``MATCH (n:Label {prop: $v})`` is index-backed exactly for these pairs:
+        a property or unique index keyed on that one property
+        (``IndexInfo.lookup_property``). Reading it is safe while other
+        sessions write -- unlike index DDL on Memgraph, which needs exclusive
+        access to the storage.
+
+        Args:
+            object_type: Node indexes (default) or edge indexes.
+
+        Returns:
+            Set of (label, property) pairs.
+        """
+        return {
+            (idx.label, prop)
+            for idx in self.list_indexes()
+            if idx.object_type == object_type and (prop := idx.lookup_property) is not None
+        }
 
     def bulk_delete_nodes(self, label: str, filters: Mapping[str, FilterValue], batch_size: int | None = None) -> int:
         """Delete all nodes of a label matching property filters, cascading to edges.

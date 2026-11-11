@@ -3,6 +3,7 @@
 import pytest
 
 from cypher_graphdb.backend import BackendCapability, CypherBackend
+from cypher_graphdb.models import GraphObjectType
 from cypher_graphdb.statistics import IndexInfo, IndexType
 
 # ── IndexInfo model tests ─────────────────────────────────────────────────
@@ -264,3 +265,113 @@ class TestAGEParseIndexDef:
         assert result is not None
         assert result.index_type == IndexType.PROPERTY
         assert result.property_names == ["name"]
+
+
+# ── Normalized index information ─────────────────────────────────────────────
+
+
+class TestLookupProperty:
+    """``IndexInfo.lookup_property``: the one property an equality lookup uses the index for."""
+
+    def test_single_property_index(self):
+        assert IndexInfo(label="M", property_names=["symbol"]).lookup_property == "symbol"
+
+    def test_unique_single_property_index(self):
+        assert IndexInfo(label="M", property_names=["symbol"], index_type=IndexType.UNIQUE).lookup_property == "symbol"
+
+    def test_composite_index_serves_no_single_lookup(self):
+        assert IndexInfo(label="M", property_names=["symbol", "name"]).lookup_property is None
+
+    def test_gin_or_label_index_serves_no_lookup(self):
+        assert IndexInfo(label="M", property_names=None).lookup_property is None
+
+    def test_fulltext_index_serves_no_lookup(self):
+        assert IndexInfo(label="M", property_names=["doc"], index_type=IndexType.FULLTEXT).lookup_property is None
+
+
+class TestMemgraphIndexRows:
+    """SHOW INDEX INFO rows, normalized."""
+
+    def setup_method(self):
+        from cypher_graphdb.backends.memgraph.memgraphdb import _index_info
+
+        self.parse = _index_info
+
+    def test_label_property(self):
+        info = self.parse("label+property", "Method", ["symbol"], 10)
+        assert (info.label, info.object_type, info.property_names, info.lookup_property) == (
+            "Method",
+            GraphObjectType.NODE,
+            ["symbol"],
+            "symbol",
+        )
+        assert info.details == {"memgraph_index_type": "label+property", "count": 10}
+
+    def test_a_bare_string_property_is_one_property(self):
+        """Memgraph reports an edge-type property as a string; it must not be split into characters."""
+        info = self.parse("edge-type+property", "CALLS", "line", 3)
+        assert (info.object_type, info.property_names) == (GraphObjectType.EDGE, ["line"])
+
+    def test_label_index_has_no_property(self):
+        info = self.parse("label", "Method", None, 10)
+        assert info.property_names is None and info.lookup_property is None
+
+    def test_unknown_type_is_kept_in_details(self):
+        info = self.parse("point", "Place", ["loc"], 1)
+        assert info.details["memgraph_index_type"] == "point"
+        assert info.index_type == IndexType.OTHER
+
+
+class TestAGEIndexKind:
+    def test_edge_table_index_is_an_edge_index(self):
+        from cypher_graphdb.backends.age.agegraphdb import AGEGraphDB
+
+        info = AGEGraphDB._parse_index_def(
+            "CALLS", "calls_idx", 'CREATE INDEX calls_idx ON g."CALLS" USING btree (start_id)', "e"
+        )
+        assert info.object_type == GraphObjectType.EDGE
+        assert info.details["method"] == "btree"
+        assert info.details["table"] == "CALLS"
+
+
+class TestIndexedProperties:
+    def test_only_lookup_pairs_of_the_requested_object_type(self):
+        from unittest.mock import MagicMock
+
+        from cypher_graphdb.cyphergraphdb.indexing import IndexingMixin
+
+        host = IndexingMixin()
+        host._backend = MagicMock()
+        host._backend.list_indexes.return_value = [
+            IndexInfo(label="Method", property_names=["symbol"]),
+            IndexInfo(label="Method", property_names=["symbol", "name"]),
+            IndexInfo(label="Method", property_names=None),
+            IndexInfo(label="CALLS", object_type=GraphObjectType.EDGE, property_names=["line"]),
+        ]
+        assert host.indexed_properties() == {("Method", "symbol")}
+        assert host.indexed_properties(GraphObjectType.EDGE) == {("CALLS", "line")}
+
+
+class TestUnnormalizedKindsAreOther:
+    """An index kind not normalized must never pass for one an equality lookup can use."""
+
+    def test_memgraph_point_index(self):
+        from cypher_graphdb.backends.memgraph.memgraphdb import _index_info
+
+        info = _index_info("point", "Place", ["loc"], 1)
+        assert info.index_type == IndexType.OTHER and info.lookup_property is None
+
+    def test_neo4j_index_types(self):
+        from cypher_graphdb.backends.neo4j.neo4jdb import _index_type
+
+        assert _index_type("RANGE", None) == IndexType.PROPERTY
+        assert _index_type("RANGE", "c_unique") == IndexType.UNIQUE
+        assert _index_type("FULLTEXT", None) == IndexType.FULLTEXT
+        assert _index_type("POINT", None) == IndexType.OTHER
+        assert _index_type("TEXT", None) == IndexType.OTHER
+
+    def test_age_gist_index(self):
+        from cypher_graphdb.backends.age.agegraphdb import AGEGraphDB
+
+        info = AGEGraphDB._parse_index_def("M", "m_gist", 'CREATE INDEX m_gist ON g."M" USING gist (properties)')
+        assert info.index_type == IndexType.OTHER and info.details["method"] == "gist"

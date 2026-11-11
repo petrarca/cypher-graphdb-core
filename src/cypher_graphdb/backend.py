@@ -288,6 +288,16 @@ class CypherBackend(abc.ABC):
         """Check if a graph or namespace exists in the backend."""
         pass
 
+    def create_labels(self, node_labels: Sequence[str] = (), edge_labels: Sequence[str] = ()) -> list[str]:
+        """Create the node labels and edge types that do not exist yet; return the ones created.
+
+        A no-op on backends whose labels exist implicitly (Memgraph, Neo4j,
+        FalkorDB). AGE stores each label as a table, created on the first write
+        of that label unless created ahead: a schema provisioned up front,
+        indexes included, needs its labels first.
+        """
+        return []
+
     def parse_cypher(self, cypher_cmd: str) -> ParsedCypherQuery:
         """Parse a Cypher command string into a ParsedCypherQuery."""
         parsed_query = parse_cypher_query(cypher_cmd)

@@ -10,7 +10,7 @@ This module provides:
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 from .models import Graph, GraphEdge, GraphNode, GraphObjectType, GraphPath
 
@@ -164,36 +164,64 @@ class IndexType(StrEnum):
     UNIQUE = "unique"  # Unique constraint index
     FULLTEXT = "fulltext"  # Full-text search index
     VECTOR = "vector"  # Vector similarity index
+    OTHER = "other"  # A kind not normalized (spatial, text, ...): the backend's own type is in IndexInfo.details
 
 
 class IndexInfo(BaseModel):
     """Backend-agnostic index metadata.
 
-    Provides a normalized view of index information across different graph
-    database backends (AGE, Memgraph, Neo4j, FalkorDB).
+    The fields mean the same on every backend (AGE, Memgraph, Neo4j, FalkorDB);
+    what a backend reports beyond them is kept, as reported, in ``details``.
 
     Attributes:
-        label: Node or edge label the index is on (e.g. "Method").
-        property_names: Properties covered by the index. None means all
-            properties are covered (e.g. AGE GIN indexes).
+        label: Node label or edge type the index is on (e.g. "Method").
+        object_type: Whether the index is on nodes or on edges.
+        property_names: The properties the index is keyed on, in order. None
+            for an index keyed on no single property: a label index, or an
+            AGE GIN index over the whole ``properties`` column -- which serves
+            containment, not ``n.prop = value``.
         index_type: The kind of index (property, unique, fulltext, vector).
         index_name: Backend-specific index name, used for drop_index.
         unique: Whether the index enforces uniqueness.
+        details: Backend-specific information as the backend reports it (its
+            own index type, definition, state, entry count, ...), so the
+            normalization loses nothing.
     """
 
     label: str
+    object_type: GraphObjectType = GraphObjectType.NODE
     property_names: list[str] | None = None
     index_type: IndexType = IndexType.PROPERTY
     index_name: str | None = None
     unique: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def lookup_property(self) -> str | None:
+        """The property an equality lookup on it (``MATCH (n:Label {prop: $v})``) uses this index for, else None.
+
+        Only a property or unique index keyed on exactly one property: a
+        composite index is not used for a lookup on one of its properties on
+        every backend (Neo4j plans a label scan), and a GIN or label index
+        serves no property equality at all.
+        """
+        if (
+            self.index_type not in (IndexType.PROPERTY, IndexType.UNIQUE)
+            or not self.property_names
+            or len(self.property_names) != 1
+        ):
+            return None
+        return self.property_names[0]
 
     @model_serializer
     def serialize_model(self, _) -> dict[str, Any]:
         """Convert IndexInfo to a serializable dictionary."""
         return {
             "label": self.label,
+            "object_type": self.object_type.name.lower(),
             "property_names": self.property_names,
             "index_type": self.index_type.value,
             "index_name": self.index_name,
             "unique": self.unique,
+            "details": self.details,
         }

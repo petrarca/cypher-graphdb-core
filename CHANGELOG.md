@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `create_labels(node_labels, edge_labels)`: creates the labels that do not exist yet, idempotently, and
+  returns them. On AGE the label tables, which AGE otherwise creates on a label's first write -- a schema
+  provisioned ahead of any write needs them before its indexes; a no-op on Memgraph, Neo4j and FalkorDB.
+- `indexed_properties(object_type=NODE)`: the `(label, property)` pairs an equality lookup is index-backed
+  for, the same answer on every backend; `IndexInfo.lookup_property` for one index.
+- `IndexInfo.object_type` (node or edge) and `IndexInfo.details`, the backend's own information as reported
+  (Memgraph's index type and count, Neo4j's type, state and owning constraint, AGE's table, definition and
+  access method).
+- `IndexType.OTHER` for an index kind not normalized (a Memgraph or Neo4j point index, a Neo4j text index, an
+  AGE GiST index, ...): reported, its own type in `details`, and never counted as serving an equality lookup.
+  These were reported as property indexes before.
+
+### Changed
+- Neo4j: `create_property_index(label, *props)` creates one range index per property, as the other
+  backends do, instead of one composite index over all of them -- Neo4j does not use a composite index for a
+  lookup on one of its properties, so it served none. An existing composite index is left as it is.
+- Neo4j: `list_indexes()` also lists relationship indexes (as `object_type` edge); token-lookup indexes
+  only with `include_internal`.
+- Memgraph: `list_indexes()` reports edge-type indexes as edge indexes, and a property reported as a bare
+  string as one property (it was split into its characters).
+- AGE: `list_indexes()` reports the indexes of edge label tables as edge indexes.
+
 ## [0.8.1] - 2026-11-09
 
 ### Added
