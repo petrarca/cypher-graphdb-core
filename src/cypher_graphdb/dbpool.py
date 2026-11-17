@@ -90,6 +90,7 @@ class CypherGraphDBPool:
         Raises:
             ValueError: If `min_size` > `pool_size`.
         """
+        # Resolved once to check it exists; each pooled instance gets a backend of its own (_new_backend).
         self._backend = backend_provider.check_and_resolve(backend, True)
         assert self._backend
 
@@ -342,7 +343,8 @@ class CypherGraphDBPool:
 
     @property
     def backend(self) -> CypherBackend:
-        """Return resolved backend instance used for new connections."""
+        """The backend the pool was given, resolved: what its instances' backends are made of -- each gets one of its
+        own of this class."""
         return self._backend
 
     @property
@@ -372,7 +374,7 @@ class CypherGraphDBPool:
         from .cyphergraphdb import CypherGraphDB  # local import to avoid cycle
 
         db = CypherGraphDB(
-            self._backend,
+            self._new_backend(),
             connect_params=None,
             model_provider=self._model_provider,
         )
@@ -381,6 +383,17 @@ class CypherGraphDBPool:
                 db.connect(**self._connect_params)
         self._stats.created += 1
         return db
+
+    def _new_backend(self) -> CypherBackend:
+        """A backend of its own for a new pooled instance.
+
+        A backend holds the connection, its transaction and its prepared
+        statements; instances sharing one would share a single connection
+        across threads -- concurrent queries interleaving on it, one's failure
+        closing it under the others. Instantiated from the class, as
+        ``backend_provider.resolve`` does.
+        """
+        return type(self._backend)()
 
     def _expiry(self) -> float:
         """Compute expiry timestamp or 0.0 if no TTL (sentinel)."""

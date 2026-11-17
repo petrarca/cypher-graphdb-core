@@ -63,3 +63,13 @@ def test_pool_close_releases_all():
     pool.release(db)
     with pytest.raises(RuntimeError):
         pool.get()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("backend", ["mock", MockBackend()])
+def test_pooled_instances_do_not_share_a_backend(backend):
+    # A backend holds the connection: shared, concurrent queries would interleave on one connection.
+    pool = CypherGraphDBPool(backend, connect_params=None, pool_size=2, auto_connect=False)
+    db1, db2 = pool.get(), pool.get()
+    assert db1._backend is not db2._backend
+    pool.close()
